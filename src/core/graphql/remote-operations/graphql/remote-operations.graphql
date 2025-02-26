@@ -1,0 +1,47 @@
+enum ConditionalOperator {
+  EQUAL
+  DISTINCT
+  GREATER_THAN
+  GREATER_EQUAL_THAN
+  LESS_THAN
+  LESS_EQUAL_THAN
+  START_WITH
+  END_WITH
+  CONTAINS
+  NOT_CONTAINS
+  IS_NULL
+  IS_NOT_NULL
+  ANY
+  ANY_OPERATOR_AND_VALUE
+}
+
+enum SortDirection {
+  ASC
+  DESC
+}
+
+enum LogicalOperator {
+  AND
+  OR
+}
+
+input ListFilter {
+  property: String
+  operator: ConditionalOperator
+  value: String
+  logicalOperator: LogicalOperator
+  filters: [ListFilter]
+}
+
+input ListSort {
+  property: String
+  direction: SortDirection
+}
+
+input ListOptions {
+  skip: Int
+  take: Int
+  withDeleted: Boolean
+  filters: [ListFilter]
+  sorts: [ListSort]
+}

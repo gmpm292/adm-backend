@@ -1,0 +1,51 @@
+input ClassicLoginInput {
+  email: String!
+  password: String!
+}
+
+input MobileLoginInput {
+  email: String!
+  password: String!
+}
+
+input ImpersonalLoginInput {
+  userId: Int!
+  timeInSec: Int
+}
+
+input RefreshInput {
+  refreshToken: String!
+}
+
+type RefreshOutput {
+  accessToken: String!
+}
+
+type LoginOutput {
+  accessToken: String
+  refreshToken: String!
+  profile: LimitedProfile
+}
+
+type TwoFactorOutput {
+  accessToken: String
+  refreshToken: String!
+  profile: Profile
+}
+
+extend type Query {
+  classicLogin(input: ClassicLoginInput!): LoginOutput!
+  mobileLogin(input: MobileLoginInput!): LoginOutput!
+  impersonalLogin(input: ImpersonalLoginInput!): TwoFactorOutput!
+  verify2FA(token2fa: String): TwoFactorOutput!
+}
+
+extend type Mutation {
+  logout: User!
+  refresh: RefreshOutput!
+  generate2faSecret: String!
+  finishConfigure2FA(token2fa: String): Boolean
+  reset2FASettings(id: Int): Boolean
+  enable2FA(id: Int): Boolean
+  disable2FA(id: Int): Boolean
+}

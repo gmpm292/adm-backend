@@ -1,0 +1,80 @@
+type Notification {
+  id: Int
+  createdAt: String #Date
+  updatedAt: String #Date
+  deletedAt: String #Date
+  tipo: String
+  titulo: String
+  message: String
+  status: String
+  notificationLogs: [NotificationLogs]
+  createdBy: User
+  sentBy: User
+  sentAt: String #Date
+  metadata: String #JSON
+}
+
+type NotificationLogs {
+  read: Boolean
+  erased: Boolean
+  user: User
+  notification: Notification
+}
+
+type NotificationsSummary {
+  data: [Notification]!
+  totalCount: Int!
+}
+
+type NotificationLogsSummary {
+  data: [NotificationLogs]!
+  totalCount: Int!
+}
+
+input CreateNotificationInput {
+  tipo: String!
+  titulo: String!
+  message: String!
+
+  userIds: [String]
+  officeIds: [String]
+  sucursalIds: [String]
+  departmentIds: [String]
+  teamIds: [String]
+  roles: [String]
+}
+
+input UpdateNotificationInput {
+  id: Int!
+  tipo: String
+  titulo: String
+  message: String
+}
+
+input UpdateNotificationInput {
+  id: Int!
+  tipo: String
+  titulo: String
+  message: String
+}
+
+type Query {
+  clientNotifications(options: ListOptions): NotificationLogsSummary!
+  notifications(options: ListOptions): NotificationsSummary!
+  notification(id: Int!): Notification
+}
+
+type Mutation {
+  createNotification(
+    createNotificationInput: CreateNotificationInput!
+  ): Notification!
+  updateNotification(
+    updateNotificationInput: UpdateNotificationInput!
+  ): Notification!
+  removeNotifications(ids: [Int!]!): [Notification]!
+
+  publishNotification(id: Int!): String!
+  markNotificationAsRead(id: Int!): NotificationLogs!
+  markNotificationAsDeleted(id: Int!): NotificationLogs!
+  markNotificationsAsDeleted(ids: [Int!]!): [NotificationLogs]
+}

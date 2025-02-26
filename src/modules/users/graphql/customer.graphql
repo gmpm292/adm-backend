@@ -1,0 +1,32 @@
+
+type Customer {
+  id: Int
+  createdAt: String #Date
+  updatedAt: String #Date
+  deletedAt: String #Date
+  email: String
+  enabled: Boolean
+  name: String
+  lastName: String
+  mobile: String
+  
+  
+}
+
+type CustomersSummary {
+  data: [Customer]!
+  totalCount: Int!
+}
+
+extend type Query {
+  customer: Customer
+  getCustomer(id:Int!): Customer
+  customers(options: ListOptions): CustomersSummary!
+  globalCustomers(options: ListOptions): CustomersSummary!
+}
+
+extend type Mutation {
+  createCustomer(createUserInput: CreateUserInput!): User!
+
+  updateCustomer(updateUserInput: UpdateUserInput!): User!
+}

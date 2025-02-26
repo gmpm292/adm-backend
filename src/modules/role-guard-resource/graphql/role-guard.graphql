@@ -1,0 +1,31 @@
+type RoleGuard {
+  id: Int
+  createdAt: String #Date
+  updatedAt: String #Date
+  deletedAt: String #Date
+  queryOrEndPointURL: String
+  roles: [Role]
+  description: String
+  type: String
+}
+
+type RoleGuardsSummary {
+  data: [RoleGuard]!
+  totalCount: Int!
+}
+
+input UpdateRoleGuardInput {
+  id: Int!
+  roles: [Role]
+  description: String
+}
+
+type Query {
+  roleGuards(options: ListOptions): RoleGuardsSummary!
+  roleGuard(id: Int!): RoleGuard
+}
+
+type Mutation {
+  updateRoleGuard(updateRoleGuardInput: UpdateRoleGuardInput!): RoleGuard!
+#  removeRoleGuards(ids: [Int!]!): [RoleGuard]!
+}

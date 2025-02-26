@@ -1,0 +1,53 @@
+enum ConfigVisibility {
+  PUBLIC_ENT
+  PRIVATE_ENT
+}
+
+enum ConfigStatus {
+  disabled
+  enabled
+}
+
+type Config {
+  id:Int
+  createdAt: String #Date
+  updatedAt: String #Date
+  deletedAt: String #Date
+  key: String
+  value: String #JSON
+  configVisibility: Int
+  configStatus: Int
+}
+
+type ConfigsSummary {
+  data: [Config]!
+  totalCount: Int!
+}
+
+input CreateConfigInput {
+  key: String!
+  value: String #JSON!
+  configStatus: Int
+}
+
+input UpdateConfigInput {
+  id: Int!
+  key: String
+  value: String #JSON
+  configStatus: Int
+}
+
+type Query {
+  configs(options: ListOptions): ConfigsSummary!
+  config(id: Int!): Config
+}
+
+type Mutation {
+  createConfig(createConfigInput: CreateConfigInput!): Config!
+  updateConfig(updateConfigInput: UpdateConfigInput!): Config!
+  removeConfigs(ids: [Int!]!): [ Config]!
+}
+
+extend type Subscription {
+  officeChanged: Boolean
+}

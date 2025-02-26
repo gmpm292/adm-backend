@@ -1,0 +1,169 @@
+enum Role {
+  SUPER
+  PRINCIPAL
+  ADMIN
+  MANAGER
+  SUPERVISOR
+  AGENT
+  USER
+}
+
+type User {
+  id: Int
+  createdAt: String #Date
+  updatedAt: String #Date
+  deletedAt: String #Date
+  email: String
+  enabled: Boolean
+  name: String
+  lastName: String
+  mobile: String
+  role: [Role]
+  
+  isTwoFactorEnabled: Boolean
+  isTwoFactorConfigured: Boolean
+}
+
+type Profile {
+  id: Int
+  createdAt: String #Date
+  updatedAt: String #Date
+  deletedAt: String #Date
+  email: String
+  enabled: Boolean
+  name: String
+  lastName: String
+  mobile: String
+  role: [Role]
+ 
+  isTwoFactorEnabled: Boolean
+  isTwoFactorConfigured: Boolean
+}
+
+type LimitedProfile {
+  email: String
+  isTwoFactorEnabled: Boolean
+  isTwoFactorConfigured: Boolean
+}
+
+type ConfirmationToken {
+  id: Int
+  createdAt: String #Date
+  deletedAt: String #Date
+  updatedAt: String #Date
+  tokenValue: String
+  expirationDate: String #Date
+  used: Boolean
+}
+
+type UsersSummary {
+  data: [User]!
+  totalCount: Int!
+}
+
+type RequestPasswordChange {
+  message: String
+}
+
+input ChangePasswordInput {
+  confirmationToken: String!
+  newPassword: String!
+}
+
+input CheckConfirmationTokenInput {
+  confirmationToken: String!
+}
+
+input ChangePasswordByEmailInput {
+  email: String
+  newPassword: String!
+}
+
+input CreateUserInput {
+  email: String!
+  #  enabled: Boolean!
+  name: String!
+  lastName: String
+  mobile: String
+  role: [Role]!
+  #worker
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+  leadId: Int
+  zoomExt: String
+}
+
+input CreateFirstUserInput {
+  email: String!
+  mobile: String!
+  name: String!
+  lastName: String
+  newPassword: String!
+}
+
+input RequestPasswordChangeInput {
+  email: String!
+}
+input UpdateUserInput {
+  id: Int!
+  email: String
+  enabled: Boolean
+  name: String
+  lastName: String
+  mobile: String
+  #role: [Role]
+  #officeId: Int
+  #departmentId: Int
+  #teamId: Int
+  zoomExt: String
+}
+
+input UpdateUserProfileInput {
+  email: String
+  name: String
+  lastName: String
+  mobile: String
+  zoomExt: String
+}
+
+input UpdateUserRoleInput {
+  id: Int!
+  role: [Role!]!
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+}
+
+extend type Query {
+  users(options: ListOptions): UsersSummary!
+  user(id: Int!): User
+  profile: Profile
+  globalSearch(options: GlobalSearchInput): GlobalSearchOutput
+}
+
+extend type Mutation {
+  changePassword(changePasswordInput: ChangePasswordInput!): User!
+  changePasswordByEmail(
+    changePasswordByEmailInput: ChangePasswordByEmailInput!
+  ): User!
+  createFirstUser(createFirstUserInput: CreateFirstUserInput!): User!
+  createUser(createUserInput: CreateUserInput!): User!
+  updateUser(updateUserInput: UpdateUserInput!): User!
+  updateUserProfile(updateUserProfileInput: UpdateUserProfileInput!): User!
+  updateUserRole(updateUserRoleInput: UpdateUserRoleInput!): User!
+  removeUsers(ids: [Int!]!): [User]!
+  requestPasswordChange(
+    input: RequestPasswordChangeInput!
+  ): RequestPasswordChange!
+  requestPasswordChangeForAnotherUser(
+    input: RequestPasswordChangeInput!
+  ): RequestPasswordChange!
+  checkConfirmationToken(
+    checkConfirmationTokenInput: CheckConfirmationTokenInput!
+  ): Boolean
+}
+
+extend type Subscription {
+  userChanged: Boolean
+}

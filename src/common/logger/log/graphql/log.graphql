@@ -1,0 +1,30 @@
+type Log {
+  id: Int
+  createdAt: String #Date
+  updatedAt: String #Date
+  deletedAt: String #Date
+  level: String
+  message: String
+  meta: String #JSON
+}
+
+input FindOptiosInput {
+  startDate: String #Date
+  endDate: String #Date
+  levelFilter: String
+  messageContain: String
+  intServErrorId: String
+  userId: Int
+  skip: Int
+  limit: Int
+}
+
+type LogsResult {
+  logs: [Log]!
+  totalCount: Int!
+}
+
+extend type Query {
+  logs(options: FindOptiosInput!): LogsResult!
+  log(id: Int!): Log
+}

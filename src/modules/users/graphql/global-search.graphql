@@ -1,0 +1,34 @@
+input GlobalSearchInput {
+  leadSkip: Int!
+
+  leadTake: Int!
+
+  customerSkip: Int!
+
+  customerTake: Int!
+
+  emailSearch: String
+
+  phoneSearch: String
+
+  policyNumber: String
+  
+  name: String
+
+  lastName: String
+}
+
+
+extend type User {
+  last_sms_contacted: String
+  last_call_contacted: String
+  active: Boolean
+  daysFromLastChange: Int
+  relatedAgent: User
+  #policies: [Policy]
+}
+
+
+extend type Mutation {
+  
+}
