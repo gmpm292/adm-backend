@@ -1,8 +1,3 @@
-/* eslint-disable prettier/prettier */
-/* eslint-disable @typescript-eslint/require-await */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/no-unsafe-return */
 import { Controller, Get } from '@nestjs/common';
 import {
   HealthCheck,
@@ -41,7 +36,7 @@ export class AppInfoController {
   liveness() {
     return this.health.check([
       //async () => this.http.pingCheck('nestjs', 'https://www.google.com'),
-      async () => ({ status: 'up' } as unknown as HealthIndicatorResult),
+      () => ({ status: 'up' }) as unknown as HealthIndicatorResult,
     ]);
   }
 }
