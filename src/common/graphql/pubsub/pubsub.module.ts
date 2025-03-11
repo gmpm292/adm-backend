@@ -17,9 +17,13 @@ export const REDIS_PUB_SUB_TOKEN = 'REDIS_PUB_SUB_TOKEN';
             port: parseInt(
               configService.get<string>('SUBSCRIPTION_REDIS_PORT') ?? '6379',
             ),
-            db: 0,
+            db: 2,
             commandQueue: true,
             commandTimeout: 5000,
+            tls: { rejectUnauthorized: false },
+            retryStrategy: (times: number) => {
+              return Math.min(times * 50, 2000);
+            },
           },
         };
         return new RedisPubSub(options);
