@@ -16,7 +16,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
           username: configService.get<string>('TYPEORM_USERNAME'),
           password: configService.get<string>('TYPEORM_PASSWORD'),
           database: configService.get<string>('TYPEORM_DATABASE'),
-          ssl: { rejectUnauthorized: false },
+          ssl: isRemote() ? { rejectUnauthorized: false } : false,
 
           entities: ['dist/**/*.entity{.ts,.js}'],
           migrationsTableName: 'migrations',

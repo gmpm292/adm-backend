@@ -38,12 +38,16 @@ export class EnvironmentVariables {
   public CACHE_REDIS_HOST: string;
   @IsNotEmpty()
   public CACHE_REDIS_PORT: string;
+  @IsOptional()
+  public CACHE_REDIS_PASSWORD: string;
 
   //SUBSCRIPTIONS
   @IsNotEmpty()
   public SUBSCRIPTION_REDIS_HOST: string;
   @IsNotEmpty()
   public SUBSCRIPTION_REDIS_PORT: string;
+  @IsOptional()
+  public SUBSCRIPTION_REDIS_PASSWORD: string;
   ////.ENV //////////////////////////////////////////////////////////////
 
   ////Backend Configurations //////////////////////////////////////////////////////////////
