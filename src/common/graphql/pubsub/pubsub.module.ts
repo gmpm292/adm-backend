@@ -20,7 +20,6 @@ export const REDIS_PUB_SUB_TOKEN = 'REDIS_PUB_SUB_TOKEN';
               configService.get<string>('SUBSCRIPTION_REDIS_PORT') ?? '6379',
             ),
             password: configService.get<string>('SUBSCRIPTION_REDIS_PASSWORD'),
-            db: 2,
             commandQueue: true,
             commandTimeout: 5000,
             tls: isRedisRemote() ? { rejectUnauthorized: false } : undefined,
