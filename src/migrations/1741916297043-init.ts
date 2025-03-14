@@ -1,3 +1,4 @@
+/* eslint-disable prettier/prettier */
 import { MigrationInterface, QueryRunner } from "typeorm";
 
 export class Init1741916297043 implements MigrationInterface {
