@@ -1,10 +1,8 @@
+/* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable @typescript-eslint/no-unused-expressions */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-floating-promises */
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
+
 import { Inject, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
 import { Args, Mutation, Query, Resolver, Subscription } from '@nestjs/graphql';
-import { PubSub } from 'graphql-subscriptions';
 
 import { AccessTokenAuthGuard } from '../../auth/guards/access-token-auth.guard';
 import { ChangePasswordInput } from '../dto/change-password.input';
@@ -36,13 +34,14 @@ import {
 
 import { LoggerService } from '../../../common/logger';
 import { REDIS_PUB_SUB_TOKEN } from '../../../common/graphql/pubsub/pubsub.module';
-import { IAppMailer } from '../../../core/mailer/app-mailer.interface';
+//import { IAppMailer } from '../../../core/mailer/app-mailer.interface';
+import { RedisPubSub } from 'graphql-redis-subscriptions';
 
 @Resolver('User')
 export class UsersResolver {
   public constructor(
-    @Inject(REDIS_PUB_SUB_TOKEN) private pubSub: PubSub,
-    private mailerService: IAppMailer,
+    @Inject(REDIS_PUB_SUB_TOKEN) private readonly pubSub: RedisPubSub,
+    //private mailerService: IAppMailer,
     private logger: LoggerService,
     private readonly usersService: UsersService,
     private confirmationTokenService: ConfirmationTokenService,
@@ -86,11 +85,11 @@ export class UsersResolver {
 
     await this.pubSub.publish('userChanged', { userChanged: true });
 
-    await this.mailerService
-      .notifySuccessSettingPassword(updatedUser)
-      .catch((reason) =>
-        this.logger.error('Notification of user creation failed', reason),
-      );
+    // await this.mailerService
+    //   .notifySuccessSettingPassword(updatedUser)
+    //   .catch((reason) =>
+    //     this.logger.error('Notification of user creation failed', reason),
+    //   );
 
     return updatedUser;
   }
@@ -113,11 +112,11 @@ export class UsersResolver {
 
     await this.pubSub.publish('userChanged', { userChanged: true });
 
-    this.mailerService
-      .notifySuccessSettingPassword(updatedUser)
-      .catch((reason) =>
-        this.logger.error('Notification of user creation failed', reason),
-      );
+    // this.mailerService
+    //   .notifySuccessSettingPassword(updatedUser)
+    //   .catch((reason) =>
+    //     this.logger.error('Notification of user creation failed', reason),
+    //   );
 
     return updatedUser;
   }
@@ -132,11 +131,11 @@ export class UsersResolver {
 
     await this.pubSub.publish('userChanged', { userChanged: true });
 
-    await this.mailerService
-      .notifyUserCreation(createdUser)
-      .catch((reason) =>
-        this.logger.error('Notification of user creation failed', reason),
-      );
+    // await this.mailerService
+    //   .notifyUserCreation(createdUser)
+    //   .catch((reason) =>
+    //     this.logger.error('Notification of user creation failed', reason),
+    //   );
 
     return createdUser;
   }
@@ -156,11 +155,11 @@ export class UsersResolver {
 
     await this.pubSub.publish('userChanged', { userChanged: true });
 
-    this.mailerService
-      .notifyUserCreation(createdUser)
-      .catch((reason) =>
-        this.logger.error('Notification of user creation failed', reason),
-      );
+    // this.mailerService
+    //   .notifyUserCreation(createdUser)
+    //   .catch((reason) =>
+    //     this.logger.error('Notification of user creation failed', reason),
+    //   );
 
     return createdUser;
   }
@@ -203,13 +202,13 @@ export class UsersResolver {
 
     await this.pubSub.publish('userChanged', { userChanged: true });
 
-    await this.mailerService.notifyPasswordRecovery(user).catch((reason) => {
-      this.logger.error(
-        'Notification of request to change password failed',
-        reason,
-      );
-      throw reason.message;
-    });
+    // await this.mailerService.notifyPasswordRecovery(user).catch((reason) => {
+    //   this.logger.error(
+    //     'Notification of request to change password failed',
+    //     reason,
+    //   );
+    //   throw reason.message;
+    // });
 
     return 'Successful Request';
   }
@@ -232,13 +231,13 @@ export class UsersResolver {
 
     await this.pubSub.publish('userChanged', { userChanged: true });
 
-    await this.mailerService.notifyPasswordRecovery(user).catch((reason) => {
-      this.logger.error(
-        'Notification of request to change password failed',
-        reason,
-      );
-      throw reason.message;
-    });
+    // await this.mailerService.notifyPasswordRecovery(user).catch((reason) => {
+    //   this.logger.error(
+    //     'Notification of request to change password failed',
+    //     reason,
+    //   );
+    //   throw reason.message;
+    // });
 
     return 'Successful Request';
   }

@@ -1,5 +1,5 @@
 import { IsEmail, IsPhoneNumber, IsString } from 'class-validator';
-import { Column, Entity, Index, OneToMany } from 'typeorm';
+import { Column, Entity, Index, OneToMany, TableInheritance } from 'typeorm';
 
 import { BaseEntity } from '../../../core/entities/base.entity';
 import { Role } from '../../../core/enums/role.enum';
@@ -7,9 +7,10 @@ import { ConfirmationToken } from './confirmation-token.entity';
 import { NotificationLog } from '../../notification/entities/notification-log.entity';
 
 @Entity('users')
+@TableInheritance({
+  column: { type: 'varchar', name: 'type', default: 'User' },
+})
 export class User extends BaseEntity {
-  /* @IsJWT()
-  @Column({ nullable: true }) */
   @OneToMany(
     () => ConfirmationToken,
     (confirmationToken) => confirmationToken.user,
@@ -59,7 +60,7 @@ export class User extends BaseEntity {
   @Column({ nullable: true })
   twoFASecret?: string;
 
-  @Column({ default: true })
+  @Column({ default: false })
   isTwoFactorEnabled?: boolean;
 
   @Column({ default: false })

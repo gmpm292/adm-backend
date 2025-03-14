@@ -19,7 +19,7 @@ type User {
   lastName: String
   mobile: String
   role: [Role]
-  
+
   isTwoFactorEnabled: Boolean
   isTwoFactorConfigured: Boolean
 }
@@ -35,7 +35,7 @@ type Profile {
   lastName: String
   mobile: String
   role: [Role]
- 
+
   isTwoFactorEnabled: Boolean
   isTwoFactorConfigured: Boolean
 }
@@ -139,7 +139,6 @@ extend type Query {
   users(options: ListOptions): UsersSummary!
   user(id: Int!): User
   profile: Profile
-  globalSearch(options: GlobalSearchInput): GlobalSearchOutput
 }
 
 extend type Mutation {

@@ -3,7 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { ConfirmationTokenService } from './confirmationToken/services/confirmation-token.service';
-//import { UsersResolver } from './resolvers/users.resolver';
+import { UsersResolver } from './resolvers/users.resolver';
 import { UserAccessLevelService } from './services/user-access-level.service';
 import { UsersService } from './services/users.service';
 
@@ -32,7 +32,7 @@ import { ConfigModule } from '../../common/config';
     //LeadCenterModule,
   ],
   providers: [
-    //UsersResolver,
+    UsersResolver,
     //CustomeResolver,
     UsersService,
     ConfirmationTokenService,

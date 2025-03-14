@@ -7,7 +7,6 @@ import { BaseEntity } from '../../../core/entities/base.entity';
 export class ConfirmationToken extends BaseEntity {
   @ManyToOne(() => User, (user) => user.confirmationTokens, {
     cascade: false,
-    createForeignKeyConstraints: false,
   })
   user: User;
 

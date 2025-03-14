@@ -25,6 +25,7 @@ import { context } from '../config/helpers/context.helper';
 import { LoggerModule } from '../logger';
 import { AppLoggerService } from '../logger/logger.service';
 import { AuthParameterKey } from '../../modules/auth/enums/auth-parameter-key.enum';
+import { join } from 'path';
 
 @Module({
   imports: [
@@ -36,8 +37,17 @@ import { AuthParameterKey } from '../../modules/auth/enums/auth-parameter-key.en
         loggerService: AppLoggerService,
         configService: ConfigService,
       ) => ({
-        autoSchemaFile: true, // Genera el schema automáticamente
-        sortSchema: true,
+        // autoSchemaFile: true, // Genera el schema automáticamente
+        // sortSchema: true,
+        typePaths: ['./**/schema.graphql', './**/*.graphql'],
+        // definitions: {
+        //   path: join(process.cwd(), 'src/graphql.ts'), // Genera tipos TS
+        //   outputAs: 'class',
+        // },
+        //autoSchemaFile: 'dist/graphqlSchema/schema.gql',
+        resolvers: { JSON: new JsonScalar() },
+        customScalarTypeMapping: { DateTime: 'Date' },
+
         //playground: playground(loggerService, configService),
         playground: true,
         // plugins: playground(loggerService, configService)

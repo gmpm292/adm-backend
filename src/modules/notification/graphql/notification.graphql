@@ -51,13 +51,6 @@ input UpdateNotificationInput {
   message: String
 }
 
-input UpdateNotificationInput {
-  id: Int!
-  tipo: String
-  titulo: String
-  message: String
-}
-
 type Query {
   clientNotifications(options: ListOptions): NotificationLogsSummary!
   notifications(options: ListOptions): NotificationsSummary!

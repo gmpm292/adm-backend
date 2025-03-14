@@ -291,17 +291,17 @@ export class UsersService extends BaseService<User> {
 
   public async find(options?: ListOptions): Promise<ListSummary> {
     return super.baseFind(options as ListOptions, [
-      'office',
-      'department',
-      'team',
+      // 'office',
+      // 'department',
+      // 'team',
     ]);
   }
 
   public findCustomers(options?: ListOptions): Promise<ListSummary> {
     return super.baseFind(options as ListOptions, [
-      'office',
-      'department',
-      'team',
+      // 'office',
+      // 'department',
+      // 'team',
     ]);
   }
 

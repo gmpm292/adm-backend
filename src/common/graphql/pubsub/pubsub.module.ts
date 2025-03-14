@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { PubSubRedisOptions, RedisPubSub } from 'graphql-redis-subscriptions';
 import { RedisOptions } from 'ioredis';
@@ -6,6 +6,7 @@ import { isRedisRemote } from '../helpers/isRedisRemote.helper';
 
 export const REDIS_PUB_SUB_TOKEN = 'REDIS_PUB_SUB_TOKEN';
 
+@Global()
 @Module({
   imports: [ConfigModule],
   providers: [

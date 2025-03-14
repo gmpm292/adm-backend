@@ -19,19 +19,15 @@ export class ClassicLocalStrategy extends PassportStrategy(
   Strategy,
   classicLocalStrategyName,
 ) {
-  public constructor(private authService: AuthService) {
-    super();
+  constructor(private authService: AuthService) {
+    super({
+      usernameField: 'email',
+      passwordField: 'password',
+      passReqToCallback: true,
+    });
   }
 
-  /**
-   * Validate user's credentials
-   *
-   * @param request
-   */
-  public async validate(request: Request): Promise<User> {
-    const { email, password } =
-      getQueryArgumentsFromRequest<ClassicLoginInput>(request);
-
+  public async validate(req, email: string, password: string): Promise<User> {
     const user = await this.authService.validateUserWithEmailAndPassword(
       email,
       password,

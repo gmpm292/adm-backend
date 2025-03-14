@@ -1,0 +1,30 @@
+type AppInfo {
+  name: String
+  version: String
+  description: String
+}
+
+type GraphqlNotification{
+  message: String
+}
+
+input AppInfoInput {
+  name: String!
+  version: String!
+  description: String!
+}
+
+type Query {
+  appInfo: AppInfo
+}
+
+type Mutation {
+  updateAppInfo(appInfoInput: AppInfoInput!): AppInfo
+}
+
+type Subscription {
+  appInfoChanged: Boolean
+  graphqlNotifications(token: String): GraphqlNotification
+}
+
+
