@@ -60,37 +60,47 @@ export class ClassicLocalStrategy extends PassportStrategy(
    * @param user
    */
   private async validateCompanyInformationByRole(user: User): Promise<void> {
-    if (user.role?.some((r) => r === Role.ADMIN && !user.office)) {
-      throw new UnauthorizedError('Admin users must have office.');
+    if (user.role?.some((r) => r === Role.PRINCIPAL && !user.business)) {
+      throw new UnauthorizedError('Principal users must have business.');
     }
     if (
       user.role?.some(
-        (r) => r === Role.MANAGER && (!user.office || !user.department),
+        (r) => r === Role.ADMIN && (!user.business || !user.office),
+      )
+    ) {
+      throw new UnauthorizedError('Admin users must have business and office.');
+    }
+    if (
+      user.role?.some(
+        (r) =>
+          r === Role.MANAGER &&
+          (!user.business || !user.office || !user.department),
       )
     ) {
       throw new UnauthorizedError(
-        'Manager users must have office and department.',
+        'Manager users must have business, office and department.',
       );
     }
     if (
       user.role?.some(
         (r) =>
           r === Role.SUPERVISOR &&
-          (!user.office || !user.department || !user.team),
+          (!user.business || !user.office || !user.department || !user.team),
       )
     ) {
       throw new UnauthorizedError(
-        'Supervisor users must have office, department and team.',
+        'Supervisor users must have business, office, department and team.',
       );
     }
     if (
       user.role?.some(
         (r) =>
-          r === Role.AGENT && (!user.office || !user.department || !user.team),
+          r === Role.AGENT &&
+          (!user.business || !user.office || !user.department || !user.team),
       )
     ) {
       throw new UnauthorizedError(
-        'Agent users must have office, department and team.',
+        'Agent users must have business, office, department and team.',
       );
     }
 

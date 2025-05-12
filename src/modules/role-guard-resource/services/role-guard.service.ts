@@ -11,7 +11,7 @@ import {
 } from '../../../core/graphql/remote-operations';
 import { BaseService } from '../../../core/services/base.service';
 import { ConditionalOperator } from '../../../core/graphql/remote-operations/enums/conditional-operation.enum';
-import { RoleGuardEntity } from '../../../core/entities/role-guard.entity';
+import { RoleGuardEntity } from '../entities/role-guard.entity';
 
 @Injectable()
 export class RoleGuardService
@@ -52,29 +52,35 @@ export class RoleGuardService
       })
     ).totalCount;
     if (cuantity == 0)
-      return super.baseCreate(createRoleGuardInput, ['queryOrEndPointURL']);
+      return super.baseCreate({
+        data: createRoleGuardInput,
+        uniqueFields: ['queryOrEndPointURL'],
+      });
     return undefined;
   }
 
   async findInDB(options?: ListOptions): Promise<ListSummary> {
-    return await super.baseFind(options as ListOptions);
+    return await super.baseFind({ options });
   }
 
   async findOneInDB(id: number): Promise<RoleGuardEntity> {
-    return super.baseFindOne(id);
+    return super.baseFindOne({ id });
   }
 
   async update(
     id: number,
     updateRoleGuardInput: UpdateRoleGuardInput,
   ): Promise<RoleGuardEntity> {
-    const roleGuard = await super.baseUpdate(id, updateRoleGuardInput);
+    const roleGuard = await super.baseUpdate({
+      id,
+      data: updateRoleGuardInput,
+    });
     this.loadRoleGuardEntity();
     return roleGuard;
   }
 
   async remove(ids: number[]): Promise<RoleGuardEntity[]> {
-    return super.baseDeleteMany(ids);
+    return super.baseDeleteMany({ ids });
   }
 
   private async loadRoleGuardEntity() {

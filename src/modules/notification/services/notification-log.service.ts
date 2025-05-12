@@ -21,18 +21,18 @@ export class NotificationLogService extends BaseService<NotificationLog> {
   }
 
   async create(notificationLog: NotificationLog): Promise<NotificationLog> {
-    return super.baseCreate(notificationLog);
+    return super.baseCreate({ data: notificationLog });
   }
 
   async find(options?: ListOptions): Promise<ListSummary> {
-    return await super.baseFind(options as ListOptions);
+    return await super.baseFind({ options });
   }
 
   async findByUser(options?: ListOptions): Promise<ListSummary> {
-    return await super.baseFind(options as ListOptions);
+    return await super.baseFind({ options });
   }
 
   async findOne(id: number): Promise<NotificationLog> {
-    return super.baseFindOne(id);
+    return super.baseFindOne({ id });
   }
 }

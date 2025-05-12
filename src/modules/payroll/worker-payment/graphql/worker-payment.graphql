@@ -1,0 +1,126 @@
+"""
+Description: Records payments made to workers (salary, commissions, bonuses).
+"""
+enum PaymentConcept {
+  SALARY
+  COMMISSION
+  BONUS
+  OTHER
+}
+
+type WorkerPayment implements SecurityBaseEntity {
+  id: Int!
+  createdAt: Date!
+  updatedAt: Date!
+  deletedAt: Date
+
+  createdBy: User
+  updatedBy: User
+  deletedBy: User
+
+  business: Business
+  office: Office
+  department: Department
+  team: Team
+
+  amount: Float!
+  currency: String!
+  exchangeRate: Float
+  paymentMethod: PaymentMethod!
+  paymentType: PaymentType!
+  breakdown: PaymentBreakdown
+  notes: String
+  worker: Worker!
+  payrollPeriod: PayrollPeriod!
+}
+
+type PaymentBreakdown {
+  baseSalary: Float
+  commissions: Float
+  bonuses: Float
+  deductions: Float
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  CHECK
+  MOBILE_PAYMENT
+  OTHER
+}
+
+enum PaymentType {
+  SALARY
+  COMMISSION
+  BONUS
+  OTHER
+}
+
+type WorkerPaymentsSummary {
+  data: [WorkerPayment]!
+  totalCount: Int!
+}
+
+input CreateWorkerPaymentInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  workerId: Int!
+  payrollPeriodId: Int!
+  amount: Float!
+  currency: String!
+  exchangeRate: Float
+  paymentMethod: PaymentMethod!
+  paymentType: PaymentType!
+  breakdown: PaymentBreakdownInput
+  notes: String
+}
+
+input PaymentBreakdownInput {
+  baseSalary: Float
+  commissions: Float
+  bonuses: Float
+  deductions: Float
+}
+
+input UpdateWorkerPaymentInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  id: Int!
+  workerId: Int
+  payrollPeriodId: Int
+  amount: Float
+  currency: String
+  exchangeRate: Float
+  paymentMethod: PaymentMethod
+  paymentType: PaymentType
+  breakdown: PaymentBreakdownInput
+  notes: String
+}
+
+extend type Query {
+  workerPayments(options: ListOptions): WorkerPaymentsSummary!
+  workerPayment(id: Int!): WorkerPayment
+  paymentsByWorker(workerId: Int!): [WorkerPayment]!
+  paymentsByPeriod(periodId: Int!): [WorkerPayment]!
+}
+
+extend type Mutation {
+  createWorkerPayment(
+    createWorkerPaymentInput: CreateWorkerPaymentInput!
+  ): WorkerPayment!
+  updateWorkerPayment(
+    updateWorkerPaymentInput: UpdateWorkerPaymentInput!
+  ): WorkerPayment!
+  removeWorkerPayments(ids: [Int!]!): [WorkerPayment]!
+  restoreWorkerPayments(ids: [Int!]!): Int
+}
+
+extend type Subscription {
+  workerPaymentChanged: Boolean
+}

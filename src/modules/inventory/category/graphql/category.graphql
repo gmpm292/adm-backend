@@ -1,0 +1,65 @@
+"""
+Description: Classification of products (e.g., Clothing, Electronics).
+Stores product categories for organization and filtering.
+"""
+type Category implements SecurityBaseEntity {
+  id: Int!
+  createdAt: Date!
+  updatedAt: Date!
+  deletedAt: Date
+
+  createdBy: User
+  updatedBy: User
+  deletedBy: User
+
+  business: Business
+  office: Office
+  department: Department
+  team: Team
+
+  name: String!
+  description: String
+  products: [Product]! # Relationship to products
+}
+
+type CategoriesSummary {
+  data: [Category]!
+  totalCount: Int!
+}
+
+input CreateCategoryInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  name: String!
+  description: String
+}
+
+input UpdateCategoryInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  id: Int!
+  name: String
+  description: String
+}
+
+extend type Query {
+  categories(options: ListOptions): CategoriesSummary!
+  category(id: Int!): Category
+}
+
+extend type Mutation {
+  createCategory(createCategoryInput: CreateCategoryInput!): Category!
+  updateCategory(updateCategoryInput: UpdateCategoryInput!): Category!
+  removeCategories(ids: [Int!]!): [Category]!
+  restoreCategories(ids: [Int!]!): Int
+}
+
+extend type Subscription {
+  categoryChanged: Boolean
+}

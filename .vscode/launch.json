@@ -8,7 +8,7 @@
             "type": "node-terminal",
             "name": "Ejecutar el script: start:debug",
             "request": "launch",
-            "command": "npm run start:debug",
+            "command": "nvm use 20.18.3 && npm run start:debug",
             "cwd": "${workspaceFolder}"
         }
     ]

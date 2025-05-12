@@ -1,0 +1,29 @@
+interface BaseEntity {
+  id: Int!
+  createdAt: Date!
+  updatedAt: Date!
+  deletedAt: Date
+}
+
+interface SecurityBaseEntity {
+  id: Int!
+  createdAt: Date!
+  updatedAt: Date!
+  deletedAt: Date
+
+  createdBy: User
+  updatedBy: User
+  deletedBy: User
+
+  business: Business
+  office: Office
+  department: Department
+  team: Team
+}
+
+input SecurityBaseInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+}

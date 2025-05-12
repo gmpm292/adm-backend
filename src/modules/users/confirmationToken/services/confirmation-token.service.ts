@@ -63,20 +63,20 @@ export class ConfirmationTokenService extends BaseService<ConfirmationToken> {
       used: false,
     } as ConfirmationToken;
 
-    return super.baseCreate(newconfirmationToken);
+    return super.baseCreate({ data: newconfirmationToken });
   }
 
   public async markTokenAsUsed(tokenId: number): Promise<void> {
-    const token = await super.baseFindOne(tokenId);
+    const token = await super.baseFindOne({ id: tokenId });
     token.used = true;
-    await super.baseUpdate(token.id as number, token);
+    await super.baseUpdate({ id: token.id as number, data: token });
   }
 
   async find(options?: ListOptions): Promise<ListSummary> {
-    return await super.baseFind(options as ListOptions, ['user']);
+    return await super.baseFind({ options, relationsToLoad: ['user'] });
   }
 
   async findOne(id: number): Promise<ConfirmationToken> {
-    return super.baseFindOne(id, ['user']);
+    return super.baseFindOne({ id, relationsToLoad: { user: true } });
   }
 }

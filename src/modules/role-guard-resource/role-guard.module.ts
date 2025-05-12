@@ -3,7 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { RoleGuardResolver } from './resolvers/role-guard.resolver';
 import { RoleGuardService } from './services/role-guard.service';
-import { RoleGuardEntity } from '../../core/entities/role-guard.entity';
+import { RoleGuardEntity } from './entities/role-guard.entity';
 
 @Global()
 @Module({

@@ -1,0 +1,56 @@
+enum DepartmentType {
+  ECONOMIC
+  SALES
+  ADMINISTRATION
+}
+
+type Department {
+  id: Int
+  createdAt: Date
+  updatedAt: Date
+  deletedAt: Date
+  departmentType: DepartmentType
+  teams: [Team]
+  office: Office
+  name: String
+  description: String
+  address: String
+}
+
+type DepartmentSummary {
+  data: [Department]!
+  totalCount: Int!
+}
+
+input CreateDepartmentInput {
+  departmentType: DepartmentType!
+  officeId: Int!
+  name: String
+  description: String
+  address: String
+}
+
+input UpdateDepartmentInput {
+  id: Int!
+  departmentType: DepartmentType
+  officeId: Int
+  name: String
+  description: String
+  address: String
+}
+
+type Query {
+  departments(options: ListOptions): DepartmentSummary!
+  department(id: Int!): Department
+}
+
+type Mutation {
+  createDepartment(createDepartmentInput: CreateDepartmentInput!): Department!
+  updateDepartment(updateDepartmentInput: UpdateDepartmentInput!): Department!
+  removeDepartments(ids: [Int!]!): [Department]!
+  restoreDepartments(ids: [Int!]!): Int
+}
+
+extend type Subscription {
+  departmentChanged: Boolean
+}

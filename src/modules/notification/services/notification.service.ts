@@ -50,11 +50,13 @@ export class NotificationService extends BaseService<Notification> {
     const users = await this.findUsers(createNotificationInput);
     const { titulo, tipo, message, metadata } = createNotificationInput;
     const notification = await super.baseCreate({
-      titulo,
-      tipo,
-      message,
-      metadata,
-      createdBy: { id: currentUser.sub } as User,
+      data: {
+        titulo,
+        tipo,
+        message,
+        metadata,
+        createdBy: { id: currentUser.sub } as User,
+      },
     });
     for (const user of users) {
       const notificationLog: NotificationLog = {
@@ -84,15 +86,18 @@ export class NotificationService extends BaseService<Notification> {
       } as ListFilter);
     }
 
-    const notifications = await this.baseFind(options as ListOptions, [
-      'notificationLogs',
-      'notificationLogs.user',
-      'createdBy',
-      'createdBy.office',
-      'createdBy.department',
-      'createdBy.team',
-      'sentBy',
-    ]);
+    const notifications = await this.baseFind({
+      options,
+      relationsToLoad: [
+        'notificationLogs',
+        'notificationLogs.user',
+        'createdBy',
+        'createdBy.office',
+        'createdBy.department',
+        'createdBy.team',
+        'sentBy',
+      ],
+    });
     notifications.data = (notifications.data as Array<Notification>).map(
       (n) => {
         n['users'] = n.notificationLogs.map((nl) => nl.user);
@@ -153,10 +158,10 @@ export class NotificationService extends BaseService<Notification> {
       logicalOperator: LogicalOperator.AND,
     } as ListFilter);
 
-    const notificationLogs = await this.notificationLogService.baseFind(
+    const notificationLogs = await this.notificationLogService.baseFind({
       options,
-      ['notification', 'user'],
-    );
+      relationsToLoad: ['notification', 'user'],
+    });
 
     /* notificationLogs.data = (
       notificationLogs.data as Array<NotificationLog>
@@ -166,19 +171,25 @@ export class NotificationService extends BaseService<Notification> {
   }
 
   async findOne(id: number): Promise<Notification> {
-    return super.baseFindOne(id, {
-      notificationLogs: { user: true },
-      createdBy: true,
-      sentBy: true,
+    return super.baseFindOne({
+      id,
+      relationsToLoad: {
+        notificationLogs: { user: true },
+        createdBy: true,
+        sentBy: true,
+      },
     });
   }
   async findOneByFilters(
     filters: FindOptionsWhere<Notification>,
   ): Promise<Notification> {
-    return super.baseFindOneByFilters(filters, {
-      notificationLogs: { user: true },
-      createdBy: true,
-      sentBy: true,
+    return super.baseFindOneByFilters({
+      filters,
+      relationsToLoad: {
+        notificationLogs: { user: true },
+        createdBy: true,
+        sentBy: true,
+      },
     });
   }
 
@@ -187,24 +198,24 @@ export class NotificationService extends BaseService<Notification> {
     updateNotificationInput: UpdateNotificationInput,
   ): Promise<Notification> {
     const { titulo, tipo, message } = updateNotificationInput;
-    const notification = await super.baseFindOne(id);
+    const notification = await super.baseFindOne({ id });
     if (!notification) {
       throw new NotFoundError();
     }
     if (notification.status === 'sent') {
       throw new BadRequestError('Cannot update a sent notification.');
     }
-    return super.baseUpdate(id, { titulo, tipo, message });
+    return super.baseUpdate({ id, data: { titulo, tipo, message } });
   }
 
   async remove(ids: number[]): Promise<Notification[]> {
     for (const id of ids) {
-      const notification = await super.baseFindOne(id);
+      const notification = await super.baseFindOne({ id });
       if (notification.status === 'sent') {
         throw new BadRequestError('Cannot delete a sent notification.');
       }
     }
-    return super.baseDeleteMany(ids);
+    return super.baseDeleteMany({ ids });
   }
 
   async markNotificationAsRead(
@@ -212,19 +223,19 @@ export class NotificationService extends BaseService<Notification> {
     id: number,
   ): Promise<NotificationLog> {
     const notificationLog =
-      await this.notificationLogService.baseFindOneByFilters(
-        { user: { id: currentUser.sub }, notification: { id } },
-        { user: true, notification: true },
-      );
+      await this.notificationLogService.baseFindOneByFilters({
+        filters: { user: { id: currentUser.sub }, notification: { id } },
+        relationsToLoad: { user: true, notification: true },
+      });
     if (!notificationLog) {
       throw new NotFoundError();
     }
 
     notificationLog.read = true;
-    this.notificationLogService.baseUpdate(
-      notificationLog.id as number,
-      notificationLog,
-    );
+    this.notificationLogService.baseUpdate({
+      id: notificationLog.id as number,
+      data: notificationLog,
+    });
     return notificationLog;
   }
 
@@ -233,19 +244,19 @@ export class NotificationService extends BaseService<Notification> {
     id: number,
   ): Promise<NotificationLog> {
     const notificationLog =
-      await this.notificationLogService.baseFindOneByFilters(
-        { user: { id: currentUser.sub }, notification: { id } },
-        { user: true, notification: true },
-      );
+      await this.notificationLogService.baseFindOneByFilters({
+        filters: { user: { id: currentUser.sub }, notification: { id } },
+        relationsToLoad: { user: true, notification: true },
+      });
     if (!notificationLog) {
       throw new NotFoundError();
     }
 
     notificationLog.erased = true;
-    this.notificationLogService.baseUpdate(
-      notificationLog.id as number,
-      notificationLog,
-    );
+    this.notificationLogService.baseUpdate({
+      id: notificationLog.id as number,
+      data: notificationLog,
+    });
     return notificationLog;
   }
 
@@ -256,17 +267,17 @@ export class NotificationService extends BaseService<Notification> {
     const notificationLogs: Array<NotificationLog> = [];
     for (const id of ids) {
       const notificationLog =
-        await this.notificationLogService.baseFindOneByFilters(
-          { user: { id: currentUser.sub }, notification: { id } },
-          { user: true, notification: true },
-        );
+        await this.notificationLogService.baseFindOneByFilters({
+          filters: { user: { id: currentUser.sub }, notification: { id } },
+          relationsToLoad: { user: true, notification: true },
+        });
       if (notificationLog) {
         notificationLogs.push(notificationLog);
         notificationLog.erased = true;
-        this.notificationLogService.baseUpdate(
-          notificationLog.id as number,
-          notificationLog,
-        );
+        this.notificationLogService.baseUpdate({
+          id: notificationLog.id as number,
+          data: notificationLog,
+        });
       }
     }
     return notificationLogs;
@@ -281,10 +292,13 @@ export class NotificationService extends BaseService<Notification> {
     if (!titulo && !message) {
       throw new NotFoundError('Notification not found');
     }
-    this.baseUpdate(id as number, {
-      status: 'sent',
-      sentBy: currentUser ? ({ id: currentUser?.sub } as User) : undefined,
-      sentAt: new Date(),
+    this.baseUpdate({
+      id: id as number,
+      data: {
+        status: 'sent',
+        sentBy: currentUser ? ({ id: currentUser?.sub } as User) : undefined,
+        sentAt: new Date(),
+      },
     });
     const messageToSend = JSON.stringify({ titulo, tipo, message });
     const notify = notificationLogs.map((n) => String(n.user.id));

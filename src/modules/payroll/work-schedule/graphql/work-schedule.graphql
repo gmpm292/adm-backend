@@ -1,0 +1,93 @@
+"""
+Description: Defines work schedules for offices with specific working days.
+"""
+type WorkSchedule implements SecurityBaseEntity {
+  id: Int!
+  createdAt: Date!
+  updatedAt: Date!
+  deletedAt: Date
+
+  createdBy: User
+  updatedBy: User
+  deletedBy: User
+
+  business: Business
+  office: Office
+  department: Department
+  team: Team
+
+  startDate: Date!
+  endDate: Date!
+  workingDays: WorkDays!
+  isRecurring: Boolean!
+  notes: String
+}
+
+type WorkDays {
+  monday: Boolean!
+  tuesday: Boolean!
+  wednesday: Boolean!
+  thursday: Boolean!
+  friday: Boolean!
+  saturday: Boolean!
+  sunday: Boolean!
+}
+
+type WorkSchedulesSummary {
+  data: [WorkSchedule]!
+  totalCount: Int!
+}
+
+input CreateWorkScheduleInput {
+  businessId: Int!
+  officeId: Int!
+  departmentId: Int
+  teamId: Int
+
+  startDate: Date!
+  endDate: Date!
+  workingDays: WorkDaysInput!
+  isRecurring: Boolean
+  notes: String
+}
+
+input WorkDaysInput {
+  monday: Boolean!
+  tuesday: Boolean!
+  wednesday: Boolean!
+  thursday: Boolean!
+  friday: Boolean!
+  saturday: Boolean!
+  sunday: Boolean!
+}
+
+input UpdateWorkScheduleInput {
+  id: Int!
+  officeId: Int
+  startDate: Date
+  endDate: Date
+  workingDays: WorkDaysInput
+  isRecurring: Boolean
+  notes: String
+}
+
+extend type Query {
+  workSchedules(options: ListOptions): WorkSchedulesSummary!
+  workSchedule(id: Int!): WorkSchedule
+  workSchedulesByOffice(officeId: Int!): [WorkSchedule]!
+}
+
+extend type Mutation {
+  createWorkSchedule(
+    createWorkScheduleInput: CreateWorkScheduleInput!
+  ): WorkSchedule!
+  updateWorkSchedule(
+    updateWorkScheduleInput: UpdateWorkScheduleInput!
+  ): WorkSchedule!
+  removeWorkSchedules(ids: [Int!]!): [WorkSchedule]!
+  restoreWorkSchedules(ids: [Int!]!): Int
+}
+
+extend type Subscription {
+  workScheduleChanged: Boolean
+}

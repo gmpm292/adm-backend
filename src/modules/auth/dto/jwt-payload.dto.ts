@@ -11,6 +11,7 @@ export interface JWTPayload {
    */
   sub: number;
 
+  businessId?: number;
   officeId?: number;
   departmentId?: number;
   teamId?: number;

@@ -1,0 +1,89 @@
+enum PaymentMethod {
+  CASH
+  CARD
+  TRANSFER
+  OTHER
+}
+
+type Sale implements SecurityBaseEntity {
+  id: Int!
+  createdAt: Date!
+  updatedAt: Date!
+  deletedAt: Date
+
+  createdBy: User
+  updatedBy: User
+  deletedBy: User
+
+  business: Business
+  office: Office
+  department: Department
+  team: Team
+
+  totalAmount: Float!
+  paymentMethod: PaymentMethod!
+  invoiceNumber: String
+  paymentDetails: JSON
+  salesUser: User!
+  customer: Customer
+  details: [SaleDetail]!
+}
+
+type SalesSummary {
+  data: [Sale]!
+  totalCount: Int!
+}
+
+input CreateSaleInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  salesUserId: Int!
+  customerId: Int
+  totalAmount: Float!
+  paymentMethod: PaymentMethod!
+  paymentDetails: JSON
+  invoiceNumber: String
+  details: [SaleDetailInput!]!
+}
+
+input SaleDetailInput {
+  productId: Int!
+  quantity: Float!
+  unitPrice: Float!
+  discountPercentage: Float
+}
+
+input UpdateSaleInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  id: Int!
+  salesUserId: Int
+  customerId: Int
+  totalAmount: Float
+  paymentMethod: PaymentMethod
+  paymentDetails: JSON
+  invoiceNumber: String
+}
+
+extend type Query {
+  sales(options: ListOptions): SalesSummary!
+  sale(id: Int!): Sale
+  salesByCustomer(customerId: Int!): [Sale]!
+}
+
+extend type Mutation {
+  createSale(createSaleInput: CreateSaleInput!): Sale!
+  updateSale(updateSaleInput: UpdateSaleInput!): Sale!
+  removeSales(ids: [Int!]!): [Sale]!
+  restoreSales(ids: [Int!]!): Int
+}
+
+extend type Subscription {
+  saleChanged: Boolean
+}

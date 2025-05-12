@@ -1,0 +1,54 @@
+enum OfficeType {
+  OFFICE
+  BRANCH
+}
+
+type Office {
+  id: Int
+  createdAt: Date
+  updatedAt: Date
+  deletedAt: Date
+  officeType: OfficeType
+  name: String
+  description: String
+  address: String
+  business: Business
+  departments: [Department]
+}
+
+type OfficesSummary {
+  data: [Office]!
+  totalCount: Int!
+}
+
+input CreateOfficeInput {
+  businessId: Int!
+  officeType: OfficeType!
+  name: String!
+  description: String!
+  address: String
+}
+
+input UpdateOfficeInput {
+  id: Int!
+  officeType: OfficeType
+  name: String
+  description: String
+  address: String
+}
+
+type Query {
+  offices(options: ListOptions): OfficesSummary!
+  office(id: Int!): Office
+}
+
+type Mutation {
+  createOffice(createOfficeInput: CreateOfficeInput!): Office!
+  updateOffice(updateOfficeInput: UpdateOfficeInput!): Office!
+  removeOffices(ids: [Int!]!): [Office]!
+  restoreOffices(ids: [Int!]!): Int
+}
+
+extend type Subscription {
+  officeChanged: Boolean
+}

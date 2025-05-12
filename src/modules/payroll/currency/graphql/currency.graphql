@@ -1,0 +1,73 @@
+type Currency implements SecurityBaseEntity {
+  id: Int!
+  code: String!
+  createdAt: Date!
+  updatedAt: Date!
+  deletedAt: Date
+
+  createdBy: User
+  updatedBy: User
+  deletedBy: User
+
+  business: Business
+  office: Office
+  department: Department
+  team: Team
+
+  name: String!
+  symbol: String!
+  exchangeRateToCUP: Float!
+  isActive: Boolean!
+  metadata: JSON
+}
+
+type CurrenciesSummary {
+  data: [Currency]!
+  totalCount: Int!
+}
+
+input CreateCurrencyInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  code: String!
+  name: String!
+  symbol: String!
+  exchangeRateToCUP: Float!
+  isActive: Boolean
+  metadata: JSON
+}
+
+input UpdateCurrencyInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  id: Int!
+  code: String
+  name: String
+  symbol: String
+  exchangeRateToCUP: Float
+  isActive: Boolean
+  metadata: JSON
+}
+
+extend type Query {
+  currencies(options: ListOptions): CurrenciesSummary!
+  currency(code: String!): Currency
+  activeCurrencies: [Currency]!
+}
+
+extend type Mutation {
+  createCurrency(createCurrencyInput: CreateCurrencyInput!): Currency!
+  updateCurrency(updateCurrencyInput: UpdateCurrencyInput!): Currency!
+  deactivateCurrency(code: String!): Currency!
+  activateCurrency(code: String!): Currency!
+}
+
+extend type Subscription {
+  currencyChanged: Boolean
+}

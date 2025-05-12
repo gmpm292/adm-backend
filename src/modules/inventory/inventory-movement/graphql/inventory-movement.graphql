@@ -1,0 +1,84 @@
+"""
+Description: Records of product inflows/outflows (e.g., purchases, sales, adjustments).
+"""
+type InventoryMovement implements SecurityBaseEntity {
+  id: Int!
+  createdAt: Date!
+  updatedAt: Date!
+  deletedAt: Date
+
+  createdBy: User
+  updatedBy: User
+  deletedBy: User
+
+  business: Business
+  office: Office
+  department: Department
+  team: Team
+
+  type: MovementType!
+  quantity: Int!
+  reason: String!
+  timestamp: Date!
+  inventory: Inventory!
+  user: User!
+}
+
+type InventoryMovementsSummary {
+  data: [InventoryMovement]!
+  totalCount: Int!
+}
+
+enum MovementType {
+  IN
+  OUT
+}
+
+input CreateInventoryMovementInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  inventoryId: Int!
+  userId: Int!
+  type: MovementType!
+  quantity: Int!
+  reason: String!
+}
+
+input UpdateInventoryMovementInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  id: Int!
+  inventoryId: Int
+  userId: Int
+  type: MovementType
+  quantity: Int
+  reason: String
+}
+
+extend type Query {
+  inventoryMovements(options: ListOptions): InventoryMovementsSummary!
+  inventoryMovement(id: Int!): InventoryMovement
+  movementsByInventory(inventoryId: Int!): [InventoryMovement]!
+  movementsByType(type: MovementType!): [InventoryMovement]!
+}
+
+extend type Mutation {
+  createInventoryMovement(
+    createInventoryMovementInput: CreateInventoryMovementInput!
+  ): InventoryMovement!
+  updateInventoryMovement(
+    updateInventoryMovementInput: UpdateInventoryMovementInput!
+  ): InventoryMovement!
+  removeInventoryMovements(ids: [Int!]!): [InventoryMovement]!
+  restoreInventoryMovements(ids: [Int!]!): Int
+}
+
+extend type Subscription {
+  inventoryMovementChanged: Boolean
+}

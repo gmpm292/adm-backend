@@ -19,6 +19,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
           ssl: isRemote() ? { rejectUnauthorized: false } : false,
 
           entities: ['dist/**/*.entity{.ts,.js}'],
+          subscribers: ['dist/**/*.subscriber{.ts,.js}'],
           migrationsTableName: 'migrations',
           migrations: ['dist/migrations/*.js'],
 

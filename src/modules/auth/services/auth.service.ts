@@ -130,9 +130,10 @@ export class AuthService {
         sub: user.id,
         role: user.role,
 
-        officeId: 1, //user.office?.id,
-        departmentId: 1, //user.department?.id,
-        teamId: 1, //user.team?.id,
+        businessId: user.business?.id,
+        officeId: user.office?.id,
+        departmentId: user.department?.id,
+        teamId: user.team?.id,
 
         twoFactorAuthRequired: user.isTwoFactorEnabled,
         twoFactorAuthPassed,
@@ -297,7 +298,12 @@ export class AuthService {
         userAgent: req.header('user-agent'),
       },
     });
-    await this.cacheManager.set(`AccessTokenUser${user.id}`, values);
+    const cachedValue = await this.cacheManager.set(
+      `AccessTokenUser${user.id}`,
+      values,
+      60 * 60 * 24,
+    );
+    const a = await this.cacheManager.get(`AccessTokenUser${user.id}`);
   }
 
   public async removeAccessToken(user: User) {
@@ -325,7 +331,11 @@ export class AuthService {
         return false;
       });
     }
-    await this.cacheManager.set(`AccessTokenUser${user.id}`, values);
+    await this.cacheManager.set(
+      `AccessTokenUser${user.id}`,
+      values,
+      60 * 60 * 24,
+    );
   }
 
   public async checkAndNotifyCloseActiveSession(user: User) {

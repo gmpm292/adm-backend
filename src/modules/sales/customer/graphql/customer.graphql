@@ -1,0 +1,71 @@
+type Customer implements SecurityBaseEntity {
+  id: Int!
+  createdAt: Date!
+  updatedAt: Date!
+  deletedAt: Date
+
+  createdBy: User
+  updatedBy: User
+  deletedBy: User
+
+  business: Business
+  office: Office
+  department: Department
+  team: Team
+
+  name: String!
+  email: String
+  phone: String
+  loyaltyPoints: Int!
+  additionalInfo: JSON
+  user: User
+  sales: [Sale]!
+}
+
+type CustomersSummary {
+  data: [Customer]!
+  totalCount: Int!
+}
+
+input CreateCustomerInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  name: String!
+  email: String
+  phone: String
+  additionalInfo: JSON
+  userId: Int
+}
+
+input UpdateCustomerInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  id: Int!
+  name: String
+  email: String
+  phone: String
+  additionalInfo: JSON
+  userId: Int
+}
+
+extend type Query {
+  customers(options: ListOptions): CustomersSummary!
+  customer(id: Int!): Customer
+}
+
+extend type Mutation {
+  createCustomer(createCustomerInput: CreateCustomerInput!): Customer!
+  updateCustomer(updateCustomerInput: UpdateCustomerInput!): Customer!
+  removeCustomers(ids: [Int!]!): [Customer]!
+  restoreCustomers(ids: [Int!]!): Int
+}
+
+extend type Subscription {
+  customerChanged: Boolean
+}

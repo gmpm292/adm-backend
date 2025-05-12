@@ -1,10 +1,22 @@
 import { IsEmail, IsPhoneNumber, IsString } from 'class-validator';
-import { Column, Entity, Index, OneToMany, TableInheritance } from 'typeorm';
+import {
+  Column,
+  Entity,
+  Index,
+  ManyToOne,
+  OneToMany,
+  TableInheritance,
+} from 'typeorm';
 
-import { BaseEntity } from '../../../core/entities/base.entity';
 import { Role } from '../../../core/enums/role.enum';
 import { ConfirmationToken } from './confirmation-token.entity';
 import { NotificationLog } from '../../notification/entities/notification-log.entity';
+import { BaseEntity } from '../../../core/entities/base.entity';
+import { Business } from '../../company/business/entities/co_business.entity';
+import { Office } from '../../company/office/entities/co_office.entity';
+import { Department } from '../../company/department/entities/co_department.entity';
+import { Team } from '../../company/team/entities/co_team.entity';
+import { UserRelation } from '../../user-relation/entities/user-relation.entity';
 
 @Entity('users')
 @TableInheritance({
@@ -69,21 +81,38 @@ export class User extends BaseEntity {
   @OneToMany(() => NotificationLog, (notificationLog) => notificationLog.user)
   notificationLogs?: NotificationLog[];
 
-  /*
-   * Worker attributes.
-   */
-  // @ManyToOne(() => Office, {
-  //   nullable: true,
-  // })
-  office?: any; //Office;
+  @ManyToOne(() => User, {
+    nullable: true,
+  })
+  public createdBy?: User;
 
-  // @ManyToOne(() => Department, {
-  //   nullable: true,
-  // })
-  department?: any; //Department;
+  @ManyToOne(() => User, {
+    nullable: true,
+  })
+  public deletedBy?: User;
 
-  // @ManyToOne(() => Team, {
-  //   nullable: true,
-  // })
-  team?: any; //Team;
+  @ManyToOne(() => User, {
+    nullable: true,
+  })
+  public updatedBy?: User;
+
+  @ManyToOne(() => Business, {
+    nullable: true,
+  })
+  business?: Business;
+
+  @ManyToOne(() => Office, {
+    nullable: true,
+  })
+  office?: Office;
+
+  @ManyToOne(() => Department, {
+    nullable: true,
+  })
+  department?: Department;
+
+  @ManyToOne(() => Team, {
+    nullable: true,
+  })
+  team?: Team;
 }

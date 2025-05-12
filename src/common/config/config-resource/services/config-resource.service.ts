@@ -34,7 +34,10 @@ export class ConfigResourceService
   }
 
   async create(createConfigInput: CreateConfigInput): Promise<Config> {
-    const created = await super.baseCreate(createConfigInput, ['group']);
+    const created = await super.baseCreate({
+      data: createConfigInput,
+      uniqueFields: ['group'],
+    });
     await this.initMap();
     return created;
   }
@@ -54,7 +57,7 @@ export class ConfigResourceService
     //     logicalOperator: LogicalOperator.AND,
     //   } as ListFilter);
     // }
-    return await super.baseFind(options);
+    return await super.baseFind({ options });
   }
 
   async findOne(id: number /*user?: JWTPayload*/): Promise<Config> {
@@ -62,20 +65,20 @@ export class ConfigResourceService
     // if (!user?.role.some((r) => r == Role.SUPER)) {
     //   filters = { ...filters, configVisibility: ConfigVisibility.PUBLIC_ENT };
     // }
-    return super.baseFindOneByFilters(filters);
+    return super.baseFindOneByFilters({ filters });
   }
 
   async update(
     id: number,
     updateConfigInput: UpdateConfigInput,
   ): Promise<Config> {
-    const updated = await super.baseUpdate(id, updateConfigInput);
+    const updated = await super.baseUpdate({ id, data: updateConfigInput });
     await this.initMap();
     return updated;
   }
 
   async remove(ids: number[]): Promise<Config[]> {
-    return super.baseDeleteMany(ids, undefined, false);
+    return super.baseDeleteMany({ ids, softRemove: false });
   }
 
   async syncBackendConfigurationsAndDB() {

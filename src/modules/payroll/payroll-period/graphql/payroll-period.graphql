@@ -1,0 +1,73 @@
+type PayrollPeriod implements SecurityBaseEntity {
+  id: Int!
+  createdAt: Date!
+  updatedAt: Date!
+  deletedAt: Date
+
+  createdBy: User
+  updatedBy: User
+  deletedBy: User
+
+  business: Business
+  office: Office
+  department: Department
+  team: Team
+
+  startDate: Date!
+  endDate: Date!
+  isClosed: Boolean!
+  name: String!
+  description: String
+  payments: [WorkerPayment!]!
+}
+
+type PayrollPeriodsSummary {
+  data: [PayrollPeriod!]!
+  totalCount: Int!
+}
+
+input CreatePayrollPeriodInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  startDate: Date!
+  endDate: Date!
+  isClosed: Boolean
+  name: String!
+  description: String
+}
+
+input UpdatePayrollPeriodInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  id: Int!
+  startDate: Date
+  endDate: Date
+  isClosed: Boolean
+  name: String
+  description: String
+}
+
+extend type Query {
+  payrollPeriods(options: ListOptions): PayrollPeriodsSummary!
+  payrollPeriod(id: Int!): PayrollPeriod
+  currentPayrollPeriod: PayrollPeriod
+  closedPayrollPeriods: [PayrollPeriod!]!
+}
+
+extend type Mutation {
+  createPayrollPeriod(createPayrollPeriodInput: CreatePayrollPeriodInput!): PayrollPeriod!
+  updatePayrollPeriod(updatePayrollPeriodInput: UpdatePayrollPeriodInput!): PayrollPeriod!
+  closePayrollPeriod(id: Int!): PayrollPeriod!
+  removePayrollPeriods(ids: [Int!]!): [PayrollPeriod!]!
+  restorePayrollPeriods(ids: [Int!]!): Int
+}
+
+extend type Subscription {
+  payrollPeriodChanged: Boolean
+}

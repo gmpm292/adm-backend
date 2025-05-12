@@ -1,0 +1,39 @@
+enum TeamTypeEnum {
+  OPERATIONS
+  NEW_BUSINESS
+  RENOVATIONS
+}
+type Team {
+  id: Int
+  createdAt: Date
+  updatedAt: Date
+  deletedAt: Date
+  teamType: TeamTypeEnum
+  department: Department
+}
+type TeamsSummary {
+  data: [Team]!
+  totalCount: Int!
+}
+input CreateTeamInput {
+  teamType: TeamTypeEnum!
+  departmentId: Int!
+}
+input UpdateTeamInput {
+  id: Int!
+  teamType: TeamTypeEnum
+  departmentId: Int
+}
+type Query {
+  teams(options: ListOptions): TeamsSummary!
+  team(id: Int!): Team
+}
+type Mutation {
+  createTeam(createTeamInput: CreateTeamInput!): Team!
+  updateTeam(updateTeamInput: UpdateTeamInput!): Team!
+  removeTeams(ids: [Int!]!): [Team]!
+  restoreTeams(ids: [Int!]!): Int
+}
+extend type Subscription {
+  teamChanged: Boolean
+}

@@ -21,13 +21,11 @@ export class AppInfoService {
   ) {}
 
   public appInfo() {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { name, version, description } = JSON.parse(
       readFileSync('package.json', 'utf8'),
     );
-    const a = this.configService.get('NODE_ENV');
     return {
-      name: a,
+      name,
       version,
       description,
     };

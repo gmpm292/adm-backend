@@ -1,0 +1,72 @@
+"""
+Description: Stock records per office/location.
+"""
+type Inventory implements SecurityBaseEntity {
+  id: Int!
+  createdAt: Date!
+  updatedAt: Date!
+  deletedAt: Date
+
+  createdBy: User
+  updatedBy: User
+  deletedBy: User
+
+  business: Business
+  office: Office
+  department: Department
+  team: Team
+
+  currentStock: Int!
+  minStock: Int
+  location: String
+  product: Product!
+  inventoryMovements: [InventoryMovement]!
+}
+
+type InventoriesSummary {
+  data: [Inventory]!
+  totalCount: Int!
+}
+
+input CreateInventoryInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  productId: Int!
+  currentStock: Int!
+  minStock: Int
+  location: String
+}
+
+input UpdateInventoryInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  id: Int!
+  productId: Int
+  currentStock: Int
+  minStock: Int
+  location: String
+}
+
+extend type Query {
+  inventories(options: ListOptions): InventoriesSummary!
+  inventory(id: Int!): Inventory
+  inventoriesByProduct(productId: Int!): [Inventory]!
+}
+
+extend type Mutation {
+  createInventory(createInventoryInput: CreateInventoryInput!): Inventory!
+  updateInventory(updateInventoryInput: UpdateInventoryInput!): Inventory!
+  removeInventories(ids: [Int!]!): [Inventory]!
+  restoreInventories(ids: [Int!]!): Int
+  #adjustInventory(id: Int!, adjustment: Int!, reason: String!): Inventory!
+}
+
+extend type Subscription {
+  inventoryChanged: Boolean
+}

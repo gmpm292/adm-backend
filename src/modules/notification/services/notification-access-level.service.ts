@@ -1,7 +1,4 @@
 /* eslint-disable @typescript-eslint/require-await */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
 import { Injectable } from '@nestjs/common';
 
 import { InjectRepository } from '@nestjs/typeorm';
@@ -43,21 +40,21 @@ export class NotificationAccessLevelService {
       options.filters?.push({
         property: 'createdBy.officeId',
         operator: ConditionalOperator.EQUAL,
-        value: user.office?.id.toString(),
+        value: user.office?.id?.toString(),
         logicalOperator: LogicalOperator.AND,
       } as ListFilter);
     } else if (user.role?.some((r) => r === Role.MANAGER)) {
       options.filters?.push({
         property: 'createdBy.departmentId',
         operator: ConditionalOperator.EQUAL,
-        value: user.department?.id.toString(),
+        value: user.department?.id?.toString(),
         logicalOperator: LogicalOperator.AND,
       } as ListFilter);
     } else if (user.role?.some((r) => r === Role.SUPERVISOR)) {
       options.filters?.push({
         property: 'createdBy.teamId',
         operator: ConditionalOperator.EQUAL,
-        value: user.team?.id.toString(),
+        value: user.team?.id?.toString(),
         logicalOperator: LogicalOperator.AND,
       } as ListFilter);
     }

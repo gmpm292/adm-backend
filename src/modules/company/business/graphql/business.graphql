@@ -1,0 +1,50 @@
+type Business {
+  id: Int
+  createdAt: Date
+  updatedAt: Date
+  deletedAt: Date
+  name: String
+  taxId: String
+  address: String
+  contactPhone: String
+  contactEmail: String
+  offices: [Office]
+}
+
+type BusinessesSummary {
+  data: [Business]!
+  totalCount: Int!
+}
+
+input CreateBusinessInput {
+  name: String!
+  taxId: String
+  address: String
+  contactPhone: String
+  contactEmail: String
+}
+
+input UpdateBusinessInput {
+  id: Int!
+  name: String
+  taxId: String
+  address: String
+  contactPhone: String
+  contactEmail: String
+}
+
+extend type Query {
+  businesses(options: ListOptions): BusinessesSummary!
+  business(id: Int!): Business
+}
+
+extend type Mutation {
+  createBusiness(createBusinessInput: CreateBusinessInput!): Business!
+  updateBusiness(updateBusinessInput: UpdateBusinessInput!): Business!
+  removeBusinesses(ids: [Int!]!): [Business]!
+  restoreBusinesses(ids: [Int!]!): Int
+}
+
+extend type Subscription {
+  businessChanged: Boolean
+}

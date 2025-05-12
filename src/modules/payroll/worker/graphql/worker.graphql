@@ -1,0 +1,81 @@
+enum WorkerType {
+  AGENT
+  PUBLICIST
+  ECONOMIC
+  OTHER
+}
+
+type Worker implements SecurityBaseEntity {
+  id: Int!
+  createdAt: Date!
+  updatedAt: Date!
+  deletedAt: Date
+
+  createdBy: User
+  updatedBy: User
+  deletedBy: User
+
+  business: Business
+  office: Office
+  department: Department
+  team: Team
+
+  workerType: String!
+  baseSalary: Float!
+  customPaymentSettings: JSON
+  user: User
+  role: Role
+  paymentRule: PaymentRule
+}
+
+type WorkersSummary {
+  data: [Worker]!
+  totalCount: Int!
+}
+
+input CreateWorkerInput {
+  businessId: Int!
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  userId: Int
+  role: Role!
+  workerType: String!
+  paymentRuleId: Int
+  baseSalary: Float
+  customPaymentSettings: JSON
+}
+
+input UpdateWorkerInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  id: Int!
+  userId: Int
+  role: Role
+  workerType: String
+  paymentRuleId: Int
+  baseSalary: Float
+  customPaymentSettings: JSON
+}
+
+extend type Query {
+  workers(options: ListOptions): WorkersSummary!
+  worker(id: Int!): Worker
+  workersByOffice(officeId: Int!): [Worker]!
+  workersByType(type: String!): [Worker]!
+}
+
+extend type Mutation {
+  createWorker(createWorkerInput: CreateWorkerInput!): Worker!
+  updateWorker(updateWorkerInput: UpdateWorkerInput!): Worker!
+  removeWorkers(ids: [Int!]!): [Worker]!
+  restoreWorkers(ids: [Int!]!): Int
+}
+
+extend type Subscription {
+  workerChanged: Boolean
+}

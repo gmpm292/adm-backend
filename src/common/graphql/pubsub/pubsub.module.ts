@@ -35,7 +35,7 @@ export const REDIS_PUB_SUB_TOKEN = 'REDIS_PUB_SUB_TOKEN';
         if (!(options.connection as RedisOptions).tls) {
           delete (options.connection as RedisOptions).tls;
         }
-        return new RedisPubSub(options);
+        return; //new RedisPubSub(options);
       },
     },
   ],

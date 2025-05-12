@@ -28,7 +28,6 @@ export class ClassicLocalAuthGuard extends AuthGuard(classicLocalStrategyName) {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     try {
       const result = await super.canActivate(context);
-      console.log('Guard - canActivate result:', result);
       return result as boolean;
     } catch (error) {
       console.log('Guard - Error:', error);

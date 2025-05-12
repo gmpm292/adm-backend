@@ -12,6 +12,7 @@ import { ConfirmationToken } from './entities/confirmation-token.entity';
 import { GraphqlModule } from '../../common/graphql/graphql.module';
 import { LoggerModule } from '../../common/logger';
 import { ConfigModule } from '../../common/config';
+import { CoreModule } from '../../core/core.module';
 
 @Global()
 @Module({
@@ -30,6 +31,7 @@ import { ConfigModule } from '../../common/config';
     ConfigModule,
     //CustomerHistoryModule,
     //LeadCenterModule,
+    CoreModule,
   ],
   providers: [
     UsersResolver,

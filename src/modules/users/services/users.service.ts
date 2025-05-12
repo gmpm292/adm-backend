@@ -1,4 +1,4 @@
-/* eslint-disable prettier/prettier */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/require-await */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
@@ -32,14 +32,25 @@ import { DisabledUserError } from '../../../core/errors/appErrors/DisabledUserEr
 import { ForbiddenResourceError } from '../../../core/errors/appErrors/ForbiddenResourceError';
 import { ConditionalOperator } from '../../../core/graphql/remote-operations/enums/conditional-operation.enum';
 import { LogicalOperator } from '../../../core/graphql/remote-operations/enums/logical-operator.enum';
+import { ScopedAccessEnum } from '../../../core/enums/scoped-access.enum';
+import { ScopedAccessService } from '../../scoped-access/services/scoped-access.service';
 
 @Injectable()
 export class UsersService extends BaseService<User> {
+  restore(
+    ids: (number | undefined)[],
+    cu: JWTPayload | undefined,
+    scopes: ScopedAccessEnum[] | undefined,
+    manager?: EntityManager,
+  ): any {
+    throw new Error('Method not implemented.');
+  }
   public constructor(
     @InjectRepository(User) private usersRepository: Repository<User>,
     private confirmationTokenService: ConfirmationTokenService,
     @InjectEntityManager()
     private readonly mannager: EntityManager,
+    protected scopedAccessService: ScopedAccessService,
   ) {
     super(usersRepository);
   }
@@ -52,6 +63,10 @@ export class UsersService extends BaseService<User> {
       where: { confirmationTokens: { tokenValue: confirmationToken } },
       relations: { confirmationTokens: true },
     });
+    // Bloquear cambio de contraseña para usuario sistema
+    if (user?.email === 'system@admin.com') {
+      throw new BadRequestError('Cannot change password for system user');
+    }
     if (!user) {
       throw new NotFoundError('Confirmation token not found');
     }
@@ -78,6 +93,7 @@ export class UsersService extends BaseService<User> {
     await this.usersRepository.update(
       { id: user.id },
       {
+        email: user.email,
         password: await hash(newPassword, 10),
         ...propertiesToUpdateAndRetrieve,
       },
@@ -114,9 +130,11 @@ export class UsersService extends BaseService<User> {
 
   public async changePasswordByEmail(
     { email, newPassword },
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     currentUser: JWTPayload,
   ): Promise<User> {
+    if (email === 'system@admin.com') {
+      throw new BadRequestError('Cannot change password for system user');
+    }
     const user = await this.findByEmail(email);
     if (!user) {
       throw new NotFoundError('User not found');
@@ -140,6 +158,7 @@ export class UsersService extends BaseService<User> {
     await this.usersRepository.update(
       { id: user.id },
       {
+        email: user.email,
         password: await hash(newPassword, 10),
         ...propertiesToUpdateAndRetrieve,
       },
@@ -186,7 +205,6 @@ export class UsersService extends BaseService<User> {
     currentUser?: JWTPayload,
   ): Promise<User> {
     await this.checkUserInformation(createUserInput, currentUser as JWTPayload);
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { name, lastName, officeId, departmentId, teamId, leadId, ...rest } =
       createUserInput;
     const fullName = `${name?.trim() ?? ''} ${lastName?.trim() ?? ''}`;
@@ -228,7 +246,6 @@ export class UsersService extends BaseService<User> {
     if (!createUserInput.officeId) {
       throw new BadRequestError('The office is required.');
     }
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { name, lastName, officeId, departmentId, teamId, leadId, ...rest } =
       createUserInput;
     const fullName = `${name?.trim() ?? ''} ${lastName?.trim() ?? ''}`;
@@ -290,28 +307,27 @@ export class UsersService extends BaseService<User> {
   }
 
   public async find(options?: ListOptions): Promise<ListSummary> {
-    return super.baseFind(options as ListOptions, [
-      // 'office',
-      // 'department',
-      // 'team',
-    ]);
+    return super.baseFind({
+      options,
+      relationsToLoad: ['office', 'department', 'team'],
+    });
   }
 
   public findCustomers(options?: ListOptions): Promise<ListSummary> {
-    return super.baseFind(options as ListOptions, [
-      // 'office',
-      // 'department',
-      // 'team',
-    ]);
+    return super.baseFind({
+      options,
+      relationsToLoad: ['office', 'department', 'team'],
+    });
   }
 
   public async findByEmail(email: string, withDeleted = false): Promise<User> {
     const user = await this.usersRepository.findOne({
       where: { email },
       relations: {
-        // office: true,
-        // department: true,
-        // team: true,
+        business: true,
+        office: true,
+        department: true,
+        team: true,
         confirmationTokens: true,
       },
       withDeleted,
@@ -334,18 +350,18 @@ export class UsersService extends BaseService<User> {
   public async findOne(
     id: number,
     filters: FindOptionsWhere<User> = {},
+    cu?: JWTPayload,
+    scopes?: ScopedAccessEnum[],
+    manager?: EntityManager,
   ): Promise<User> {
     const user = await this.usersRepository.findOne({
       where: { id, ...filters },
       relations: {
-        // policies: true,
-        // office: true,
-        // sucursal: true,
-        // department: true,
-        // team: true,
-        // lead: true,
+        business: true,
+        office: true,
+        department: true,
+        team: true,
         confirmationTokens: true,
-        //customerRelations: true,
       },
     });
 
@@ -359,8 +375,9 @@ export class UsersService extends BaseService<User> {
   public async remove(
     ids: number[],
     filters: FindOptionsWhere<User> = {},
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     currentUser: JWTPayload,
+    scopes?: ScopedAccessEnum[],
+    manager?: EntityManager,
   ): Promise<User[]> {
     const users = await this.usersRepository.findBy({
       id: In(ids),
@@ -391,7 +408,7 @@ export class UsersService extends BaseService<User> {
     // if refreshToken is not empty then hash it and save it
     const updateResult = await this.usersRepository.update(id, {
       //refreshToken: refreshToken ? await hash(refreshToken, 10) : null,
-      refreshToken: refreshToken ? refreshToken : null as any,
+      refreshToken: refreshToken ? refreshToken : (null as any),
     });
 
     return Boolean(updateResult.affected);
@@ -423,6 +440,7 @@ export class UsersService extends BaseService<User> {
       );
     }
     await this.usersRepository.update(id, {
+      email: user.email,
       twoFASecret,
       isTwoFactorEnabled: true,
       isTwoFactorConfigured: false,
@@ -463,6 +481,7 @@ export class UsersService extends BaseService<User> {
       );
     }
     await this.usersRepository.update(id, {
+      email: user.email,
       isTwoFactorEnabled: true,
       isTwoFactorConfigured: true,
     });
@@ -494,6 +513,7 @@ export class UsersService extends BaseService<User> {
       throw new ForbiddenResourceError('Two-factor authentication not enable');
     }
     await this.usersRepository.update(id, {
+      email: user.email,
       isTwoFactorEnabled: true,
       isTwoFactorConfigured: false,
     });
@@ -523,6 +543,7 @@ export class UsersService extends BaseService<User> {
       throw new ForbiddenResourceError('Two-factor authentication enable');
     }
     await this.usersRepository.update(id, {
+      email: user.email,
       isTwoFactorEnabled: true,
     });
 
@@ -551,6 +572,7 @@ export class UsersService extends BaseService<User> {
       throw new ForbiddenResourceError('Two-factor authentication not enable');
     }
     await this.usersRepository.update(id, {
+      email: user.email,
       isTwoFactorEnabled: false,
     });
 
@@ -564,7 +586,6 @@ export class UsersService extends BaseService<User> {
     filters: FindOptionsWhere<User> = {},
   ): Promise<User | null> {
     await this.checkUserInformation(updateUserInput, currentUser);
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { name, lastName, officeId, departmentId, teamId, ...rest } =
       updateUserInput;
     const savedUser = await this.findOne(id, filters);
@@ -718,7 +739,6 @@ export class UsersService extends BaseService<User> {
     filters: FindOptionsWhere<User> = {},
   ): Promise<User | null> {
     await this.checkUserInformation(updateUserRoleInput, currentUser);
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { officeId, departmentId, teamId } = updateUserRoleInput;
     const savedUser = await this.findOne(id, filters);
     if (!savedUser) {
@@ -734,21 +754,22 @@ export class UsersService extends BaseService<User> {
 
     const user: User = {
       role: updateUserRoleInput.role ?? savedUser.role,
-      // office: officeId
-      //   ? { id: officeId }
-      //   : updateUserRoleInput.role
-      //     ? null
-      //     : savedUser.office,
-      // department: departmentId
-      //   ? { id: departmentId }
-      //   : updateUserRoleInput.role
-      //     ? null
-      //     : savedUser.department,
-      // team: teamId
-      //   ? { id: teamId }
-      //   : updateUserRoleInput.role
-      //     ? null
-      //     : savedUser.team,
+      email: savedUser.email,
+      office: officeId
+        ? { id: officeId }
+        : updateUserRoleInput.role
+          ? null
+          : savedUser.office,
+      department: departmentId
+        ? { id: departmentId }
+        : updateUserRoleInput.role
+          ? null
+          : savedUser.department,
+      team: teamId
+        ? { id: teamId }
+        : updateUserRoleInput.role
+          ? null
+          : savedUser.team,
     } as User;
 
     await this.chekCompanyInfo(user);
@@ -766,179 +787,179 @@ export class UsersService extends BaseService<User> {
   }
 
   private async checkUserInformation(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     userInput:
       | CreateUserInput
       | Omit<UpdateUserInput, 'id'>
       | UpdateUserRoleInput,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     currentUser: JWTPayload,
   ): Promise<void> {
-    // if (userInput.role) {
-    //   if (userInput.role.some((r) => r === Role.SUPER)) {
-    //     if (userInput.officeId || userInput.departmentId || userInput.teamId) {
-    //       throw new BadRequestError(
-    //         'The super cannot have a office, department or team',
-    //       );
-    //     }
-    //   }
-    //   if (userInput.role.some((r) => r === Role.PRINCIPAL)) {
-    //     if (userInput.officeId || userInput.departmentId || userInput.teamId) {
-    //       throw new BadRequestError(
-    //         'The principal cannot have a office, department or team',
-    //       );
-    //     }
-    //   }
-    //   if (userInput.role.some((r) => r === Role.ADMIN)) {
-    //     if (!userInput.officeId) {
-    //       throw new BadRequestError('The administrator has no office');
-    //     }
-    //     if (userInput.departmentId || userInput.teamId) {
-    //       throw new BadRequestError(
-    //         'The administrator cannot have a department or team',
-    //       );
-    //     }
-    //   }
-    //   if (userInput.role.some((r) => r === Role.MANAGER)) {
-    //     if (!userInput.officeId || !userInput.departmentId) {
-    //       throw new BadRequestError('The manager has no office or department');
-    //     }
-    //     if (userInput.teamId) {
-    //       throw new BadRequestError('The manager cannot have a team');
-    //     }
-    //   }
-    //   if (
-    //     userInput.role.some((r) => r === Role.SUPERVISOR) &&
-    //     (!userInput.officeId || !userInput.departmentId || !userInput.teamId)
-    //   ) {
-    //     throw new BadRequestError(
-    //       'The supervisor has no office, department or team',
-    //     );
-    //   }
-    //   if (
-    //     userInput.role.some((r) => r === Role.AGENT) &&
-    //     (!userInput.officeId || !userInput.departmentId || !userInput.teamId)
-    //   ) {
-    //     throw new BadRequestError(
-    //       'The agent has no office, department or team',
-    //     );
-    //   }
+    if (userInput.role) {
+      if (userInput.role.some((r) => r === Role.SUPER)) {
+        if (userInput.officeId || userInput.departmentId || userInput.teamId) {
+          throw new BadRequestError(
+            'The super cannot have a office, department or team',
+          );
+        }
+      }
+      if (userInput.role.some((r) => r === Role.PRINCIPAL)) {
+        if (userInput.officeId || userInput.departmentId || userInput.teamId) {
+          throw new BadRequestError(
+            'The principal cannot have a office, department or team',
+          );
+        }
+      }
+      if (userInput.role.some((r) => r === Role.ADMIN)) {
+        if (!userInput.officeId) {
+          throw new BadRequestError('The administrator has no office');
+        }
+        if (userInput.departmentId || userInput.teamId) {
+          throw new BadRequestError(
+            'The administrator cannot have a department or team',
+          );
+        }
+      }
+      if (userInput.role.some((r) => r === Role.MANAGER)) {
+        if (!userInput.officeId || !userInput.departmentId) {
+          throw new BadRequestError('The manager has no office or department');
+        }
+        if (userInput.teamId) {
+          throw new BadRequestError('The manager cannot have a team');
+        }
+      }
+      if (
+        userInput.role.some((r) => r === Role.SUPERVISOR) &&
+        (!userInput.officeId || !userInput.departmentId || !userInput.teamId)
+      ) {
+        throw new BadRequestError(
+          'The supervisor has no office, department or team',
+        );
+      }
+      if (
+        userInput.role.some((r) => r === Role.AGENT) &&
+        (!userInput.officeId || !userInput.departmentId || !userInput.teamId)
+      ) {
+        throw new BadRequestError(
+          'The agent has no office, department or team',
+        );
+      }
 
-    //   //Check that a role cannot create a higher one
-    //   if (currentUser.role.some((r) => r === Role.PRINCIPAL)) {
-    //     if (userInput.role.some((r) => r === Role.SUPER)) {
-    //       throw new BadRequestError(
-    //         'You cannot create a user with a role higher than yours',
-    //       );
-    //     }
-    //   }
-    //   if (currentUser.role.some((r) => r === Role.ADMIN)) {
-    //     if (
-    //       userInput.role.some((r) => r === Role.SUPER) ||
-    //       userInput.role.some((r) => r === Role.PRINCIPAL) ||
-    //       userInput.role.some((r) => r === Role.ADMIN)
-    //     ) {
-    //       throw new BadRequestError(
-    //         'You cannot create a user with a role greater than or equal to yours',
-    //       );
-    //     }
-    //   }
-    //   if (currentUser.role.some((r) => r === Role.MANAGER)) {
-    //     if (
-    //       userInput.role.some((r) => r === Role.SUPER) ||
-    //       userInput.role.some((r) => r === Role.PRINCIPAL) ||
-    //       userInput.role.some((r) => r === Role.ADMIN) ||
-    //       userInput.role.some((r) => r === Role.MANAGER)
-    //     ) {
-    //       throw new BadRequestError(
-    //         'You cannot create a user with a role greater than or equal to yours',
-    //       );
-    //     }
-    //   }
-    //   if (currentUser.role.some((r) => r === Role.SUPERVISOR)) {
-    //     if (
-    //       userInput.role.some((r) => r === Role.SUPER) ||
-    //       userInput.role.some((r) => r === Role.PRINCIPAL) ||
-    //       userInput.role.some((r) => r === Role.ADMIN) ||
-    //       userInput.role.some((r) => r === Role.MANAGER) ||
-    //       userInput.role.some((r) => r === Role.SUPERVISOR)
-    //     ) {
-    //       throw new BadRequestError(
-    //         'You cannot create a user with a role greater than or equal to yours',
-    //       );
-    //     }
-    //   }
-    //   if (currentUser.role.some((r) => r === Role.AGENT)) {
-    //     if (
-    //       userInput.role.some((r) => r === Role.SUPER) ||
-    //       userInput.role.some((r) => r === Role.PRINCIPAL) ||
-    //       userInput.role.some((r) => r === Role.ADMIN) ||
-    //       userInput.role.some((r) => r === Role.MANAGER) ||
-    //       userInput.role.some((r) => r === Role.SUPERVISOR) ||
-    //       userInput.role.some((r) => r === Role.AGENT)
-    //     ) {
-    //       throw new BadRequestError(
-    //         'You cannot create a user with a role greater than or equal to yours',
-    //       );
-    //     }
-    //   }
-    // }
+      //Check that a role cannot create a higher one
+      if (currentUser.role.some((r) => r === Role.PRINCIPAL)) {
+        if (userInput.role.some((r) => r === Role.SUPER)) {
+          throw new BadRequestError(
+            'You cannot create a user with a role higher than yours',
+          );
+        }
+      }
+      if (currentUser.role.some((r) => r === Role.ADMIN)) {
+        if (
+          userInput.role.some((r) => r === Role.SUPER) ||
+          userInput.role.some((r) => r === Role.PRINCIPAL) ||
+          userInput.role.some((r) => r === Role.ADMIN)
+        ) {
+          throw new BadRequestError(
+            'You cannot create a user with a role greater than or equal to yours',
+          );
+        }
+      }
+      if (currentUser.role.some((r) => r === Role.MANAGER)) {
+        if (
+          userInput.role.some((r) => r === Role.SUPER) ||
+          userInput.role.some((r) => r === Role.PRINCIPAL) ||
+          userInput.role.some((r) => r === Role.ADMIN) ||
+          userInput.role.some((r) => r === Role.MANAGER)
+        ) {
+          throw new BadRequestError(
+            'You cannot create a user with a role greater than or equal to yours',
+          );
+        }
+      }
+      if (currentUser.role.some((r) => r === Role.SUPERVISOR)) {
+        if (
+          userInput.role.some((r) => r === Role.SUPER) ||
+          userInput.role.some((r) => r === Role.PRINCIPAL) ||
+          userInput.role.some((r) => r === Role.ADMIN) ||
+          userInput.role.some((r) => r === Role.MANAGER) ||
+          userInput.role.some((r) => r === Role.SUPERVISOR)
+        ) {
+          throw new BadRequestError(
+            'You cannot create a user with a role greater than or equal to yours',
+          );
+        }
+      }
+      if (currentUser.role.some((r) => r === Role.AGENT)) {
+        if (
+          userInput.role.some((r) => r === Role.SUPER) ||
+          userInput.role.some((r) => r === Role.PRINCIPAL) ||
+          userInput.role.some((r) => r === Role.ADMIN) ||
+          userInput.role.some((r) => r === Role.MANAGER) ||
+          userInput.role.some((r) => r === Role.SUPERVISOR) ||
+          userInput.role.some((r) => r === Role.AGENT)
+        ) {
+          throw new BadRequestError(
+            'You cannot create a user with a role greater than or equal to yours',
+          );
+        }
+      }
+    }
     return;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   public async chekCompanyInfo(user: User): Promise<void> {
-    // if (
-    //   user.role.some((r) => r === Role.SUPER) &&
-    //   (user.office || user.department || user.team)
-    // ) {
-    //   throw new ForbiddenResourceError(
-    //     'This user cannot have an office, department or team.',
-    //   );
-    // }
-    // if (
-    //   user.role.some((r) => r === Role.PRINCIPAL) &&
-    //   (user.office || user.department || user.team)
-    // ) {
-    //   throw new ForbiddenResourceError(
-    //     'This user cannot have an office, department or team.',
-    //   );
-    // }
-    // if (
-    //   user.role.some((r) => r === Role.ADMIN) &&
-    //   (!user.office || user.department || user.team)
-    // ) {
-    //   throw new ForbiddenResourceError(
-    //     'This user does not have an office or has a department or team.',
-    //   );
-    // }
-    // if (
-    //   user.role.some((r) => r === Role.MANAGER) &&
-    //   (!user.office || !user.department || user.team)
-    // ) {
-    //   throw new ForbiddenResourceError(
-    //     'This user does not have an office or department or has a team.',
-    //   );
-    // }
-    // if (
-    //   user.role.some((r) => r === Role.SUPERVISOR) &&
-    //   (!user.office || !user.department || !user.team)
-    // ) {
-    //   throw new ForbiddenResourceError(
-    //     'This user does not have an office or department or team.',
-    //   );
-    // }
-    // if (
-    //   user.role.some((r) => r === Role.AGENT) &&
-    //   (!user.office || !user.department || !user.team)
-    // ) {
-    //   throw new ForbiddenResourceError(
-    //     'This user does not have an office or department or team.',
-    //   );
-    // }
-    // if (user.role.some((r) => r === Role.USER) && !user.office) {
-    //   throw new ForbiddenResourceError('This user does not have an office.');
-    // }
+    if (!user.role) {
+      throw new ConflictError();
+    }
+    if (
+      user.role.some((r) => r === Role.SUPER) &&
+      (user.office || user.department || user.team)
+    ) {
+      throw new ForbiddenResourceError(
+        'This user cannot have an office, department or team.',
+      );
+    }
+    if (
+      user.role.some((r) => r === Role.PRINCIPAL) &&
+      (user.office || user.department || user.team)
+    ) {
+      throw new ForbiddenResourceError(
+        'This user cannot have an office, department or team.',
+      );
+    }
+    if (
+      user.role.some((r) => r === Role.ADMIN) &&
+      (!user.office || user.department || user.team)
+    ) {
+      throw new ForbiddenResourceError(
+        'This user does not have an office or has a department or team.',
+      );
+    }
+    if (
+      user.role.some((r) => r === Role.MANAGER) &&
+      (!user.office || !user.department || user.team)
+    ) {
+      throw new ForbiddenResourceError(
+        'This user does not have an office or department or has a team.',
+      );
+    }
+    if (
+      user.role.some((r) => r === Role.SUPERVISOR) &&
+      (!user.office || !user.department || !user.team)
+    ) {
+      throw new ForbiddenResourceError(
+        'This user does not have an office or department or team.',
+      );
+    }
+    if (
+      user.role.some((r) => r === Role.AGENT) &&
+      (!user.office || !user.department || !user.team)
+    ) {
+      throw new ForbiddenResourceError(
+        'This user does not have an office or department or team.',
+      );
+    }
+    if (user.role.some((r) => r === Role.USER) && !user.office) {
+      throw new ForbiddenResourceError('This user does not have an office.');
+    }
     return;
   }
 
@@ -1042,19 +1063,10 @@ export class UsersService extends BaseService<User> {
     const user = await this.usersRepository.findOne({
       where: { id, role: `{USER}` as Role },
       relations: {
-        // policies: {
-        //   notes: true,
-        //   lead: true,
-        //   policyHistorical: {
-        //     updateBy: true,
-        //   },
-        // },
-        // office: true,
-        // sucursal: true,
-        // department: true,
-        // team: true,
-        // notificationLogs: true,
-        // customerRelations: { user: true },
+        office: true,
+        department: true,
+        team: true,
+        notificationLogs: true,
       },
     });
 

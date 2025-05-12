@@ -1,0 +1,80 @@
+"""
+Description: Items sold or managed in the system.
+"""
+type Product implements SecurityBaseEntity {
+  id: Int!
+  createdAt: Date!
+  updatedAt: Date!
+  deletedAt: Date
+
+  createdBy: User
+  updatedBy: User
+  deletedBy: User
+
+  business: Business
+  office: Office
+  department: Department
+  team: Team
+
+  name: String!
+  unitOfMeasure: String!
+  costPrice: Float!
+  salePrice: Float!
+  attributes: JSON
+  warranty: String
+  category: Category!
+  inventories: [Inventory]!
+}
+
+type ProductsSummary {
+  data: [Product]!
+  totalCount: Int!
+}
+
+input CreateProductInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  categoryId: Int!
+  name: String!
+  unitOfMeasure: String!
+  costPrice: Float!
+  salePrice: Float!
+  attributes: JSON
+  warranty: String
+}
+
+input UpdateProductInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  id: Int!
+  categoryId: Int
+  name: String
+  unitOfMeasure: String
+  costPrice: Float
+  salePrice: Float
+  attributes: JSON
+  warranty: String
+}
+
+extend type Query {
+  products(options: ListOptions): ProductsSummary!
+  product(id: Int!): Product
+  productsByCategory(categoryId: Int!): [Product]!
+}
+
+extend type Mutation {
+  createProduct(createProductInput: CreateProductInput!): Product!
+  updateProduct(updateProductInput: UpdateProductInput!): Product!
+  removeProducts(ids: [Int!]!): [Product]!
+  restoreProducts(ids: [Int!]!): Int
+}
+
+extend type Subscription {
+  productChanged: Boolean
+}

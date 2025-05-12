@@ -1,0 +1,72 @@
+type SaleDetail implements SecurityBaseEntity {
+  id: Int!
+  createdAt: Date!
+  updatedAt: Date!
+  deletedAt: Date
+
+  createdBy: User
+  updatedBy: User
+  deletedBy: User
+
+  business: Business
+  office: Office
+  department: Department
+  team: Team
+
+  quantity: Float!
+  unitPrice: Float!
+  subtotal: Float!
+  discountPercentage: Float
+  productSnapshot: JSON
+  sale: Sale!
+  product: Product!
+}
+
+type SaleDetailsSummary {
+  data: [SaleDetail]!
+  totalCount: Int!
+}
+
+input CreateSaleDetailInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  saleId: Int!
+  productId: Int!
+  quantity: Float!
+  unitPrice: Float!
+  discountPercentage: Float
+}
+
+input UpdateSaleDetailInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  id: Int!
+  saleId: Int
+  productId: Int
+  quantity: Float
+  unitPrice: Float
+  discountPercentage: Float
+}
+
+extend type Query {
+  saleDetails(options: ListOptions): SaleDetailsSummary!
+  saleDetail(id: Int!): SaleDetail
+  saleDetailsBySale(saleId: Int!): [SaleDetail]!
+}
+
+extend type Mutation {
+  createSaleDetail(createSaleDetailInput: CreateSaleDetailInput!): SaleDetail!
+  updateSaleDetail(updateSaleDetailInput: UpdateSaleDetailInput!): SaleDetail!
+  removeSaleDetails(ids: [Int!]!): [SaleDetail]!
+  restoreSaleDetails(ids: [Int!]!): Int
+}
+
+extend type Subscription {
+  saleDetailChanged: Boolean
+}

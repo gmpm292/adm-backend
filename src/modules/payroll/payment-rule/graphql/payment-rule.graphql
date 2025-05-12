@@ -1,0 +1,157 @@
+enum PaymentType {
+  PRICE_RANGE
+  SALE_QUANTITY
+  FIXED_AMOUNT
+  PERCENTAGE
+  HYBRID
+}
+
+enum ScopedAccessEnum {
+  BUSINESS
+  OFFICE
+  DEPARTMENT
+  TEAM
+  PERSONAL
+  RELATED
+}
+
+type Conditions {
+  priceRanges: [PriceRangeCondition]
+  saleQuantity: [SaleQuantityCondition]
+  fixedAmount: FixedAmountCondition
+  percentage: PercentageCondition
+  paymentCurrency: String
+}
+
+type PriceRangeCondition {
+  min: Float!
+  max: Float
+  currency: String!
+  amount: Float!
+  scope: ScopedAccessEnum!
+}
+
+type SaleQuantityCondition {
+  minProducts: Int!
+  ratePerProduct: Float!
+  scope: ScopedAccessEnum!
+}
+
+type FixedAmountCondition {
+  amount: Float!
+  scope: ScopedAccessEnum!
+}
+
+type PercentageCondition {
+  percentage: Float!
+  scope: ScopedAccessEnum!
+}
+
+type PaymentRule implements SecurityBaseEntity {
+  id: Int!
+  createdAt: Date!
+  updatedAt: Date!
+  deletedAt: Date
+
+  createdBy: User
+  updatedBy: User
+  deletedBy: User
+
+  business: Business
+  office: Office
+  department: Department
+  team: Team
+
+  paymentType: PaymentType!
+  name: String!
+  description: String
+  isActive: Boolean!
+  workerType: WorkerType
+  conditions: Conditions
+}
+
+type PaymentRulesSummary {
+  data: [PaymentRule!]!
+  totalCount: Int!
+}
+
+input ConditionsInput {
+  priceRanges: [PriceRangeConditionInput!]
+  saleQuantity: [SaleQuantityConditionInput!]
+  fixedAmount: FixedAmountConditionInput
+  percentage: PercentageConditionInput
+  paymentCurrency: String!
+}
+
+input PriceRangeConditionInput {
+  min: Float!
+  max: Float
+  currency: String!
+  amount: Float!
+  scope: ScopedAccessEnum!
+}
+
+input SaleQuantityConditionInput {
+  minProducts: Int!
+  ratePerProduct: Float!
+  scope: ScopedAccessEnum!
+}
+
+input FixedAmountConditionInput {
+  amount: Float!
+  scope: ScopedAccessEnum!
+}
+
+input PercentageConditionInput {
+  percentage: Float!
+  scope: ScopedAccessEnum!
+}
+
+input CreatePaymentRuleInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  paymentType: PaymentType!
+  name: String!
+  description: String
+  isActive: Boolean
+  workerType: WorkerType
+  conditions: ConditionsInput
+}
+
+input UpdatePaymentRuleInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  id: Int!
+  paymentType: PaymentType
+  name: String
+  description: String
+  isActive: Boolean
+  workerType: WorkerType
+  conditions: ConditionsInput
+}
+
+extend type Query {
+  paymentRules(options: ListOptions): PaymentRulesSummary!
+  paymentRule(id: Int!): PaymentRule
+}
+
+extend type Mutation {
+  createPaymentRule(
+    createPaymentRuleInput: CreatePaymentRuleInput!
+  ): PaymentRule!
+  updatePaymentRule(
+    updatePaymentRuleInput: UpdatePaymentRuleInput!
+  ): PaymentRule!
+  removePaymentRules(ids: [Int!]!): [PaymentRule!]!
+  restorePaymentRules(ids: [Int!]!): Int
+}
+
+extend type Subscription {
+  paymentRuleChanged: Boolean
+}
