@@ -23,6 +23,15 @@ export class InventoryMovement extends SecurityBaseEntity {
   @Column({ type: 'varchar', length: 50 })
   reason: string; // e.g., "PURCHASE", "SALE", "ADJUSTMENT"
 
+  @Column({ type: 'varchar', length: 36, nullable: true })
+  reservationId?: string; // UUID para agrupar movimientos relacionados
+
+  @Column({ type: 'boolean', default: false })
+  isReservation: boolean;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  referenceId?: string; // ID de la venta, orden, etc. que causó la reserva
+
   // @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   // timestamp: Date;
 }

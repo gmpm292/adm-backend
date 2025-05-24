@@ -10,15 +10,20 @@ enum Role {
 
 type User {
   id: Int
-  createdAt: String #Date
-  updatedAt: String #Date
-  deletedAt: String #Date
+  createdAt: Date
+  updatedAt: Date
+  deletedAt: Date
   email: String
   enabled: Boolean
   name: String
   lastName: String
   mobile: String
   role: [Role]
+
+  business: Business
+  office: Office
+  department: Department
+  team: Team
 
   isTwoFactorEnabled: Boolean
   isTwoFactorConfigured: Boolean
@@ -26,15 +31,20 @@ type User {
 
 type Profile {
   id: Int
-  createdAt: String #Date
-  updatedAt: String #Date
-  deletedAt: String #Date
+  createdAt: Date
+  updatedAt: Date
+  deletedAt: Date
   email: String
   enabled: Boolean
   name: String
   lastName: String
   mobile: String
   role: [Role]
+
+  business: Business
+  office: Office
+  department: Department
+  team: Team
 
   isTwoFactorEnabled: Boolean
   isTwoFactorConfigured: Boolean
@@ -48,11 +58,11 @@ type LimitedProfile {
 
 type ConfirmationToken {
   id: Int
-  createdAt: String #Date
-  deletedAt: String #Date
-  updatedAt: String #Date
+  createdAt: Date
+  deletedAt: Date
+  updatedAt: Date
   tokenValue: String
-  expirationDate: String #Date
+  expirationDate: Date
   used: Boolean
 }
 

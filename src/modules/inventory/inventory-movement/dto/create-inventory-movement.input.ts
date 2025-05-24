@@ -1,4 +1,12 @@
-import { IsInt, IsString, IsIn, Min } from 'class-validator';
+import {
+  IsInt,
+  IsString,
+  IsIn,
+  Min,
+  IsBoolean,
+  IsOptional,
+  IsUUID,
+} from 'class-validator';
 import { CreateSecurityBaseInput } from '../../../../core/dtos/create-security-base.input';
 
 /**
@@ -6,9 +14,12 @@ import { CreateSecurityBaseInput } from '../../../../core/dtos/create-security-b
  * Example: {
  *   inventoryId: 1,
  *   userId: 5,
- *   type: "IN",
+ *   type: "OUT",
  *   quantity: 100,
- *   reason: "PURCHASE"
+ *   reason: "SALE_RESERVATION",
+ *   isReservation: true,
+ *   reservationId: "a1b2c3d4-e5f6-7890-g1h2-i3j4k5l6m7n8",
+ *   referenceId: "sale-123"
  * }
  */
 export class CreateInventoryMovementInput extends CreateSecurityBaseInput {
@@ -28,4 +39,16 @@ export class CreateInventoryMovementInput extends CreateSecurityBaseInput {
 
   @IsString()
   reason: string;
+
+  @IsUUID()
+  @IsOptional()
+  reservationId?: string; // UUID para agrupar movimientos relacionados
+
+  @IsBoolean()
+  @IsOptional()
+  isReservation?: boolean = false; // Default false si no se especifica
+
+  @IsString()
+  @IsOptional()
+  referenceId?: string; // ID de la venta, orden, etc. que causó la reserva
 }

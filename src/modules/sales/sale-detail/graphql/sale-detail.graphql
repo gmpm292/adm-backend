@@ -36,8 +36,8 @@ input CreateSaleDetailInput {
   saleId: Int!
   productId: Int!
   quantity: Float!
-  unitPrice: Float!
-  discountPercentage: Float
+  #unitPrice: Float!
+  #discountPercentage: Float
 }
 
 input UpdateSaleDetailInput {

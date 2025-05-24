@@ -20,6 +20,7 @@ type Sale implements SecurityBaseEntity {
   department: Department
   team: Team
 
+  effectiveDate: Date
   totalAmount: Float!
   paymentMethod: PaymentMethod!
   invoiceNumber: String
@@ -35,12 +36,12 @@ type SalesSummary {
 }
 
 input CreateSaleInput {
-  businessId: Int
-  officeId: Int
+  businessId: Int!
+  officeId: Int!
   departmentId: Int
   teamId: Int
 
-  salesUserId: Int!
+  salesWorkerId: Int!
   customerId: Int
   totalAmount: Float!
   paymentMethod: PaymentMethod!
@@ -52,18 +53,16 @@ input CreateSaleInput {
 input SaleDetailInput {
   productId: Int!
   quantity: Float!
-  unitPrice: Float!
-  discountPercentage: Float
 }
 
 input UpdateSaleInput {
-  businessId: Int
-  officeId: Int
+  businessId: Int!
+  officeId: Int!
   departmentId: Int
   teamId: Int
 
   id: Int!
-  salesUserId: Int
+  salesWorkerId: Int
   customerId: Int
   totalAmount: Float
   paymentMethod: PaymentMethod

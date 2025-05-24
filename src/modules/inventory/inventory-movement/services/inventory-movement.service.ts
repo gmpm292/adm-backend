@@ -36,7 +36,7 @@ export class InventoryMovementService extends BaseService<InventoryMovement> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<InventoryMovement> {
-    const { inventoryId, ...rest } = createMovementInput;
+    const { inventoryId, isReservation, ...rest } = createMovementInput;
 
     const [inventory, user] = await Promise.all([
       this.inventoryService.findOne(inventoryId, cu, scopes, manager),
@@ -60,6 +60,7 @@ export class InventoryMovementService extends BaseService<InventoryMovement> {
       ...rest,
       inventory,
       user,
+      isReservation: isReservation || false,
     };
 
     // Update inventory stock
@@ -164,7 +165,15 @@ export class InventoryMovementService extends BaseService<InventoryMovement> {
       );
     }
 
-    const { inventoryId, userId, ...rest } = updateMovementInput;
+    const {
+      inventoryId,
+      userId,
+      isReservation,
+      reservationId,
+      referenceId,
+      ...rest
+    } = updateMovementInput;
+
     return super.baseUpdate({
       id,
       data: { ...movement, ...rest },

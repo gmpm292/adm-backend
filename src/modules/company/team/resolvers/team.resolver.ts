@@ -41,6 +41,13 @@ export class TeamResolver {
     return this.teamService.find(options, user);
   }
 
+  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
+  @UseGuards(AccessTokenAuthGuard, RoleGuard)
+  @Query('team')
+  async findOne(@CurrentUser() user: JWTPayload, @Args('id') id: number) {
+    return this.teamService.findOne(id, user);
+  }
+
   @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('updateTeam')

@@ -4,7 +4,7 @@ import { CreateSecurityBaseInput } from '../../../../core/dtos/create-security-b
 
 export class CreateSaleInput extends CreateSecurityBaseInput {
   @IsNumber()
-  salesUserId: number;
+  salesWorkerId: number;
 
   @IsNumber()
   @IsOptional()
@@ -27,7 +27,5 @@ export class CreateSaleInput extends CreateSecurityBaseInput {
   details: {
     productId: number;
     quantity: number;
-    unitPrice: number;
-    discountPercentage?: number;
   }[];
 }

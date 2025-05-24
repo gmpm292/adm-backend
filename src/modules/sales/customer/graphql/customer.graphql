@@ -28,7 +28,7 @@ type CustomersSummary {
 }
 
 input CreateCustomerInput {
-  businessId: Int
+  businessId: Int!
   officeId: Int
   departmentId: Int
   teamId: Int

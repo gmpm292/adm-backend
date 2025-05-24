@@ -4,21 +4,72 @@ import {
   IsOptional,
   IsJSON,
   Length,
+  IsArray,
+  ValidateNested,
+  IsBoolean,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { CreateSecurityBaseInput } from '../../../../core/dtos/create-security-base.input';
 
-/**
- * DTO for creating a new product.
- * Example: {
- *   name: "Smartphone",
- *   unitOfMeasure: "units",
- *   costPrice: 499.99,
- *   salePrice: 699.99,
- *   categoryId: 1,
- *   warranty: "2 years",
- *   attributes: { color: "Black", storage: "128GB" }
- * }
- */
+export class FixedPriceDto {
+  @IsString()
+  @Length(3, 3)
+  currency: string;
+
+  @IsNumber()
+  amount: number;
+}
+
+export class BulkDiscountDto {
+  @IsNumber()
+  minQty: number;
+
+  @IsNumber()
+  discount: number;
+
+  @IsArray()
+  @IsString({ each: true })
+  @Length(3, 3, { each: true })
+  applicableCurrencies: string[];
+}
+
+export class SaleRulesDto {
+  @IsNumber()
+  @IsOptional()
+  minQuantity?: number;
+
+  @IsNumber()
+  @IsOptional()
+  maxQuantity?: number;
+
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => BulkDiscountDto)
+  bulkDiscounts?: BulkDiscountDto[];
+}
+
+export class PricingConfigDto {
+  @IsArray()
+  @IsString({ each: true })
+  @Length(3, 3, { each: true })
+  acceptedCurrencies: string[];
+
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => FixedPriceDto)
+  fixedPrices?: FixedPriceDto[];
+
+  @IsNumber()
+  @IsOptional()
+  exchangeRateMargin?: number;
+
+  @IsNumber()
+  @IsOptional()
+  decimalPlaces?: number;
+}
+
 export class CreateProductInput extends CreateSecurityBaseInput {
   @IsNumber()
   categoryId: number;
@@ -34,8 +85,16 @@ export class CreateProductInput extends CreateSecurityBaseInput {
   @IsNumber()
   costPrice: number;
 
+  @IsString()
+  @Length(3, 3)
+  costCurrency: string;
+
   @IsNumber()
-  salePrice: number;
+  basePrice: number;
+
+  @IsString()
+  @Length(3, 3)
+  baseCurrency: string;
 
   @IsJSON()
   @IsOptional()
@@ -45,4 +104,13 @@ export class CreateProductInput extends CreateSecurityBaseInput {
   @IsOptional()
   @Length(1, 100)
   warranty?: string;
+
+  @ValidateNested()
+  @Type(() => PricingConfigDto)
+  pricingConfig: PricingConfigDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SaleRulesDto)
+  saleRules?: SaleRulesDto;
 }

@@ -14,6 +14,7 @@ import {
 } from '../../../../core/graphql/remote-operations';
 import { Opts } from '../../../../core/graphql/remote-operations/decorators/opts.decorator';
 import { PaymentRuleService } from '../services/payment-rule.service';
+import { PaymentRuleFiltersValidator } from '../filters-validator/payment-rule-filters.validator';
 
 @Resolver('PaymentRule')
 export class PaymentRuleResolver {
@@ -35,7 +36,8 @@ export class PaymentRuleResolver {
   @Query('paymentRules')
   async findAll(
     @CurrentUser() user: JWTPayload,
-    @Opts() options?: ListOptions,
+    @Opts({ arg: 'options', dto: PaymentRuleFiltersValidator })
+    options?: ListOptions,
   ): Promise<ListSummary> {
     return this.paymentRuleService.find(options, user);
   }

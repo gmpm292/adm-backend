@@ -14,6 +14,12 @@ export class Team extends BaseEntity {
   })
   teamType: TeamTypeEnum;
 
+  @Column({ nullable: true })
+  name?: string;
+
+  @Column({ nullable: true })
+  description?: string;
+
   @ManyToOne(() => Department, (department) => department.teams, {
     eager: true,
     cascade: ['insert', 'update'],

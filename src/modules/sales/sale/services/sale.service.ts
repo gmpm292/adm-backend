@@ -16,19 +16,28 @@ import { ScopedAccessService } from '../../../scoped-access/services/scoped-acce
 import { CustomerService } from '../../customer/services/customer.service';
 import { SaleDetailService } from '../../sale-detail/services/sale-detail.service';
 import { ProductService } from '../../../inventory/product/services/product.service';
-import { UsersService } from '../../../users/services/users.service';
+import { WorkerService } from '../../../payroll/worker/services/worker.service';
+import { InventoryService } from '../../../inventory/inventory/services/inventory.service';
+import { InventoryMovementService } from '../../../inventory/inventory-movement/services/inventory-movement.service';
+import { PaymentMethod } from '../enums/payment-method.enum';
+import { SaleDetail } from '../../sale-detail/entities/sale-detail.entity';
+import { CurrencyService } from '../../../payroll/currency/services/currency.service';
 
 @Injectable()
 export class SaleService extends BaseService<Sale> {
   constructor(
     @InjectRepository(Sale)
     private saleRepository: Repository<Sale>,
-    private userService: UsersService,
+    private workerService: WorkerService,
     private customerService: CustomerService,
     @Inject(forwardRef(() => SaleDetailService))
     private saleDetailService: SaleDetailService,
     @Inject(forwardRef(() => ProductService))
-    private productService: ProductService,
+    // private readonly productService: ProductService,
+    // private readonly inventoryService: InventoryService,
+    // private readonly inventoryMovementService: InventoryMovementService,
+    private readonly currencyService: CurrencyService,
+
     protected scopedAccessService: ScopedAccessService,
   ) {
     super(saleRepository);
@@ -40,22 +49,22 @@ export class SaleService extends BaseService<Sale> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Sale> {
-    const { salesUserId, customerId, details, ...rest } = createSaleInput;
+    const { salesWorkerId, customerId, details, ...rest } = createSaleInput;
 
-    const [salesUser, customer] = await Promise.all([
-      this.userService.findOne(salesUserId, undefined, cu, scopes, manager),
+    const [salesWorker, customer] = await Promise.all([
+      await this.workerService.findOne(salesWorkerId, cu, scopes, manager),
       customerId
-        ? this.customerService.findOne(customerId, cu, scopes, manager)
-        : Promise.resolve(undefined),
+        ? await this.customerService.findOne(customerId, cu, scopes, manager)
+        : undefined,
     ]);
 
-    if (!salesUser) {
-      throw new NotFoundError('Sales user not found');
+    if (!salesWorker) {
+      throw new NotFoundError('Sales Worker not found');
     }
 
     const sale: Sale = {
       ...rest,
-      salesUser,
+      salesWorker,
       customer,
     } as Sale;
 
@@ -74,8 +83,6 @@ export class SaleService extends BaseService<Sale> {
             saleId: createdSale.id as number,
             productId: detail.productId,
             quantity: detail.quantity,
-            unitPrice: detail.unitPrice,
-            discountPercentage: detail.discountPercentage,
           },
           cu,
           scopes,
@@ -95,7 +102,7 @@ export class SaleService extends BaseService<Sale> {
   ): Promise<ListSummary> {
     return await super.baseFind({
       options,
-      relationsToLoad: ['salesUser', 'customer', 'details'],
+      relationsToLoad: ['salesWorker', 'customer', 'details'],
       cu,
       scopes,
       manager,
@@ -111,7 +118,7 @@ export class SaleService extends BaseService<Sale> {
     return super.baseFindOne({
       id,
       relationsToLoad: {
-        salesUser: true,
+        salesWorker: true,
         customer: true,
         details: true,
       },
@@ -147,18 +154,17 @@ export class SaleService extends BaseService<Sale> {
       throw new NotFoundError();
     }
 
-    if (updateSaleInput.salesUserId) {
-      const salesUser = await this.userService.findOne(
-        updateSaleInput.salesUserId,
-        undefined,
+    if (updateSaleInput.salesWorkerId) {
+      const salesWorker = await this.workerService.findOne(
+        updateSaleInput.salesWorkerId,
         cu,
         scopes,
         manager,
       );
-      if (!salesUser) {
+      if (!salesWorker) {
         throw new NotFoundError('Sales user not found');
       }
-      sale.salesUser = salesUser;
+      sale.salesWorker = salesWorker;
     }
 
     if (updateSaleInput.customerId) {
@@ -172,7 +178,7 @@ export class SaleService extends BaseService<Sale> {
     }
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { salesUserId, customerId, ...rest } = updateSaleInput;
+    const { salesWorkerId: salesUserId, customerId, ...rest } = updateSaleInput;
     return super.baseUpdate({
       id,
       data: { ...sale, ...rest },
@@ -263,5 +269,250 @@ export class SaleService extends BaseService<Sale> {
       scopes,
       manager,
     });
+  }
+
+  async makeSale(
+    saleId: number,
+    payments: Array<{
+      amount: number;
+      currency: string;
+      paymentMethod: PaymentMethod;
+      paymentDetails?: Record<string, unknown>;
+    }>,
+    baseCurrency: string = 'USD',
+    customDate?: Date,
+    cu?: JWTPayload,
+    scopes?: ScopedAccessEnum[],
+    manager?: EntityManager,
+  ): Promise<Sale> {
+    // 1. Obtener la venta con detalles
+    const sale = await this.findOne(saleId, cu, scopes, manager);
+    if (!sale) throw new NotFoundError('Sale not found');
+
+    // 2. Validar que no esté ya finalizada
+    if (sale.effectiveDate) throw new Error('Sale already finalized');
+
+    // 3. Validar que la venta tenga detalles
+    if (!sale.details || sale.details.length === 0) {
+      throw new Error('Sale has no details');
+    }
+
+    // 4. Validar que se hayan proporcionado pagos
+    if (!payments || payments.length === 0) {
+      throw new Error('No payments provided');
+    }
+
+    // 5. Calcular totales requeridos por moneda y validar contra pagos
+    const validationResult = await this.validateSalePayments(
+      sale.details,
+      payments,
+      baseCurrency,
+    );
+    if (!validationResult.valid) {
+      throw new Error(validationResult.message);
+    }
+
+    // 6. Actualizar la venta como finalizada
+    const finalizedSale = await this.update(
+      saleId,
+      {
+        id: saleId,
+        payments,
+        totalAmount: validationResult.totalInBaseCurrency,
+        totalAmountCurrency: baseCurrency,
+        effectiveDate: customDate || new Date(),
+      },
+      cu,
+      scopes,
+      manager,
+    );
+
+    return finalizedSale;
+  }
+
+  private async validateSalePayments(
+    details: SaleDetail[],
+    payments: Array<{ amount: number; currency: string }>,
+    baseCurrency: string,
+  ): Promise<{
+    valid: boolean;
+    message?: string;
+    totalInBaseCurrency: number;
+  }> {
+    // 1. Agrupar opciones de pago por moneda
+    const currencyOptions = new Map<
+      string,
+      {
+        minTotal: number; // Suma de mínimos requeridos (precio más bajo por producto)
+        maxTotal: number; // Suma de máximos posibles (precio más alto por producto)
+        accepted: boolean; // Si todos los productos aceptan esta moneda
+      }
+    >();
+
+    // 2. Procesar cada detalle para calcular totales por moneda
+    for (const detail of details) {
+      if (!detail.productPaymentOptions?.paymentOptions?.length) {
+        return {
+          valid: false,
+          message: `Product ${detail.product.id} has no payment options`,
+          totalInBaseCurrency: 0,
+        };
+      }
+
+      // Agrupar opciones por moneda para este producto
+      const productCurrencyOptions = new Map<
+        string,
+        {
+          min: number;
+          max: number;
+        }
+      >();
+
+      for (const option of detail.productPaymentOptions.paymentOptions) {
+        if (!productCurrencyOptions.has(option.currency)) {
+          productCurrencyOptions.set(option.currency, {
+            min: option.total,
+            max: option.total,
+          });
+        } else {
+          const current = productCurrencyOptions.get(option.currency) as {
+            min: number;
+            max: number;
+          };
+          // Tomar el precio más bajo para el mínimo
+          if (option.total < current.min) current.min = option.total;
+          // Tomar el precio más alto para el máximo
+          if (option.total > current.max) current.max = option.total;
+        }
+      }
+
+      // Consolidar con los totales globales
+      for (const [currency, { min, max }] of productCurrencyOptions) {
+        const globalOption = currencyOptions.get(currency) || {
+          minTotal: 0,
+          maxTotal: 0,
+          accepted: true,
+        };
+
+        globalOption.minTotal += min;
+        globalOption.maxTotal += max;
+
+        // Si algún producto no acepta esta moneda, marcarla como no aceptada globalmente
+        currencyOptions.set(currency, globalOption);
+      }
+    }
+
+    // 3. Validar que los pagos cubran al menos una combinación válida
+    const paymentByCurrency = new Map<string, number>();
+    for (const payment of payments) {
+      const current = paymentByCurrency.get(payment.currency) || 0;
+      paymentByCurrency.set(payment.currency, current + payment.amount);
+    }
+
+    // 4. Encontrar una combinación de monedas que satisfaga los pagos
+    let bestCombination: {
+      currencies: string[];
+      totalInBaseCurrency: number;
+    } | null = null;
+    let bestDifference = Infinity;
+
+    // Generar todas las combinaciones posibles de monedas aceptadas
+    const acceptedCurrencies = Array.from(currencyOptions.keys());
+    const currencyCombinations =
+      this.generateCurrencyCombinations(acceptedCurrencies);
+
+    for (const combination of currencyCombinations) {
+      // Verificar que los pagos cubran esta combinación
+      let isValid = true;
+      let totalInBase = 0;
+
+      for (const currency of combination) {
+        const paid = paymentByCurrency.get(currency) || 0;
+        const requiredMin = currencyOptions.get(currency)?.minTotal as number;
+
+        if (paid < requiredMin) {
+          isValid = false;
+          break;
+        }
+
+        // Convertir a moneda base
+        if (currency === baseCurrency) {
+          totalInBase += paid;
+        } else {
+          const rate = await this.currencyService.getExchangeRate(
+            currency,
+            baseCurrency,
+          );
+          if (!rate) {
+            isValid = false;
+            break;
+          }
+          totalInBase += paid * rate;
+        }
+      }
+
+      // Si es válida, verificar si es la mejor opción (más cercana al total)
+      if (isValid) {
+        const totalMax = combination.reduce((sum, currency) => {
+          return sum + (currencyOptions.get(currency)?.maxTotal as number);
+        }, 0);
+
+        const difference = Math.abs(totalInBase - totalMax);
+        if (difference < bestDifference) {
+          bestDifference = difference;
+          bestCombination = {
+            currencies: combination,
+            totalInBaseCurrency: totalInBase,
+          };
+        }
+      }
+    }
+
+    if (!bestCombination) {
+      return {
+        valid: false,
+        message: 'Payments do not cover any valid currency combination',
+        totalInBaseCurrency: 0,
+      };
+    }
+
+    // 5. Verificar que no haya pagos en monedas no utilizadas
+    const unusedPayments = payments.filter(
+      (p) => !bestCombination.currencies.includes(p.currency),
+    );
+
+    if (unusedPayments.length > 0) {
+      return {
+        valid: false,
+        message: `Payments include unused currencies: ${unusedPayments.map((p) => p.currency).join(', ')}`,
+        totalInBaseCurrency: 0,
+      };
+    }
+
+    return {
+      valid: true,
+      totalInBaseCurrency: bestCombination.totalInBaseCurrency,
+    };
+  }
+
+  // Genera todas las combinaciones posibles de monedas
+  private generateCurrencyCombinations(currencies: string[]): string[][] {
+    const result: string[][] = [];
+
+    // Función recursiva para generar combinaciones
+    function backtrack(start: number, current: string[]) {
+      if (current.length > 0) {
+        result.push([...current]);
+      }
+
+      for (let i = start; i < currencies.length; i++) {
+        current.push(currencies[i]);
+        backtrack(i + 1, current);
+        current.pop();
+      }
+    }
+
+    backtrack(0, []);
+    return result;
   }
 }

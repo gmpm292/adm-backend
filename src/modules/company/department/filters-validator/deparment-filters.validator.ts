@@ -10,4 +10,13 @@ export class DepartmentFiltersValidator {
 
   @IsNumberString()
   'office.id': string;
+
+  @IsNumberString()
+  'officeId': string;
+
+  @IsString()
+  'office.name': string;
+
+  @IsString()
+  address: string;
 }

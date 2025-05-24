@@ -11,10 +11,10 @@ export class CreateSaleDetailInput extends CreateSecurityBaseInput {
   @IsNumber()
   quantity: number;
 
-  @IsNumber()
-  unitPrice: number;
+  // @IsNumber()
+  // unitPrice: number;
 
-  @IsNumber()
-  @IsOptional()
-  discountPercentage?: number;
+  // @IsNumber()
+  // @IsOptional()
+  // discountPercentage?: number;
 }

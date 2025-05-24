@@ -7,6 +7,8 @@ import { EntityManager } from 'typeorm';
 import { Config } from './config-resource/entities/config.entity';
 
 import { ConfigResourceService } from './config-resource/services/config-resource.service';
+import { RoleGuardEntity } from '../../modules/role-guard-resource/entities/role-guard.entity';
+import { RoleGuardService } from '../../modules/role-guard-resource/services/role-guard.service';
 
 @Injectable()
 export class ConfigService extends NestConfigService<EnvironmentVariables> {
@@ -14,6 +16,7 @@ export class ConfigService extends NestConfigService<EnvironmentVariables> {
     @InjectEntityManager()
     private readonly manager: EntityManager,
     private readonly configResourceService: ConfigResourceService,
+    private readonly roleGuardService: RoleGuardService,
   ) {
     super();
   }
@@ -51,21 +54,20 @@ export class ConfigService extends NestConfigService<EnvironmentVariables> {
       : super.get(varKey as keyof EnvironmentVariables);
   }
 
-  //TODO: Implement the methods
-  // async saveQueryOrEndPointURL(
-  //   queryOrEndPointURL: string,
-  //   type: string,
-  //   description = '',
-  // ): Promise<RoleGuardEntity> {
-  //   const roleGuardEntity: RoleGuardEntity = {
-  //     queryOrEndPointURL,
-  //     type,
-  //     description,
-  //   };
-  //   return this.roleGuardService.create(roleGuardEntity);
-  // }
+  async saveQueryOrEndPointURL(
+    queryOrEndPointURL: string,
+    type: string,
+    description = '',
+  ): Promise<RoleGuardEntity | undefined> {
+    const roleGuardEntity: RoleGuardEntity = {
+      queryOrEndPointURL,
+      type,
+      description,
+    };
+    return this.roleGuardService.create(roleGuardEntity);
+  }
 
-  // getRoleGuard(queryOrEndPointURL: string): RoleGuardEntity {
-  //   return this.roleGuardService.getRoleGuard(queryOrEndPointURL);
-  // }
+  getRoleGuard(queryOrEndPointURL: string): RoleGuardEntity | undefined {
+    return this.roleGuardService.getRoleGuard(queryOrEndPointURL);
+  }
 }

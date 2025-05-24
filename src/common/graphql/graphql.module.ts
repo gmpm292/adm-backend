@@ -13,7 +13,7 @@ import {
 
 import { DateScalar } from './scalars/date.scalar';
 import { JsonScalar } from './scalars/json.scalar';
-import { GraphQLFormattedError } from 'graphql';
+import { GraphQLFormattedError, GraphQLSchema } from 'graphql';
 import { Context } from 'graphql-ws';
 import { PubsubModule } from './pubsub/pubsub.module';
 import { playground } from './helpers/playground.helper';
@@ -26,6 +26,7 @@ import { LoggerModule } from '../logger';
 import { AppLoggerService } from '../logger/logger.service';
 import { AuthParameterKey } from '../../modules/auth/enums/auth-parameter-key.enum';
 import { join } from 'path';
+import { saveQuerys } from './helpers/saveQuerys.helper';
 
 @Module({
   imports: [
@@ -37,6 +38,11 @@ import { join } from 'path';
         loggerService: AppLoggerService,
         configService: ConfigService,
       ) => ({
+        transformSchema: async (schema: GraphQLSchema) => {
+          // eslint-disable-next-line @typescript-eslint/await-thenable
+          await saveQuerys(schema, loggerService, configService);
+          return schema;
+        },
         // autoSchemaFile: true, // Genera el schema automáticamente
         // sortSchema: true,
         typePaths: ['./**/schema.graphql', './**/*.graphql'],

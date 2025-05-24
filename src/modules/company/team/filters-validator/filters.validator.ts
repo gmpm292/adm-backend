@@ -1,4 +1,4 @@
-import { IsNumberString } from 'class-validator';
+import { IsNumberString, IsString } from 'class-validator';
 import { BaseFiltersValidator } from '../../../../core/filters-validator/base-filters.validator';
 
 export class TeamsFiltersValidator extends BaseFiltersValidator {
@@ -13,4 +13,13 @@ export class TeamsFiltersValidator extends BaseFiltersValidator {
 
   @IsNumberString()
   'department.id': string;
+
+  @IsString()
+  name: string;
+
+  @IsString()
+  teamType: string;
+
+  @IsString()
+  'department.name': string;
 }

@@ -1,7 +1,9 @@
 enum TeamTypeEnum {
+  FIELDWORK
   OPERATIONS
-  NEW_BUSINESS
-  RENOVATIONS
+  DELIVERIES
+  SALES
+  ADVERTISING_MARKETING
 }
 type Team {
   id: Int
@@ -9,6 +11,8 @@ type Team {
   updatedAt: Date
   deletedAt: Date
   teamType: TeamTypeEnum
+  name: String
+  description: String
   department: Department
 }
 type TeamsSummary {
@@ -17,11 +21,15 @@ type TeamsSummary {
 }
 input CreateTeamInput {
   teamType: TeamTypeEnum!
+  name: String!
+  description: String
   departmentId: Int!
 }
 input UpdateTeamInput {
   id: Int!
   teamType: TeamTypeEnum
+  name: String!
+  description: String
   departmentId: Int
 }
 type Query {

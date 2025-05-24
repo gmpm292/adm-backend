@@ -298,11 +298,8 @@ export class AuthService {
         userAgent: req.header('user-agent'),
       },
     });
-    const cachedValue = await this.cacheManager.set(
-      `AccessTokenUser${user.id}`,
-      values,
-      60 * 60 * 24,
-    );
+    const expiredIn = this.configService.get('ACCESS_TOKEN_EXPIRE_IN') * 1000;
+    await this.cacheManager.set(`AccessTokenUser${user.id}`, values, expiredIn);
     const a = await this.cacheManager.get(`AccessTokenUser${user.id}`);
   }
 
@@ -331,11 +328,8 @@ export class AuthService {
         return false;
       });
     }
-    await this.cacheManager.set(
-      `AccessTokenUser${user.id}`,
-      values,
-      60 * 60 * 24,
-    );
+    const expiredIn = this.configService.get('ACCESS_TOKEN_EXPIRE_IN') * 1000;
+    await this.cacheManager.set(`AccessTokenUser${user.id}`, values, expiredIn);
   }
 
   public async checkAndNotifyCloseActiveSession(user: User) {

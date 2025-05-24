@@ -74,6 +74,23 @@ export class TeamService extends BaseService<Team> {
   }
 
   async findOne(
+    id: number,
+    cu?: JWTPayload,
+    scopes?: ScopedAccessEnum[],
+    manager?: EntityManager,
+  ): Promise<Team> {
+    return super.baseFindOne({
+      id,
+      relationsToLoad: {
+        department: { office: true },
+      },
+      cu,
+      scopes,
+      manager,
+    });
+  }
+
+  async findOneByFilters(
     filters: FindOptionsWhere<Team>,
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],

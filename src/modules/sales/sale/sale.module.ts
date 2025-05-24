@@ -9,6 +9,9 @@ import { SaleDetail } from '../sale-detail/entities/sale-detail.entity';
 import { CustomerModule } from '../customer/customer.module';
 import { SaleDetailModule } from '../sale-detail/sale-detail.module';
 import { ProductModule } from '../../inventory/product/product.module';
+import { WorkerModule } from '../../payroll/worker/worker.module';
+import { InventoryModule } from '../../inventory/inventory/inventory.module';
+import { InventoryMovementModule } from '../../inventory/inventory-movement/inventory-movement.module';
 
 @Module({
   imports: [
@@ -16,6 +19,9 @@ import { ProductModule } from '../../inventory/product/product.module';
     forwardRef(() => CustomerModule),
     forwardRef(() => SaleDetailModule),
     forwardRef(() => ProductModule),
+    forwardRef(() => WorkerModule),
+    forwardRef(() => InventoryModule),
+    forwardRef(() => InventoryMovementModule),
   ],
   providers: [SaleResolver, SaleService],
   exports: [SaleResolver, SaleService],

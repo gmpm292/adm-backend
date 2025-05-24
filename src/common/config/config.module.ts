@@ -4,6 +4,7 @@ import { ConfigService } from './config.service';
 import { getEnvFilesToLoad } from './helpers/loader.helper';
 import { validate } from './helpers/validate.helper';
 import { ConfigResourceModule } from './config-resource/config-resource.module';
+import { RoleGuardModule } from '../../modules/role-guard-resource/role-guard.module';
 
 @Global()
 @Module({
@@ -17,6 +18,7 @@ import { ConfigResourceModule } from './config-resource/config-resource.module';
       load: [],
     }),
     ConfigResourceModule,
+    RoleGuardModule,
   ],
   providers: [ConfigService],
   exports: [NestConfigModule, ConfigService],

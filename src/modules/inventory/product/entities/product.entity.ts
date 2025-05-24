@@ -21,8 +21,8 @@ export class Product extends SecurityBaseEntity {
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   costPrice: number;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2 })
-  salePrice: number;
+  @Column({ type: 'varchar', length: 3 })
+  costCurrency: string; // Moneda principal (ej: 'CUP')
 
   @Column({ type: 'jsonb', nullable: true })
   attributes?: Record<string, unknown>; // e.g., { size: 'XL', color: 'Red' }
@@ -35,4 +35,33 @@ export class Product extends SecurityBaseEntity {
 
   @OneToMany(() => Inventory, (inventory) => inventory.product)
   saleDetails: SaleDetail[];
+
+  @Column({ type: 'decimal', precision: 12, scale: 2 })
+  basePrice: number; // Precio base en la moneda principal
+
+  @Column({ type: 'varchar', length: 3 })
+  baseCurrency: string; // Moneda principal (ej: 'CUP')
+
+  @Column({ type: 'jsonb' })
+  pricingConfig: {
+    acceptedCurrencies: string[]; // Monedas aceptadas para pago (ej: ['CUP', 'USD', 'MLC'])
+    fixedPrices?: Array<{
+      // Precios fijos en otras monedas (opcional)
+      currency: string;
+      amount: number;
+    }>;
+    exchangeRateMargin?: number; // % margen para conversión (default 0)
+    decimalPlaces?: number; // Decimales a redondear (default 2)
+  };
+
+  @Column({ type: 'jsonb', nullable: true })
+  saleRules?: {
+    minQuantity?: number;
+    maxQuantity?: number;
+    bulkDiscounts?: Array<{
+      minQty: number;
+      discount: number; // % descuento
+      applicableCurrencies: string[]; // Monedas donde aplica
+    }>;
+  };
 }

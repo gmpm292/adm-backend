@@ -1,8 +1,8 @@
 type RoleGuard {
   id: Int
-  createdAt: String #Date
-  updatedAt: String #Date
-  deletedAt: String #Date
+  createdAt: Date
+  updatedAt: Date
+  deletedAt: Date
   queryOrEndPointURL: String
   roles: [Role]
   description: String

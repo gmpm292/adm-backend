@@ -8,10 +8,7 @@ import { RoleGuardEntity } from './entities/role-guard.entity';
 @Global()
 @Module({
   imports: [TypeOrmModule.forFeature([RoleGuardEntity])],
-  providers: [
-    //RoleGuardResolver,
-    RoleGuardService,
-  ],
+  providers: [RoleGuardResolver, RoleGuardService],
   exports: [RoleGuardService],
 })
 export class RoleGuardModule {}

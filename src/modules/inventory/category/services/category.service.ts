@@ -54,7 +54,7 @@ export class CategoryService extends BaseService<Category> {
   ): Promise<ListSummary> {
     return await super.baseFind({
       options,
-      relationsToLoad: ['products'],
+      relationsToLoad: ['products', 'business', 'office', 'department', 'team'],
       cu,
       scopes,
       manager,
@@ -71,6 +71,10 @@ export class CategoryService extends BaseService<Category> {
       id,
       relationsToLoad: {
         products: true,
+        business: true,
+        office: true,
+        department: true,
+        team: true,
       },
       cu,
       scopes,

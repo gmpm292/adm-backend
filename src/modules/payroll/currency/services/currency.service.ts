@@ -12,9 +12,14 @@ import {
 import { JWTPayload } from '../../../auth/dto/jwt-payload.dto';
 import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
 import { ScopedAccessService } from '../../../scoped-access/services/scoped-access.service';
+import { NotFoundError } from '../../../../core/errors/appErrors/NotFoundError.error';
+import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
 
 @Injectable()
 export class CurrencyService extends BaseService<Currency> {
+  private exchangeRateCache = new Map<string, number>();
+  private cacheTTL = 1000 * 60 * 5; // 5 minutos
+
   constructor(
     @InjectRepository(Currency)
     private currencyRepository: Repository<Currency>,
@@ -115,5 +120,59 @@ export class CurrencyService extends BaseService<Currency> {
       scopes,
       manager,
     });
+  }
+
+  async getExchangeRate(
+    fromCurrencyCode: string,
+    toCurrencyCode: string,
+    manager?: EntityManager,
+  ): Promise<number> {
+    const cacheKey = `${fromCurrencyCode}_${toCurrencyCode}`;
+    const cachedRate = this.exchangeRateCache.get(cacheKey);
+
+    if (cachedRate) {
+      return cachedRate;
+    }
+
+    if (fromCurrencyCode === toCurrencyCode) {
+      return 1; // Misma moneda, tasa 1:1
+    }
+
+    // Obtener ambas monedas
+    const fromCurrency = await this.findByCode(
+      fromCurrencyCode,
+      undefined,
+      undefined,
+      manager,
+    );
+    const toCurrency = await this.findByCode(
+      toCurrencyCode,
+      undefined,
+      undefined,
+      manager,
+    );
+
+    if (!fromCurrency || !toCurrency) {
+      throw new NotFoundError('One or both currencies were not found');
+    }
+
+    if (!fromCurrency.isActive || !toCurrency.isActive) {
+      throw new BadRequestError('One or both currencies were not active');
+    }
+
+    const rate =
+      fromCurrencyCode === toCurrencyCode // Misma moneda, tasa 1:1
+        ? 1
+        : fromCurrencyCode === 'CUP' // Si alguna moneda es CUP, podemos simplificar el cálculo
+          ? 1 / toCurrency.exchangeRateToCUP
+          : toCurrencyCode === 'CUP' // Si alguna moneda es CUP, podemos simplificar el cálculo
+            ? fromCurrency.exchangeRateToCUP
+            : fromCurrency.exchangeRateToCUP / toCurrency.exchangeRateToCUP; // Para conversiones entre dos monedas que no son CUP: Primero convertimos de la moneda origen a CUP, luego de CUP a la moneda destino
+
+    // Almacenar en caché
+    this.exchangeRateCache.set(cacheKey, rate);
+    setTimeout(() => this.exchangeRateCache.delete(cacheKey), this.cacheTTL);
+
+    return rate;
   }
 }

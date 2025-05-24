@@ -11,6 +11,15 @@ export class OfficeFiltersValidator {
   @IsDateString()
   deletedAt: string;
 
-  @IsString()'business.id': string;
-  
+  @IsString()
+  'business.id': string;
+
+  @IsString()
+  'businessId': string;
+
+  @IsString()
+  'business.name': string;
+
+  @IsString()
+  address: string;
 }
