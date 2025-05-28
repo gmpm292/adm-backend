@@ -1,0 +1,46 @@
+type FixedPrice {
+  currency: String!
+  amount: Float!
+}
+type BulkDiscount {
+  minQty: Int!
+  discount: Float!
+  applicableCurrencies: [String!]!
+}
+
+type PricingConfig {
+  acceptedCurrencies: [String!]!
+  fixedPrices: [FixedPrice!]
+  exchangeRateMargin: Float
+  decimalPlaces: Int
+}
+
+type SaleRules {
+  minQuantity: Int
+  maxQuantity: Int
+  bulkDiscounts: [BulkDiscount!]
+}
+
+input FixedPriceInput {
+  currency: String!
+  amount: Float!
+}
+
+input BulkDiscountInput {
+  minQty: Int!
+  discount: Float!
+  applicableCurrencies: [String!]!
+}
+
+input PricingConfigInput {
+  acceptedCurrencies: [String!]!
+  fixedPrices: [FixedPriceInput!]
+  exchangeRateMargin: Float
+  decimalPlaces: Int
+}
+
+input SaleRulesInput {
+  minQuantity: Int
+  maxQuantity: Int
+  bulkDiscounts: [BulkDiscountInput!]
+}

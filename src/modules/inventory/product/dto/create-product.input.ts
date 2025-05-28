@@ -6,7 +6,6 @@ import {
   Length,
   IsArray,
   ValidateNested,
-  IsBoolean,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { CreateSecurityBaseInput } from '../../../../core/dtos/create-security-base.input';

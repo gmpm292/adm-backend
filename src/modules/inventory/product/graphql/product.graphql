@@ -19,11 +19,16 @@ type Product implements SecurityBaseEntity {
   name: String!
   unitOfMeasure: String!
   costPrice: Float!
-  salePrice: Float!
+  costCurrency: String!
+  basePrice: Float!
+  baseCurrency: String!
   attributes: JSON
   warranty: String
   category: Category!
   inventories: [Inventory]!
+  saleDetails: [SaleDetail]!
+  pricingConfig: PricingConfig!
+  saleRules: SaleRules
 }
 
 type ProductsSummary {
@@ -41,9 +46,13 @@ input CreateProductInput {
   name: String!
   unitOfMeasure: String!
   costPrice: Float!
-  salePrice: Float!
+  costCurrency: String!
+  basePrice: Float!
+  baseCurrency: String!
   attributes: JSON
   warranty: String
+  pricingConfig: PricingConfigInput!
+  saleRules: SaleRulesInput
 }
 
 input UpdateProductInput {
@@ -57,9 +66,13 @@ input UpdateProductInput {
   name: String
   unitOfMeasure: String
   costPrice: Float
-  salePrice: Float
+  costCurrency: String
+  basePrice: Float
+  baseCurrency: String
   attributes: JSON
   warranty: String
+  pricingConfig: PricingConfigInput
+  saleRules: SaleRulesInput
 }
 
 extend type Query {
