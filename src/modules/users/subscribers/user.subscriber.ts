@@ -4,6 +4,7 @@ import {
   EventSubscriber,
   UpdateEvent,
   RemoveEvent,
+  SoftRemoveEvent,
 } from 'typeorm';
 import { User } from '../entities/user.entity';
 import { ForbiddenResourceError } from '../../../core/errors/appErrors/ForbiddenResourceError';
@@ -21,6 +22,10 @@ export class UserSubscriber implements EntitySubscriberInterface<User> {
   }
 
   beforeRemove(event: RemoveEvent<User>) {
+    this.validateSystemUser(event);
+  }
+
+  beforeSoftRemove(event: SoftRemoveEvent<User>): Promise<any> | void {
     this.validateSystemUser(event);
   }
 

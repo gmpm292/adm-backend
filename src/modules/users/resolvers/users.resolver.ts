@@ -184,6 +184,16 @@ export class UsersResolver {
     return removedUsers;
   }
 
+  @Roles(Role.SUPER)
+  @UseGuards(AccessTokenAuthGuard, RoleGuard)
+  @Mutation('restoreUsers')
+  public async restoreUsers(
+    @CurrentUser() user: JWTPayload,
+    @Args('ids') ids: number[],
+  ): Promise<number> {
+    return this.usersService.restore(ids, user);
+  }
+
   @UsePipes(new ValidationPipe({ transform: true }))
   @Mutation('requestPasswordChange')
   public async requestPasswordChange(

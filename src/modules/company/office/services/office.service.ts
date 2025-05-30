@@ -198,8 +198,10 @@ export class OfficeService extends BaseService<Office> {
       ...deletedOffices.flatMap((office) =>
         office.users?.filter((u) => u.deletedAt)?.length
           ? this.userService.restore(
-              office.users.filter((u) => u.deletedAt).map((u) => u.id),
-              cu,
+              office.users
+                .filter((u) => u.deletedAt)
+                .map((u) => u.id as number),
+              cu as JWTPayload,
               scopes,
               manager,
             )

@@ -200,8 +200,8 @@ export class TeamService extends BaseService<Team> {
       deletedTeams.map((team) =>
         team.users?.filter((u) => u.deletedAt)?.length
           ? this.userService.restore(
-              team.users.filter((u) => u.deletedAt).map((u) => u.id),
-              cu,
+              team.users.filter((u) => u.deletedAt).map((u) => u.id as number),
+              cu as JWTPayload,
               scopes,
               manager,
             )

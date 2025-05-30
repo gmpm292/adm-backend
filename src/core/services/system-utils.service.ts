@@ -21,6 +21,7 @@ export class SystemUtilsService {
   private async ensureSystemUserExists(): Promise<User> {
     let user = await this.entityManager.findOne(User, {
       where: { email: 'system@admin.com' },
+      withDeleted: true,
     });
     if (!user) {
       user = this.entityManager.create(User, {

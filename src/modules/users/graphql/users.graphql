@@ -162,6 +162,7 @@ extend type Mutation {
   updateUserProfile(updateUserProfileInput: UpdateUserProfileInput!): User!
   updateUserRole(updateUserRoleInput: UpdateUserRoleInput!): User!
   removeUsers(ids: [Int!]!): [User]!
+  restoreUsers(ids: [Int!]!): Int!
   requestPasswordChange(
     input: RequestPasswordChangeInput!
   ): RequestPasswordChange!

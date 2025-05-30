@@ -37,14 +37,6 @@ import { ScopedAccessService } from '../../scoped-access/services/scoped-access.
 
 @Injectable()
 export class UsersService extends BaseService<User> {
-  restore(
-    ids: (number | undefined)[],
-    cu: JWTPayload | undefined,
-    scopes: ScopedAccessEnum[] | undefined,
-    manager?: EntityManager,
-  ): any {
-    throw new Error('Method not implemented.');
-  }
   public constructor(
     @InjectRepository(User) private usersRepository: Repository<User>,
     private confirmationTokenService: ConfirmationTokenService,
@@ -393,6 +385,15 @@ export class UsersService extends BaseService<User> {
     // Add Log in future
 
     return users;
+  }
+
+  public async restore(
+    ids: number[],
+    cu: JWTPayload,
+    scopes?: ScopedAccessEnum[],
+    manager?: EntityManager,
+  ): Promise<number> {
+    return super.baseRestoreDeletedMany({ ids, manager, cu, scopes });
   }
 
   public async removeAll(): Promise<boolean> {

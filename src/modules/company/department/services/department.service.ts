@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-return */
 import { Injectable } from '@nestjs/common';
 import { InjectEntityManager, InjectRepository } from '@nestjs/typeorm';
 import {
@@ -215,8 +213,10 @@ export class DepartmentService extends BaseService<Department> {
       ...deletedDepartments.flatMap((department) =>
         department.users?.filter((u) => u.deletedAt)?.length
           ? this.userService.restore(
-              department.users.filter((u) => u.deletedAt).map((u) => u.id),
-              cu,
+              department.users
+                .filter((u) => u.deletedAt)
+                .map((u) => u.id as number),
+              cu as JWTPayload,
               scopes,
               manager,
             )
