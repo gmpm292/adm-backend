@@ -6,18 +6,23 @@ import { User } from '../../modules/users/entities/user.entity';
 @Injectable()
 export class AppMailerService implements IAppMailer {
   constructor(private readonly entityManager: EntityManager) {}
+
   public notifyUserCreation(user: User): Promise<any> {
     throw new Error('Method not implemented.');
   }
+
   public notifyPasswordRecovery(user: User): Promise<any> {
     throw new Error('Method not implemented.');
   }
+
   public notifySuccessSettingPassword(user: User): Promise<any> {
     throw new Error('Method not implemented.');
   }
+
   public notifyCustomerCreation(user: User): Promise<any> {
     throw new Error('Method not implemented.');
   }
+
   public notifyUserGeneral(
     email: string,
     subject: string,
