@@ -394,7 +394,6 @@ export class ProductService extends BaseService<Product> {
         await this.inventoryMovementService.create(
           {
             inventoryId: inventoryItem.id as number,
-            userId: cu?.sub as number,
             type: 'OUT',
             quantity: quantityToDeduct,
             reason,
@@ -483,7 +482,6 @@ export class ProductService extends BaseService<Product> {
       await this.inventoryMovementService.create(
         {
           inventoryId: inventoryItem.id as number,
-          userId: cu?.sub as number,
           type: 'IN',
           quantity: remainingQuantity,
           reason,

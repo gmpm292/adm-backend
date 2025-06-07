@@ -12,8 +12,9 @@ import {
   MinLength,
 } from 'class-validator';
 import { Role } from '../../../core/enums/role.enum';
+import { CreateSecurityBaseInput } from '../../../core/dtos/create-security-base.input';
 
-export class UpdateUserInput {
+export class UpdateUserInput extends CreateSecurityBaseInput {
   @IsInt()
   @IsPositive()
   public id: number;
@@ -53,31 +54,4 @@ export class UpdateUserInput {
   @ArrayNotEmpty()
   @ArrayMaxSize(1)
   role?: Role[];
-
-  /*
-   * Worker attributes.
-   */
-  @IsOptional()
-  @IsPositive()
-  @IsInt()
-  officeId?: number;
-
-  @IsOptional()
-  @IsPositive()
-  @IsInt()
-  departmentId?: number;
-
-  @IsOptional()
-  @IsPositive()
-  @IsInt()
-  teamId?: number;
-
-  @IsOptional()
-  @IsPositive()
-  @IsInt()
-  leadId?: number;
-
-  @IsOptional()
-  @IsString()
-  public zoomExt?: string;
 }

@@ -2,11 +2,8 @@
 
 import { Injectable } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
-import { Request } from 'express';
 import { Strategy } from 'passport-local';
 
-import { ClassicLoginInput } from '../dto/classic-login.input';
-import { getQueryArgumentsFromRequest } from '../helpers/request-body-variables.helper';
 import { AuthService } from '../services/auth.service';
 import { User } from '../../users/entities/user.entity';
 import { UnauthorizedError } from '../../../core/errors/appErrors/UnauthorizedError.error';

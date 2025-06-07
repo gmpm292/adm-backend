@@ -34,6 +34,10 @@ import { ConditionalOperator } from '../../../core/graphql/remote-operations/enu
 import { LogicalOperator } from '../../../core/graphql/remote-operations/enums/logical-operator.enum';
 import { ScopedAccessEnum } from '../../../core/enums/scoped-access.enum';
 import { ScopedAccessService } from '../../scoped-access/services/scoped-access.service';
+import { Business } from '../../company/business/entities/co_business.entity';
+import { Office } from '../../company/office/entities/co_office.entity';
+import { Team } from '../../company/team/entities/co_team.entity';
+import { Department } from '../../company/department/entities/co_department.entity';
 
 @Injectable()
 export class UsersService extends BaseService<User> {
@@ -82,14 +86,23 @@ export class UsersService extends BaseService<User> {
       enabled: true,
     };
 
-    await this.usersRepository.update(
-      { id: user.id },
-      {
+    // await this.usersRepository.update(
+    //   { id: user.id },
+    //   {
+    //     email: user.email,
+    //     password: await hash(newPassword, 10),
+    //     ...propertiesToUpdateAndRetrieve,
+    //   },
+    // );
+    await super.baseUpdate({
+      id: user.id as number,
+      data: {
         email: user.email,
         password: await hash(newPassword, 10),
         ...propertiesToUpdateAndRetrieve,
       },
-    );
+      cu: { sub: user.id as number, role: user.role as Array<Role> },
+    });
 
     // Add Logs in future
 
@@ -194,95 +207,27 @@ export class UsersService extends BaseService<User> {
 
   public async create(
     createUserInput: CreateUserInput,
-    currentUser?: JWTPayload,
+    cu?: JWTPayload,
   ): Promise<User> {
-    await this.checkUserInformation(createUserInput, currentUser as JWTPayload);
-    const { name, lastName, officeId, departmentId, teamId, leadId, ...rest } =
-      createUserInput;
+    await this.checkUserInformation(createUserInput, cu as JWTPayload);
+    const { name, lastName, ...rest } = createUserInput;
     const fullName = `${name?.trim() ?? ''} ${lastName?.trim() ?? ''}`;
     const user: User = {
       name,
       lastName,
       fullName,
-      // office: officeId ? ({ id: officeId } as Office) : null,
-      // department: departmentId ? ({ id: departmentId } as Department) : null,
-      // team: teamId ? ({ id: teamId } as Team) : null,
-      // lead: leadId ? ({ id: leadId } as LeadCenter) : null,
-      ...rest,
-    };
-    // ClickUpUrl: https://app.clickup.com/t/86az5nkq5
-    //await this.validateUniqueFields(user);
-    await this.validateUniqueEmail(user);
-
-    let createdUser: User;
-    try {
-      createdUser = await this.usersRepository.save(user);
-    } catch (e) {
-      throw new ConflictError(e.message);
-    }
-    const confirmationToken =
-      await this.confirmationTokenService.createConfirmationToken(
-        createdUser.id as number,
-      );
-    createdUser.confirmationToken = confirmationToken.tokenValue;
-
-    // Add Log in future
-
-    return createdUser;
-  }
-
-  public async createCustomer(
-    currentUser: JWTPayload,
-    createUserInput: CreateUserInput,
-  ): Promise<User> {
-    if (!createUserInput.officeId) {
-      throw new BadRequestError('The office is required.');
-    }
-    const { name, lastName, officeId, departmentId, teamId, leadId, ...rest } =
-      createUserInput;
-    const fullName = `${name?.trim() ?? ''} ${lastName?.trim() ?? ''}`;
-    const user: User = {
-      name,
-      lastName,
-      fullName,
-      // office: officeId ? ({ id: officeId } as Office) : null,
-      // department: departmentId ? ({ id: departmentId } as Department) : null,
-      // team: teamId ? ({ id: teamId } as Team) : null,
-      // lead: leadId ? ({ id: leadId } as LeadCenter) : null,
       ...rest,
     };
 
-    //await this.validateUniqueFields(user);
-    await this.validateUniqueEmail(user);
+    await this.validateUniqueFields(user);
 
     let createdUser: User;
     try {
-      //Create user and relation with de agent that create.
-      createdUser = await this.usersRepository.save(user).then(async (c) => {
-        // const relation: RelationEmployee = {
-        //   user: { id: currentUser.sub } as User,
-        //   customer: c,
-        //   createdBy: { id: currentUser.sub } as User,
-        //   expirationDate: moment().add(30, 'days').toDate(),
-        // };
-        // await this.mannager.save(RelationEmployee, relation);
-
-        // // Create customer history
-        // const history: CreateCustomerHistory = {
-        //   changes: undefined,
-        //   contents: c,
-        //   previousContents: undefined,
-        //   updateBy: { id: currentUser.sub } as User,
-        //   customer: c,
-        // };
-
-        // this.customerHistory
-        //   .create(history)
-        //   .catch((e) =>
-        //     console.log('Error creating customer history ', e.message),
-        //   );
-
-        return c;
+      //createdUser = await this.usersRepository.save(user);
+      createdUser = await super.baseCreate({
+        data: user,
+        cu,
+        isSecurityBaseEntity: true,
       });
     } catch (e) {
       throw new ConflictError(e.message);
@@ -796,13 +741,21 @@ export class UsersService extends BaseService<User> {
   ): Promise<void> {
     if (userInput.role) {
       if (userInput.role.some((r) => r === Role.SUPER)) {
-        if (userInput.officeId || userInput.departmentId || userInput.teamId) {
+        if (
+          userInput.businessId ||
+          userInput.officeId ||
+          userInput.departmentId ||
+          userInput.teamId
+        ) {
           throw new BadRequestError(
-            'The super cannot have a office, department or team',
+            'The super cannot have a business, office, department or team',
           );
         }
       }
       if (userInput.role.some((r) => r === Role.PRINCIPAL)) {
+        if (!userInput.businessId) {
+          throw new BadRequestError('The principal has no business.');
+        }
         if (userInput.officeId || userInput.departmentId || userInput.teamId) {
           throw new BadRequestError(
             'The principal cannot have a office, department or team',
@@ -810,8 +763,10 @@ export class UsersService extends BaseService<User> {
         }
       }
       if (userInput.role.some((r) => r === Role.ADMIN)) {
-        if (!userInput.officeId) {
-          throw new BadRequestError('The administrator has no office');
+        if (!userInput.businessId || !userInput.officeId) {
+          throw new BadRequestError(
+            'The administrator has no business or office',
+          );
         }
         if (userInput.departmentId || userInput.teamId) {
           throw new BadRequestError(
@@ -820,8 +775,14 @@ export class UsersService extends BaseService<User> {
         }
       }
       if (userInput.role.some((r) => r === Role.MANAGER)) {
-        if (!userInput.officeId || !userInput.departmentId) {
-          throw new BadRequestError('The manager has no office or department');
+        if (
+          !userInput.businessId ||
+          !userInput.officeId ||
+          !userInput.departmentId
+        ) {
+          throw new BadRequestError(
+            'The manager has no business or office or department',
+          );
         }
         if (userInput.teamId) {
           throw new BadRequestError('The manager cannot have a team');
@@ -829,19 +790,31 @@ export class UsersService extends BaseService<User> {
       }
       if (
         userInput.role.some((r) => r === Role.SUPERVISOR) &&
-        (!userInput.officeId || !userInput.departmentId || !userInput.teamId)
+        (!userInput.businessId ||
+          !userInput.officeId ||
+          !userInput.departmentId ||
+          !userInput.teamId)
       ) {
         throw new BadRequestError(
-          'The supervisor has no office, department or team',
+          'The supervisor has no business, office, department or team',
         );
       }
       if (
         userInput.role.some((r) => r === Role.AGENT) &&
-        (!userInput.officeId || !userInput.departmentId || !userInput.teamId)
+        (!userInput.businessId ||
+          !userInput.officeId ||
+          !userInput.departmentId ||
+          !userInput.teamId)
       ) {
         throw new BadRequestError(
-          'The agent has no office, department or team',
+          'The agent has no business, office, department or team',
         );
+      }
+      if (
+        userInput.role.some((r) => r === Role.USER) &&
+        !userInput.businessId
+      ) {
+        throw new BadRequestError('The user has no business');
       }
 
       //Check that a role cannot create a higher one
@@ -912,54 +885,54 @@ export class UsersService extends BaseService<User> {
     }
     if (
       user.role.some((r) => r === Role.SUPER) &&
-      (user.office || user.department || user.team)
+      (user.business || user.office || user.department || user.team)
     ) {
       throw new ForbiddenResourceError(
-        'This user cannot have an office, department or team.',
+        'This user cannot have an business, office, department or team.',
       );
     }
     if (
       user.role.some((r) => r === Role.PRINCIPAL) &&
-      (user.office || user.department || user.team)
+      (!user.business || user.office || user.department || user.team)
     ) {
       throw new ForbiddenResourceError(
-        'This user cannot have an office, department or team.',
+        'This user does not have an business or has a office, department or team.',
       );
     }
     if (
       user.role.some((r) => r === Role.ADMIN) &&
-      (!user.office || user.department || user.team)
+      (!user.business || !user.office || user.department || user.team)
     ) {
       throw new ForbiddenResourceError(
-        'This user does not have an office or has a department or team.',
+        'This user does not have an business or office or has a department or team.',
       );
     }
     if (
       user.role.some((r) => r === Role.MANAGER) &&
-      (!user.office || !user.department || user.team)
+      (!user.business || !user.office || !user.department || user.team)
     ) {
       throw new ForbiddenResourceError(
-        'This user does not have an office or department or has a team.',
+        'This user does not have an business or office or department or has a team.',
       );
     }
     if (
       user.role.some((r) => r === Role.SUPERVISOR) &&
-      (!user.office || !user.department || !user.team)
+      (!user.business || !user.office || !user.department || !user.team)
     ) {
       throw new ForbiddenResourceError(
-        'This user does not have an office or department or team.',
+        'This user does not have an business or office or department or team.',
       );
     }
     if (
       user.role.some((r) => r === Role.AGENT) &&
-      (!user.office || !user.department || !user.team)
+      (!user.business || !user.office || !user.department || !user.team)
     ) {
       throw new ForbiddenResourceError(
-        'This user does not have an office or department or team.',
+        'This user does not have an business or office or department or team.',
       );
     }
-    if (user.role.some((r) => r === Role.USER) && !user.office) {
-      throw new ForbiddenResourceError('This user does not have an office.');
+    if (user.role.some((r) => r === Role.USER) && !user.business) {
+      throw new ForbiddenResourceError('This user does not have an business.');
     }
     return;
   }

@@ -306,13 +306,35 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
     manager?: EntityManager;
     cu?: JWTPayload;
     scopes?: ScopedAccessEnum[];
+    isSecurityBaseEntity?: boolean;
   }): Promise<Entity> {
-    const { id, data, manager, cu, scopes } = params;
+    const { id, data, manager, cu, scopes, isSecurityBaseEntity } = params;
+
+    // 1. Primero validamos que la entidad exista y el usuario tenga acceso
     const dataInDB = await this.baseFindOne({ id, cu, scopes });
     if (!dataInDB) {
       throw new NotFoundError();
     }
-    const entity = this.repository.create({ ...dataInDB, ...data, id });
+
+    // 2. Aplicar reglas de seguridad si es necesario
+    let updateData = { ...data };
+    if (isSecurityBaseEntity && cu && this.scopedAccessService) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      updateData = this.scopedAccessService.forBaseUpdate(
+        cu,
+        updateData,
+        scopes,
+      );
+    }
+
+    // 3. Combinar datos existentes con los nuevos
+    const entity = this.repository.create({
+      ...dataInDB,
+      ...updateData,
+      id, // Asegurar que el ID no se sobrescriba
+    });
+
+    // 4. Guardar usando transaction manager si está disponible
     return manager
       ? await manager.save<Entity>(entity)
       : await this.repository.save(entity);

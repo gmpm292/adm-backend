@@ -91,17 +91,15 @@ input ChangePasswordByEmailInput {
 
 input CreateUserInput {
   email: String!
-  #  enabled: Boolean!
   name: String!
   lastName: String
   mobile: String
   role: [Role]!
-  #worker
+
+  businessId: Int
   officeId: Int
   departmentId: Int
   teamId: Int
-  leadId: Int
-  zoomExt: String
 }
 
 input CreateFirstUserInput {
@@ -115,6 +113,7 @@ input CreateFirstUserInput {
 input RequestPasswordChangeInput {
   email: String!
 }
+
 input UpdateUserInput {
   id: Int!
   email: String
@@ -123,10 +122,11 @@ input UpdateUserInput {
   lastName: String
   mobile: String
   #role: [Role]
-  #officeId: Int
-  #departmentId: Int
-  #teamId: Int
-  zoomExt: String
+
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
 }
 
 input UpdateUserProfileInput {
@@ -134,7 +134,6 @@ input UpdateUserProfileInput {
   name: String
   lastName: String
   mobile: String
-  zoomExt: String
 }
 
 input UpdateUserRoleInput {

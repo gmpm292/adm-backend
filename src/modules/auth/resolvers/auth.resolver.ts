@@ -43,6 +43,8 @@ export class AuthResolver {
   ): Promise<LoginOutput> {
     const { res } = context;
 
+    await this.usersService.chekCompanyInfo(user);
+
     const accessToken = this.authService.createAccessToken(user);
     // Check if user have active session and notifi close
     await this.authService.checkAndNotifyCloseActiveSession(user);
@@ -61,9 +63,6 @@ export class AuthResolver {
     await this.usersService.saveRefreshToken(user.id as number, refreshToken);
     this.authService.addRefreshTokenToCookies(refreshToken, res);
 
-    // Add Log in WorkerLogs
-    // this.workerLogsService.create({ info: 'Login', workerId: user.id });
-
     return {
       accessToken,
       refreshToken,
@@ -78,6 +77,8 @@ export class AuthResolver {
     @Context() context,
   ): Promise<LoginOutput> {
     const { res } = context;
+
+    await this.usersService.chekCompanyInfo(user);
 
     const accessToken = this.authService.createAccessToken(user);
     // Check if user have active session and notifi close

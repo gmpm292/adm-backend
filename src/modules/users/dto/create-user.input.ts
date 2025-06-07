@@ -4,16 +4,15 @@ import {
   IsBoolean,
   IsEmail,
   IsEnum,
-  IsInt,
   IsOptional,
   IsPhoneNumber,
-  IsPositive,
   IsString,
   MinLength,
 } from 'class-validator';
 import { Role } from '../../../core/enums/role.enum';
+import { CreateSecurityBaseInput } from '../../../core/dtos/create-security-base.input';
 
-export class CreateUserInput {
+export class CreateUserInput extends CreateSecurityBaseInput {
   @IsString()
   @MinLength(3)
   name: string;
@@ -37,31 +36,4 @@ export class CreateUserInput {
   @ArrayNotEmpty()
   @ArrayMaxSize(1)
   role: Role[];
-
-  /*
-   * Worker attributes.
-   */
-  @IsOptional()
-  @IsPositive()
-  @IsInt()
-  officeId?: number;
-
-  @IsOptional()
-  @IsPositive()
-  @IsInt()
-  departmentId?: number;
-
-  @IsOptional()
-  @IsPositive()
-  @IsInt()
-  teamId?: number;
-
-  @IsOptional()
-  @IsPositive()
-  @IsInt()
-  leadId?: number;
-
-  @IsString()
-  @IsOptional()
-  public zoomExt?: string;
 }

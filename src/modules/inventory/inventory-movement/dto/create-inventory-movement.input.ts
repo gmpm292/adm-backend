@@ -6,6 +6,7 @@ import {
   IsBoolean,
   IsOptional,
   IsUUID,
+  ValidateIf,
 } from 'class-validator';
 import { CreateSecurityBaseInput } from '../../../../core/dtos/create-security-base.input';
 
@@ -26,8 +27,8 @@ export class CreateInventoryMovementInput extends CreateSecurityBaseInput {
   @IsInt()
   inventoryId: number;
 
-  @IsInt()
-  userId: number;
+  // @IsInt()
+  // userId: number;
 
   @IsString()
   @IsIn(['IN', 'OUT'])
@@ -40,8 +41,8 @@ export class CreateInventoryMovementInput extends CreateSecurityBaseInput {
   @IsString()
   reason: string;
 
+  @ValidateIf((o: CreateInventoryMovementInput) => o.isReservation ?? false)
   @IsUUID()
-  @IsOptional()
   reservationId?: string; // UUID para agrupar movimientos relacionados
 
   @IsBoolean()

@@ -34,14 +34,14 @@ import {
 
 import { LoggerService } from '../../../common/logger';
 import { REDIS_PUB_SUB_TOKEN } from '../../../common/graphql/pubsub/pubsub.module';
-//import { IAppMailer } from '../../../core/mailer/app-mailer.interface';
+import { IAppMailer } from '../../../core/mailer/app-mailer.interface';
 import { RedisPubSub } from 'graphql-redis-subscriptions';
 
 @Resolver('User')
 export class UsersResolver {
   public constructor(
     @Inject(REDIS_PUB_SUB_TOKEN) private readonly pubSub: RedisPubSub,
-    //private mailerService: IAppMailer,
+    private mailerService: IAppMailer,
     private logger: LoggerService,
     private readonly usersService: UsersService,
     private confirmationTokenService: ConfirmationTokenService,
@@ -85,11 +85,12 @@ export class UsersResolver {
 
     await this.pubSub.publish('userChanged', { userChanged: true });
 
-    // await this.mailerService
-    //   .notifySuccessSettingPassword(updatedUser)
-    //   .catch((reason) =>
-    //     this.logger.error('Notification of user creation failed', reason),
-    //   );
+    await this.mailerService
+      .notifySuccessSettingPassword(updatedUser)
+      .catch((reason) =>
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        this.logger.error('Notification of user creation failed', reason),
+      );
 
     return updatedUser;
   }
@@ -112,11 +113,12 @@ export class UsersResolver {
 
     await this.pubSub.publish('userChanged', { userChanged: true });
 
-    // this.mailerService
-    //   .notifySuccessSettingPassword(updatedUser)
-    //   .catch((reason) =>
-    //     this.logger.error('Notification of user creation failed', reason),
-    //   );
+    this.mailerService
+      .notifySuccessSettingPassword(updatedUser)
+      .catch((reason) =>
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        this.logger.error('Notification of user creation failed', reason),
+      );
 
     return updatedUser;
   }
@@ -131,11 +133,10 @@ export class UsersResolver {
 
     await this.pubSub.publish('userChanged', { userChanged: true });
 
-    // await this.mailerService
-    //   .notifyUserCreation(createdUser)
-    //   .catch((reason) =>
-    //     this.logger.error('Notification of user creation failed', reason),
-    //   );
+    await this.mailerService.notifyUserCreation(createdUser).catch((reason) =>
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+      this.logger.error('Notification of user creation failed', reason),
+    );
 
     return createdUser;
   }
@@ -155,11 +156,10 @@ export class UsersResolver {
 
     await this.pubSub.publish('userChanged', { userChanged: true });
 
-    // this.mailerService
-    //   .notifyUserCreation(createdUser)
-    //   .catch((reason) =>
-    //     this.logger.error('Notification of user creation failed', reason),
-    //   );
+    this.mailerService.notifyUserCreation(createdUser).catch((reason) =>
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+      this.logger.error('Notification of user creation failed', reason),
+    );
 
     return createdUser;
   }
@@ -212,13 +212,13 @@ export class UsersResolver {
 
     await this.pubSub.publish('userChanged', { userChanged: true });
 
-    // await this.mailerService.notifyPasswordRecovery(user).catch((reason) => {
-    //   this.logger.error(
-    //     'Notification of request to change password failed',
-    //     reason,
-    //   );
-    //   throw reason.message;
-    // });
+    await this.mailerService.notifyPasswordRecovery(user).catch((reason) =>
+      this.logger.error(
+        'Notification of request to change password failed',
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        reason,
+      ),
+    );
 
     return 'Successful Request';
   }
@@ -241,13 +241,13 @@ export class UsersResolver {
 
     await this.pubSub.publish('userChanged', { userChanged: true });
 
-    // await this.mailerService.notifyPasswordRecovery(user).catch((reason) => {
-    //   this.logger.error(
-    //     'Notification of request to change password failed',
-    //     reason,
-    //   );
-    //   throw reason.message;
-    // });
+    await this.mailerService.notifyPasswordRecovery(user).catch((reason) =>
+      this.logger.error(
+        'Notification of request to change password failed',
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        reason,
+      ),
+    );
 
     return 'Successful Request';
   }

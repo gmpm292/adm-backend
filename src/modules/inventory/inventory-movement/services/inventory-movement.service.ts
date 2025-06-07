@@ -41,7 +41,7 @@ export class InventoryMovementService extends BaseService<InventoryMovement> {
     const [inventory, user] = await Promise.all([
       this.inventoryService.findOne(inventoryId, cu, scopes, manager),
       this.userService.findOne(
-        createMovementInput.userId,
+        cu?.sub as number,
         undefined,
         cu,
         scopes,
@@ -93,7 +93,7 @@ export class InventoryMovementService extends BaseService<InventoryMovement> {
   ): Promise<ListSummary> {
     return await super.baseFind({
       options,
-      relationsToLoad: ['inventory', 'user'],
+      relationsToLoad: ['inventory', 'inventory.product', 'user'],
       cu,
       scopes,
       manager,
@@ -109,7 +109,7 @@ export class InventoryMovementService extends BaseService<InventoryMovement> {
     return super.baseFindOne({
       id,
       relationsToLoad: {
-        inventory: true,
+        inventory: { product: true },
         user: true,
       },
       cu,
@@ -165,14 +165,8 @@ export class InventoryMovementService extends BaseService<InventoryMovement> {
       );
     }
 
-    const {
-      inventoryId,
-      userId,
-      isReservation,
-      reservationId,
-      referenceId,
-      ...rest
-    } = updateMovementInput;
+    const { inventoryId, isReservation, reservationId, referenceId, ...rest } =
+      updateMovementInput;
 
     return super.baseUpdate({
       id,

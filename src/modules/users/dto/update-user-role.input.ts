@@ -3,12 +3,12 @@ import {
   ArrayNotEmpty,
   IsEnum,
   IsInt,
-  IsOptional,
   IsPositive,
 } from 'class-validator';
 import { Role } from '../../../core/enums/role.enum';
+import { CreateSecurityBaseInput } from '../../../core/dtos/create-security-base.input';
 
-export class UpdateUserRoleInput {
+export class UpdateUserRoleInput extends CreateSecurityBaseInput {
   @IsInt()
   @IsPositive()
   public id: number;
@@ -17,22 +17,4 @@ export class UpdateUserRoleInput {
   @ArrayNotEmpty()
   @ArrayMaxSize(1)
   role: Role[];
-
-  /*
-   * Worker attributes.
-   */
-  @IsOptional()
-  @IsPositive()
-  @IsInt()
-  officeId?: number;
-
-  @IsOptional()
-  @IsPositive()
-  @IsInt()
-  departmentId?: number;
-
-  @IsOptional()
-  @IsPositive()
-  @IsInt()
-  teamId?: number;
 }

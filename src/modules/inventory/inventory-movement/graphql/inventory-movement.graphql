@@ -19,7 +19,6 @@ type InventoryMovement implements SecurityBaseEntity {
   type: MovementType!
   quantity: Int!
   reason: String!
-  timestamp: Date!
   inventory: Inventory!
   user: User!
 }
@@ -41,7 +40,7 @@ input CreateInventoryMovementInput {
   teamId: Int
 
   inventoryId: Int!
-  userId: Int!
+  #userId: Int!
   type: MovementType!
   quantity: Int!
   reason: String!

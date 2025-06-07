@@ -293,10 +293,9 @@ export class ScopedAccessService {
   public forBaseCreate(
     cu: JWTPayload,
     createDto: any,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     scopes?: ScopedAccessEnum[],
   ) {
-    const effectiveScopes = Object.values(ScopedAccessEnum);
+    const effectiveScopes = scopes ?? Object.values(ScopedAccessEnum);
 
     if (cu) {
       createDto.createdBy = { id: cu.sub };
@@ -305,12 +304,12 @@ export class ScopedAccessService {
 
     // SUPER users must provide at least businessId
     if (cu.role?.some((r) => r === Role.SUPER)) {
-      if (
-        !createDto.businessId &&
-        effectiveScopes.includes(ScopedAccessEnum.BUSINESS)
-      ) {
-        throw new BadRequestError('SUPER users must provide businessId');
-      }
+      // if (
+      //   !createDto.businessId &&
+      //   effectiveScopes.includes(ScopedAccessEnum.BUSINESS)
+      // ) {
+      //   throw new BadRequestError('SUPER users must provide businessId');
+      // }
       return this.transformIdsToRelations(createDto);
     }
 
@@ -419,7 +418,99 @@ export class ScopedAccessService {
       delete transformedDto.teamId;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return transformedDto;
+  }
+
+  /**
+   * Validates and transforms update DTO based on user role and scopes
+   * @param cu Current user payload
+   * @param updateDto The DTO being validated
+   * @param scopes Allowed scopes for the operation
+   */
+  public forBaseUpdate(
+    cu: JWTPayload,
+    updateDto: any,
+    scopes?: ScopedAccessEnum[],
+  ) {
+    const effectiveScopes = scopes ?? Object.values(ScopedAccessEnum);
+
+    // Always update the updatedBy field
+    updateDto.updatedBy = { id: cu.sub };
+
+    // SUPER users can modify any hierarchy fields
+    if (cu.role?.some((r) => r === Role.SUPER)) {
+      return this.transformIdsToRelations(updateDto);
+    }
+
+    // Validate hierarchy field modifications based on role
+    if (
+      updateDto.businessId !== undefined ||
+      updateDto.business !== undefined
+    ) {
+      if (!cu.role?.some((r) => r === Role.SUPER)) {
+        throw new UnauthorizedError('Only SUPER users can modify business');
+      }
+      if (!effectiveScopes.includes(ScopedAccessEnum.BUSINESS)) {
+        throw new UnauthorizedError(
+          'Business scope not allowed for this operation',
+        );
+      }
+    }
+
+    if (updateDto.officeId !== undefined || updateDto.office !== undefined) {
+      if (!cu.role?.some((r) => r === Role.SUPER || r === Role.PRINCIPAL)) {
+        throw new UnauthorizedError(
+          'Only SUPER and PRINCIPAL users can modify office',
+        );
+      }
+      if (!effectiveScopes.includes(ScopedAccessEnum.OFFICE)) {
+        throw new UnauthorizedError(
+          'Office scope not allowed for this operation',
+        );
+      }
+    }
+
+    if (
+      updateDto.departmentId !== undefined ||
+      updateDto.department !== undefined
+    ) {
+      if (
+        !cu.role?.some(
+          (r) => r === Role.SUPER || r === Role.PRINCIPAL || r === Role.ADMIN,
+        )
+      ) {
+        throw new UnauthorizedError(
+          'Only SUPER, PRINCIPAL and ADMIN users can modify department',
+        );
+      }
+      if (!effectiveScopes.includes(ScopedAccessEnum.DEPARTMENT)) {
+        throw new UnauthorizedError(
+          'Department scope not allowed for this operation',
+        );
+      }
+    }
+
+    if (updateDto.teamId !== undefined || updateDto.team !== undefined) {
+      if (
+        !cu.role?.some(
+          (r) =>
+            r === Role.SUPER ||
+            r === Role.PRINCIPAL ||
+            r === Role.ADMIN ||
+            r === Role.MANAGER,
+        )
+      ) {
+        throw new UnauthorizedError(
+          'Only SUPER, PRINCIPAL, ADMIN and MANAGER users can modify team',
+        );
+      }
+      if (!effectiveScopes.includes(ScopedAccessEnum.TEAM)) {
+        throw new UnauthorizedError(
+          'Team scope not allowed for this operation',
+        );
+      }
+    }
+
+    return this.transformIdsToRelations(updateDto);
   }
 }
