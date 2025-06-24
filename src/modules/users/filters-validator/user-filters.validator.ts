@@ -6,6 +6,12 @@ export class UserFiltersValidator extends BaseFiltersValidator {
   name: string;
 
   @IsString()
+  lastName: string;
+
+  @IsString()
+  fullName: string;
+
+  @IsString()
   role: string;
 
   @IsString()

@@ -48,6 +48,7 @@ export class EnvironmentVariables {
   public SUBSCRIPTION_REDIS_PORT: string;
   @IsOptional()
   public SUBSCRIPTION_REDIS_PASSWORD: string;
+
   ////.ENV //////////////////////////////////////////////////////////////
 
   ////Backend Configurations //////////////////////////////////////////////////////////////
@@ -64,5 +65,37 @@ export class EnvironmentVariables {
   //Logs
   DAYS_TO_PRESERVE_LOGS: string;
 
-  ////Backend Configurations //////////////////////////////////////////////////////////////
+  // Email
+  //// Configuración básica
+  EMAIL_PROVIDER: string;
+  FROM: string;
+  FROM_EMAIL: string;
+  EMAIL_USER: string;
+  TEMPLATE_DIR: string;
+  EMAIL_TEST_ON_STARTUP: boolean;
+  EMAIL_TEST_RECIPIENT: string;
+  ENCRYPTION_KEY: string;
+  //// Configuración SMTP
+  EMAIL_HOST: string;
+  EMAIL_PORT: string;
+  EMAIL_PASSWORD: string;
+  EMAIL_SECURE: string;
+  //// Configuración OAuth2 (Google)
+  EMAIL_CLIENT_ID: string;
+  EMAIL_SECRET_KEY: string;
+  EMAIL_REDIRECT_URI: string;
+  EMAIL_REFRESH_TOKEN: string;
+  EMAIL_SERVICE: string;
+  //// Configuración de plantillas
+
+  // Telegram
+  //// Configuración de Telegram_BOTS
+  TELEGRAM_BOTS: string;
+  //// Configuración de Telegram_API
+  TELEGRAM_API_ID: string;
+  TELEGRAM_API_HASH: string;
+  TELEGRAM_SESSION: string;
+  //// Configuración de Telegram_WEBHOOKS
+  TELEGRAM_WEBHOOK_URL: string;
+  TELEGRAM_SECRET_TOKEN: string;
 }

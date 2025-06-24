@@ -39,4 +39,50 @@ export const backendConfigurations: Array<Config> = [
     configVisibility: ConfigVisibility.PRIVATE,
     configStatus: ConfigStatus.ENABLED,
   },
+
+  {
+    category: ConfigCategory.GENERAL,
+    group: 'Email-General',
+    description: 'Configuraciones de email del sistema',
+    values: {
+      EMAIL_PROVIDER: 'gmail_oauth2',
+      FROM: 'Nombre de tu aplicación',
+      FROM_EMAIL: 'no-reply@tudominio.com',
+      EMAIL_USER: 'tu_usuario_de_configuracion_google_console',
+      TEMPLATE_DIR: '/templates/email',
+      EMAIL_TEST_ON_STARTUP: false,
+      EMAIL_TEST_RECIPIENT: 'tu-email@example.com',
+    },
+    configVisibility: ConfigVisibility.PRIVATE,
+    configStatus: ConfigStatus.ENABLED,
+  },
+
+  {
+    category: ConfigCategory.GENERAL,
+    group: 'Email-OAuth2',
+    description: 'Configuraciones de transporte de email del sistema',
+    values: {
+      EMAIL_CLIENT_ID: 'tu_client_id',
+      EMAIL_SECRET_KEY: 'tu_secret_key',
+      EMAIL_REDIRECT_URI: 'tu_redirect_uri',
+      EMAIL_REFRESH_TOKEN: 'tu_refresh_token',
+      EMAIL_SERVICE: 'gmail',
+    },
+    configVisibility: ConfigVisibility.PRIVATE,
+    configStatus: ConfigStatus.ENABLED,
+  },
+
+  {
+    category: ConfigCategory.GENERAL,
+    group: 'Email-SMTP',
+    description: 'Configuraciones de transporte de email del sistema',
+    values: {
+      EMAIL_HOST: 'smtp.example.com',
+      EMAIL_PORT: 587,
+      EMAIL_PASSWOR: 'tu_contraseña',
+      EMAIL_SECURE: false,
+    },
+    configVisibility: ConfigVisibility.PRIVATE,
+    configStatus: ConfigStatus.ENABLED,
+  },
 ];

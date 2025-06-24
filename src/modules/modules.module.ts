@@ -7,6 +7,8 @@ import { CompanyModule } from './company/company.module';
 import { InventoryGlobalModule } from './inventory/inventory-global.module';
 import { SaleModule } from './sales/sale/sale.module';
 import { PayrollModule } from './payroll/payroll.module';
+import { EmailModule } from './email/email.module';
+import { TelegramModule } from './telegram/telegram.module';
 
 @Module({
   imports: [
@@ -18,6 +20,8 @@ import { PayrollModule } from './payroll/payroll.module';
     InventoryGlobalModule,
     SaleModule,
     PayrollModule,
+    //EmailModule,
+    TelegramModule,
   ],
   providers: [],
 })

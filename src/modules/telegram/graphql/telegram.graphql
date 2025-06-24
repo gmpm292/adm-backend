@@ -1,0 +1,125 @@
+type TelegramMessage {
+  id: ID!
+  chatId: String!
+  phoneNumber: String
+  isPhoneBased: Boolean!
+  sender: User
+  recipients: [TelegramRecipient!]!
+  message: String!
+  messageType: TelegramMessageType!
+  attachments: [TelegramAttachment]
+  context: JSON
+  status: TelegramStatus!
+  error: TelegramError
+  sentAt: DateTime
+  retryCount: Int!
+  lastRetryAt: DateTime
+  template: TelegramTemplate
+  botTokenKey: String!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+type TelegramTemplate {
+  id: ID!
+  name: String!
+  message: String!
+  messageType: TelegramMessageType!
+  defaultContext: JSON
+  isActive: Boolean!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+type TelegramRecipient {
+  chatId: String
+  phoneNumber: String
+  username: String
+  firstName: String
+  lastName: String
+}
+
+type TelegramStats {
+  total: Int!
+  sent: Int!
+  delivered: Int!
+  failed: Int!
+  pending: Int!
+  successRate: Float!
+  byBotToken: JSON!
+  byMessageType: JSON!
+}
+
+type TelegramError {
+  message: String!
+  stack: String
+  code: String
+  timestamp: DateTime!
+}
+
+type TelegramAttachment {
+  type: String!
+  url: String!
+  caption: String
+}
+
+input SendTelegramMessageInput {
+  chatId: String
+  phoneNumber: String
+  recipients: [TelegramRecipientInput!]!
+  message: String
+  messageType: TelegramMessageType = TEXT
+  attachments: [TelegramAttachmentInput]
+  context: JSON
+  templateId: ID
+  botTokenKey: String = "default"
+}
+
+input TelegramRecipientInput {
+  chatId: String
+  phoneNumber: String
+  username: String
+  firstName: String
+  lastName: String
+}
+
+input TelegramAttachmentInput {
+  type: String!
+  url: String!
+  caption: String
+}
+
+input CreateTelegramTemplateInput {
+  name: String!
+  message: String!
+  messageType: TelegramMessageType!
+  defaultContext: JSON
+  isActive: Boolean = true
+}
+
+enum TelegramMessageType {
+  TEXT
+  MARKDOWN
+  HTML
+  PHOTO
+  DOCUMENT
+}
+
+enum TelegramStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+  RETRYING
+}
+
+type Query {
+  telegramMessages: [TelegramMessage!]!
+  telegramTemplates: [TelegramTemplate!]!
+  telegramStats: TelegramStats!
+}
+
+type Mutation {
+  sendTelegramMessage(input: SendTelegramMessageInput!): TelegramMessage!
+  createTelegramTemplate(input: CreateTelegramTemplateInput!): TelegramTemplate!
+}

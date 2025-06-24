@@ -1,0 +1,127 @@
+type Email {
+  id: ID!
+  from: String!
+  to: String!
+  cc: String
+  bcc: String
+  subject: String!
+  body: String!
+  context: JSON
+  status: EmailStatus!
+  provider: EmailProvider!
+  templateId: ID
+  attachments: [EmailAttachment]
+  error: EmailError
+  sentAt: DateTime
+  retryCount: Int!
+  lastRetryAt: DateTime
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+type EmailTemplate {
+  id: ID!
+  name: String!
+  subject: String!
+  body: String!
+  defaultContext: JSON
+  isActive: Boolean!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+type EmailAttachment {
+  filename: String!
+  path: String!
+  cid: String
+}
+
+type EmailError {
+  message: String!
+  stack: String
+  code: String
+}
+
+type EmailStats {
+  total: Int!
+  sent: Int!
+  failed: Int!
+  pending: Int!
+  successRate: Float!
+}
+
+scalar DateTime
+scalar JSON
+
+input EmailAttachmentInput {
+  filename: String!
+  path: String!
+  cid: String
+}
+
+enum EmailStatus {
+  PENDING
+  SENT
+  FAILED
+  RETRYING
+}
+
+enum EmailProvider {
+  SMTP
+  GMAIL_OAUTH2
+  SENDGRID
+  MAILGUN
+}
+
+input SendEmailInput {
+  to: String!
+  subject: String!
+  body: String!
+  cc: String
+  bcc: String
+  attachments: [EmailAttachmentInput]
+  context: JSON
+  templateId: Int
+}
+
+input SendEmailWithTemplateInput {
+  to: String!
+  templateId: ID!
+  context: JSON
+  cc: String
+  bcc: String
+  attachments: [EmailAttachmentInput]
+}
+
+input CreateEmailTemplateInput {
+  name: String!
+  subject: String!
+  body: String!
+  defaultContext: JSON
+  isActive: Boolean
+}
+
+input UpdateEmailTemplateInput {
+  id: ID!
+  name: String
+  subject: String
+  body: String
+  defaultContext: JSON
+  isActive: Boolean
+}
+
+type Query {
+  emails: [Email]!
+  email(id: ID!): Email
+  emailTemplates: [EmailTemplate]!
+  emailTemplate(id: ID!): EmailTemplate
+  emailStats: EmailStats!
+}
+
+type Mutation {
+  sendEmail(input: SendEmailInput!): Email!
+  sendEmailWithTemplate(input: SendEmailWithTemplateInput!): Email!
+  createEmailTemplate(input: CreateEmailTemplateInput!): EmailTemplate!
+  updateEmailTemplate(input: UpdateEmailTemplateInput!): EmailTemplate!
+  retryFailedEmails: Boolean!
+}
