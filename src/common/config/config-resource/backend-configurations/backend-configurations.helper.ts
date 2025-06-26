@@ -110,4 +110,16 @@ export const backendConfigurations: Array<Config> = [
     configVisibility: ConfigVisibility.PRIVATE,
     configStatus: ConfigStatus.ENABLED,
   },
+
+  {
+    category: ConfigCategory.GENERAL,
+    group: 'Telegram-WEBHOOK',
+    description: 'Configuraciones de transporte de email del sistema',
+    values: {
+      TELEGRAM_WEBHOOK_URL: 'https://url-app-backend.com',
+      TELEGRAM_SECRET_TOKEN: 'tu_token_secreto',
+    },
+    configVisibility: ConfigVisibility.PRIVATE,
+    configStatus: ConfigStatus.ENABLED,
+  },
 ];
