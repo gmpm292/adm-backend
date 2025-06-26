@@ -85,4 +85,29 @@ export const backendConfigurations: Array<Config> = [
     configVisibility: ConfigVisibility.PRIVATE,
     configStatus: ConfigStatus.ENABLED,
   },
+
+  {
+    category: ConfigCategory.GENERAL,
+    group: 'Telegram-API',
+    description: 'Configuraciones de transporte de email del sistema',
+    values: {
+      TELEGRAM_API_ID: 123456,
+      TELEGRAM_API_HASH: 'your_api_hash_here',
+      TELEGRAM_SESSION: 'your_session_string_here',
+    },
+    configVisibility: ConfigVisibility.PRIVATE,
+    configStatus: ConfigStatus.ENABLED,
+  },
+
+  {
+    category: ConfigCategory.GENERAL,
+    group: 'Telegram-Bots',
+    description: 'Configuraciones de transporte de email del sistema',
+    values: {
+      TELEGRAM_BOTS:
+        '{"default":"123456789:AAEXAMPLEBOTTOKEN","notifications":"987654321:AAOTHERBOTTOKEN","support":"567891234:AASUPPORTBOTTOKEN"},',
+    },
+    configVisibility: ConfigVisibility.PRIVATE,
+    configStatus: ConfigStatus.ENABLED,
+  },
 ];

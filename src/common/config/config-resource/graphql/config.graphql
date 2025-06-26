@@ -1,22 +1,31 @@
 enum ConfigVisibility {
-  PUBLIC_ENT
-  PRIVATE_ENT
+  PUBLIC
+  PRIVATE
 }
 
 enum ConfigStatus {
-  disabled
-  enabled
+  DISABLED
+  ENABLED
+}
+
+enum ConfigCategory {
+  GENERAL
+  SECURITY
+  FRONTEND
+  SYSTEM
 }
 
 type Config {
-  id:Int
-  createdAt: String #Date
-  updatedAt: String #Date
-  deletedAt: String #Date
-  key: String
-  value: String #JSON
-  configVisibility: Int
-  configStatus: Int
+  id: Int
+  createdAt: Date
+  updatedAt: Date
+  deletedAt: Date
+  category: ConfigCategory!
+  group: String!
+  description: String
+  values: JSON!
+  configVisibility: ConfigVisibility!
+  configStatus: ConfigStatus!
 }
 
 type ConfigsSummary {
@@ -25,16 +34,22 @@ type ConfigsSummary {
 }
 
 input CreateConfigInput {
-  key: String!
-  value: String #JSON!
-  configStatus: Int
+  category: ConfigCategory
+  group: String!
+  description: String
+  values: JSON!
+  configStatus: ConfigStatus
+  configVisibility: ConfigVisibility
 }
 
 input UpdateConfigInput {
   id: Int!
-  key: String
-  value: String #JSON
-  configStatus: Int
+  category: ConfigCategory
+  group: String
+  description: String
+  values: JSON
+  configStatus: ConfigStatus
+  configVisibility: ConfigVisibility
 }
 
 type Query {
@@ -45,9 +60,5 @@ type Query {
 type Mutation {
   createConfig(createConfigInput: CreateConfigInput!): Config!
   updateConfig(updateConfigInput: UpdateConfigInput!): Config!
-  removeConfigs(ids: [Int!]!): [ Config]!
-}
-
-extend type Subscription {
-  officeChanged: Boolean
+  removeConfigs(ids: [Int!]!): [Config]!
 }

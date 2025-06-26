@@ -7,6 +7,7 @@ import * as TelegramBot from 'node-telegram-bot-api';
 import { StartCommand } from './commands/start.command';
 import { HelpCommand } from './commands/help.command';
 import { TelegramTransportService } from '../services/telegram-transport.service';
+import { RegularMessage } from './commands/regular-message';
 
 @Injectable()
 export class TelegramWebhooksService {
@@ -17,22 +18,25 @@ export class TelegramWebhooksService {
     private readonly transportService: TelegramTransportService,
     private readonly startCommand: StartCommand,
     private readonly helpCommand: HelpCommand,
+
+    private readonly regularMessage: RegularMessage,
   ) {
     this.bots = transportService.getBots(); // Método getter para acceder a los bots
-    this.setupCommands();
+    this.setupMessageHandlers();
   }
 
-  private setupCommands(): void {
+  private setupMessageHandlers(): void {
     this.bots.forEach((bot, botName) => {
-      bot.onText(/^\/start$/, async (msg) => {
-        try {
-          await this.startCommand.execute(bot, msg);
-        } catch (error) {
-          console.error(`Error handling /start command: ${error}`);
+      // Comandos
+      bot.onText(/\/start/, (msg) => this.startCommand.execute(bot, msg));
+      bot.onText(/\/help/, (msg) => this.helpCommand.execute(bot, msg));
+
+      // Mensajes regulares (sin comando)
+      bot.on('message', (msg) => {
+        if (!msg.text?.startsWith('/')) {
+          this.regularMessage.execute(bot, msg);
         }
       });
-      //bot.onText(/\/start/, (msg) => this.startCommand.execute(bot, msg));
-      //bot.onText(/\/help/, (msg) => this.helpCommand.execute(bot, msg));
     });
   }
 

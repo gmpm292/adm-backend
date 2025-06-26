@@ -3,5 +3,8 @@ import { BaseFiltersValidator } from '../../../../core/filters-validator/base-fi
 
 export class FiltersValidator extends BaseFiltersValidator {
   @IsString()
-  key: string;
+  group: string;
+
+  @IsString()
+  description: string;
 }

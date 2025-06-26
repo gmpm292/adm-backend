@@ -1,4 +1,4 @@
 export enum ConfigVisibility {
-  PRIVATE,
-  PUBLIC,
+  PRIVATE = 'PRIVATE',
+  PUBLIC = 'PUBLIC',
 }

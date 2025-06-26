@@ -180,7 +180,19 @@ export class UsersService extends BaseService<User> {
   public async createFirstUser(
     createFirstUserInput: CreateFirstUserInput,
   ): Promise<User> {
-    if ((await this.find({ take: 0 })).totalCount < 1) {
+    const numUsers = (
+      await this.find({
+        take: 0,
+        filters: [
+          {
+            property: 'email',
+            operator: ConditionalOperator.DISTINCT,
+            value: 'system@admin.com',
+          },
+        ],
+      })
+    ).totalCount;
+    if (numUsers < 1) {
       const { newPassword, ...rest } = createFirstUserInput;
       const createdUser = await this.usersRepository.save({
         ...rest,

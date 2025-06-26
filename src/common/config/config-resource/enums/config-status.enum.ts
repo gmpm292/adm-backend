@@ -1,4 +1,4 @@
 export enum ConfigStatus {
-  DISABLED,
-  ENABLED,
+  DISABLED = 'DISABLED',
+  ENABLED = 'ENABLED',
 }
