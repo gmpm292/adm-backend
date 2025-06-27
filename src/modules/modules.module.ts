@@ -20,7 +20,7 @@ import { TelegramModule } from './telegram/telegram.module';
     InventoryGlobalModule,
     SaleModule,
     PayrollModule,
-    //EmailModule,
+    EmailModule,
     TelegramModule,
   ],
   providers: [],
