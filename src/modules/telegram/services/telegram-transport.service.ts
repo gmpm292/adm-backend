@@ -23,7 +23,9 @@ export class TelegramTransportService implements OnModuleInit {
 
   constructor(private configService: ConfigService) {}
 
-  async onModuleInit(): Promise<void> {
+  async onModuleInit(): Promise<void> {}
+
+  async init(): Promise<void> {
     // Configuración para el cliente de usuario (envío por número)
     const apiId = this.configService.get<number>('TELEGRAM_API_ID');
     const apiHash = this.configService.get<string>('TELEGRAM_API_HASH');
@@ -48,9 +50,9 @@ export class TelegramTransportService implements OnModuleInit {
     await this.setupWebhooks();
 
     // Solo ejecutar pruebas en desarrollo
-    if (process.env.NODE_ENV === 'development') {
-      await this.testSendMessages();
-    }
+    //if (process.env.NODE_ENV === 'development') {
+    await this.testSendMessages();
+    //}
   }
 
   private async setupWebhooks(): Promise<void> {

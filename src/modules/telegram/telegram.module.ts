@@ -1,4 +1,5 @@
-import { Module } from '@nestjs/common';
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+import { Logger, Module, OnModuleInit } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { TelegramMessage } from './entities/telegram-message.entity';
 import { TelegramTemplate } from './entities/telegram-template.entity';
@@ -31,4 +32,26 @@ import { RegularMessage } from './webhooks/commands/regular-message';
   ],
   exports: [TelegramService, TelegramWebhooksService],
 })
-export class TelegramModule {}
+export class TelegramModule implements OnModuleInit {
+  private readonly logger = new Logger(TelegramModule.name);
+
+  constructor(
+    private readonly telegramTransportService: TelegramTransportService,
+    private readonly telegramWebhooksService: TelegramWebhooksService,
+  ) {}
+
+  async onModuleInit() {
+    try {
+      this.logger.log('Initializing Telegram module...');
+
+      await this.telegramTransportService.init();
+
+      await this.telegramWebhooksService.init();
+
+      this.logger.log('Telegram module initialized successfully');
+    } catch (error) {
+      this.logger.error('Error initializing Telegram module', error.stack);
+      throw error;
+    }
+  }
+}

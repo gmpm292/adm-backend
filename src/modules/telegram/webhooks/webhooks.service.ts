@@ -1,6 +1,6 @@
+/* eslint-disable @typescript-eslint/no-floating-promises */
+/* eslint-disable @typescript-eslint/require-await */
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
-/* eslint-disable @typescript-eslint/no-misused-promises */
-/* eslint-disable @typescript-eslint/await-thenable */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { Injectable, Logger } from '@nestjs/common';
 import * as TelegramBot from 'node-telegram-bot-api';
@@ -20,8 +20,10 @@ export class TelegramWebhooksService {
     private readonly helpCommand: HelpCommand,
 
     private readonly regularMessage: RegularMessage,
-  ) {
-    this.bots = transportService.getBots(); // Método getter para acceder a los bots
+  ) {}
+
+  async init(): Promise<void> {
+    this.bots = this.transportService.getBots(); // Método getter para acceder a los bots
     this.setupMessageHandlers();
   }
 

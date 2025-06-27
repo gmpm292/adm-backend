@@ -96,7 +96,7 @@ export const backendConfigurations: Array<Config> = [
       TELEGRAM_SESSION: 'your_session_string_here',
     },
     configVisibility: ConfigVisibility.PRIVATE,
-    configStatus: ConfigStatus.ENABLED,
+    configStatus: ConfigStatus.DISABLED,
   },
 
   {
