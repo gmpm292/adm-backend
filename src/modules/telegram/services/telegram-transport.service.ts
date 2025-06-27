@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/require-await */
 /* eslint-disable no-case-declarations */
 /* eslint-disable @typescript-eslint/await-thenable */
@@ -22,7 +21,9 @@ export class TelegramTransportService implements OnModuleInit {
   private session: StringSession;
   private isClientConnected = false;
 
-  constructor(private configService: ConfigService) {
+  constructor(private configService: ConfigService) {}
+
+  async onModuleInit(): Promise<void> {
     // Configuración para el cliente de usuario (envío por número)
     const apiId = this.configService.get<number>('TELEGRAM_API_ID');
     const apiHash = this.configService.get<string>('TELEGRAM_API_HASH');
@@ -38,9 +39,7 @@ export class TelegramTransportService implements OnModuleInit {
 
     // Inicializar bots desde la configuración JSON
     this.initializeBots();
-  }
 
-  async onModuleInit(): Promise<void> {
     if (this.client) {
       await this.connectClient();
     }

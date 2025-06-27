@@ -116,7 +116,7 @@ export class ConfigResourceService
               category: config.category,
               description: config.description,
               configVisibility: config.configVisibility,
-              configStatus: config.configStatus,
+              //configStatus: config.configStatus,
             });
           }
         }
@@ -155,7 +155,8 @@ export class ConfigResourceService
 
   getVal(key: string) {
     for (const val of this._Map_Vars.values()) {
-      if (val.values[key]) return val.values[key];
+      if (val.configStatus == ConfigStatus.ENABLED && val.values[key])
+        return val.values[key];
     }
     return null;
   }
