@@ -37,6 +37,13 @@ export class TelegramWebhooksService {
   private setupMessageHandlers(): void {
     this.bots.forEach((bot, botName) => {
       try {
+        // handle Phone Contact
+        bot.on('contact', (msg) => {
+          if (msg.contact && msg.from?.id === msg.contact.user_id) {
+            void this.registerCommand.handleContact(bot, msg);
+          }
+        });
+
         // Comandos
         bot.onText(/\/start/, (msg) => this.startCommand.execute(bot, msg));
         bot.onText(/\/help/, (msg) => this.helpCommand.execute(bot, msg));

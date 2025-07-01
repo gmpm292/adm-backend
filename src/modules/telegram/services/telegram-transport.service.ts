@@ -51,7 +51,7 @@ export class TelegramTransportService implements OnModuleInit {
 
     // Solo ejecutar pruebas en desarrollo
     //if (process.env.NODE_ENV === 'development') {
-    await this.testSendMessages();
+    //await this.testSendMessages();
     //}
   }
 

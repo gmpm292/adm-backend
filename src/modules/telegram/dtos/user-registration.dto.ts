@@ -27,7 +27,8 @@ export type RegistrationStep =
   | 'name'
   | 'lastName'
   | 'email'
-  | 'mobile'
+  | 'mobile' // Para entrada manual
+  | 'mobile_contact' // Para contacto automático
   | 'confirmation';
 
 export interface UserState extends Partial<UserRegistrationDto> {
