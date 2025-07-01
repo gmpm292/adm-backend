@@ -14,6 +14,7 @@ import { TelegramWebhooksService } from './webhooks/webhooks.service';
 import { StartCommand } from './webhooks/commands/start.command';
 import { HelpCommand } from './webhooks/commands/help.command';
 import { RegularMessage } from './webhooks/commands/regular-message';
+import { RegisterCommand } from './webhooks/commands/register.command';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { RegularMessage } from './webhooks/commands/regular-message';
     TelegramWebhooksService,
     StartCommand,
     HelpCommand,
+    RegisterCommand,
     RegularMessage,
   ],
   exports: [TelegramService, TelegramWebhooksService],
