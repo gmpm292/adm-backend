@@ -1,5 +1,5 @@
-/* eslint-disable @typescript-eslint/no-floating-promises */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-floating-promises */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Injectable, Logger } from '@nestjs/common';
 import * as TelegramBot from 'node-telegram-bot-api';
@@ -10,9 +10,12 @@ import {
   UserRegistrationDto,
   UserState,
 } from '../../dtos/user-registration.dto';
+import { ConversationFlow } from '../conversation-flow.service';
 
 @Injectable()
-export class RegisterCommand {
+export class RegisterCommand extends ConversationFlow {
+  protected readonly FLOW_PREFIX = 'reg';
+
   private readonly logger = new Logger(RegisterCommand.name);
   private userStates: Map<number, UserState> = new Map();
   private timeouts: Map<number, NodeJS.Timeout> = new Map();
@@ -24,6 +27,7 @@ export class RegisterCommand {
   >;
 
   constructor() {
+    super();
     this.stepHandlers = {
       name: this.handleName.bind(this),
       lastName: this.handleLastName.bind(this),
@@ -36,38 +40,25 @@ export class RegisterCommand {
 
   execute(bot: TelegramBot, msg: Message): void {
     const chatId = msg.chat.id;
-
-    // Limpiar estado previo si existe
     this.cleanupUserState(chatId);
-
-    // Iniciar nuevo estado
     this.userStates.set(chatId, { currentStep: 'name' });
     this.resetInactivityTimeout(chatId, bot);
     this.askForName(chatId, bot);
   }
 
   private cleanupUserState(chatId: number): void {
-    // Limpiar timeout existente
     const existingTimeout = this.timeouts.get(chatId);
     if (existingTimeout) {
       clearTimeout(existingTimeout);
       this.timeouts.delete(chatId);
     }
-
-    // Limpiar estado existente
-    if (this.userStates.has(chatId)) {
-      this.userStates.delete(chatId);
-    }
+    this.userStates.delete(chatId);
   }
 
   private resetInactivityTimeout(chatId: number, bot: TelegramBot): void {
-    // Limpiar timeout existente
     const existingTimeout = this.timeouts.get(chatId);
-    if (existingTimeout) {
-      clearTimeout(existingTimeout);
-    }
+    if (existingTimeout) clearTimeout(existingTimeout);
 
-    // Configurar nuevo timeout
     const newTimeout = setTimeout(() => {
       this.handleInactivityTimeout(chatId, bot);
     }, this.INACTIVITY_TIMEOUT);
@@ -85,7 +76,6 @@ export class RegisterCommand {
         '⌛ No hemos recibido respuesta en mucho tiempo. Por favor, usa /register para comenzar de nuevo.',
       );
       this.cleanupUserState(chatId);
-      this.logger.log(`Sesión expirada por inactividad para chat ${chatId}`);
     } catch (error) {
       this.logger.error(
         `Error al manejar timeout de inactividad: ${error.message}`,
@@ -93,14 +83,45 @@ export class RegisterCommand {
     }
   }
 
+  private async sendRegistrationMessage(
+    chatId: number,
+    text: string,
+    bot: TelegramBot,
+    replyMarkup?:
+      | TelegramBot.InlineKeyboardMarkup
+      | TelegramBot.ReplyKeyboardMarkup
+      | TelegramBot.ForceReply
+      | TelegramBot.ReplyKeyboardRemove,
+  ): Promise<void> {
+    try {
+      const userState = this.userStates.get(chatId);
+      if (!userState) return;
+
+      const messageId = this.generateMessageId(userState.currentStep as string);
+      const message = await bot.sendMessage(chatId, `${messageId} ${text}`, {
+        reply_markup: replyMarkup,
+        parse_mode: 'Markdown',
+      });
+
+      userState.lastMessageId = message.message_id;
+    } catch (error) {
+      this.logger.error(`Error al enviar mensaje: ${error.message}`);
+      throw error;
+    }
+  }
+
   private askForName(chatId: number, bot: TelegramBot): void {
-    bot
-      .sendMessage(chatId, 'Por favor, ingresa tu nombre:', {
-        reply_markup: { force_reply: true },
-      })
-      .catch((err) =>
-        this.logger.error(`Error al solicitar nombre: ${err.message}`),
-      );
+    this.sendRegistrationMessage(
+      chatId,
+      '👤 Por favor, ingresa tu nombre.\n' +
+        '(solamente el nombre, sin apellidos):',
+      bot,
+      {
+        force_reply: true,
+      },
+    ).catch((err) =>
+      this.logger.error(`Error al solicitar nombre: ${err.message}`),
+    );
   }
 
   private async handleName(
@@ -116,9 +137,12 @@ export class RegisterCommand {
       userState.currentStep = 'lastName';
       this.resetInactivityTimeout(chatId, bot);
 
-      await bot.sendMessage(chatId, 'Ahora ingresa tus apellidos (opcional):', {
-        reply_markup: { force_reply: true },
-      });
+      await this.sendRegistrationMessage(
+        chatId,
+        'Ahora ingresa tus apellidos (opcional):',
+        bot,
+        { force_reply: true },
+      );
     } catch (error) {
       this.logger.error(`Error en handleName: ${error.message}`);
       throw error;
@@ -141,9 +165,12 @@ export class RegisterCommand {
       userState.currentStep = 'email';
       this.resetInactivityTimeout(chatId, bot);
 
-      await bot.sendMessage(chatId, 'Ingresa tu correo electrónico:', {
-        reply_markup: { force_reply: true },
-      });
+      await this.sendRegistrationMessage(
+        chatId,
+        '✉️ Ingresa tu correo electrónico:',
+        bot,
+        { force_reply: true },
+      );
     } catch (error) {
       this.logger.error(`Error en handleLastName: ${error.message}`);
       throw error;
@@ -163,11 +190,23 @@ export class RegisterCommand {
       userState.currentStep = 'mobile';
       this.resetInactivityTimeout(chatId, bot);
 
-      await bot.sendMessage(
+      await this.sendRegistrationMessage(
         chatId,
-        'Por último, ingresa tu número de teléfono:',
+        '📱 Por último, comparte tu número de teléfono usando el botón: ⬇️',
+        bot,
         {
-          reply_markup: { force_reply: true },
+          keyboard: [
+            [
+              {
+                text: '📲 Compartir mi número',
+                request_contact: true,
+                request_location: true,
+              },
+            ],
+          ],
+          one_time_keyboard: true,
+          resize_keyboard: true,
+          selective: true,
         },
       );
     } catch (error) {
@@ -185,29 +224,21 @@ export class RegisterCommand {
       const userState = this.userStates.get(chatId);
       if (!userState) return;
 
-      // Primero intentamos obtener el número automáticamente
-      await bot.sendMessage(
-        chatId,
-        'Por favor, comparte tu número de teléfono:',
-        {
-          reply_markup: {
-            keyboard: [
-              [
-                {
-                  text: 'Compartir mi número',
-                  request_contact: true,
-                },
-              ],
-            ],
-            one_time_keyboard: true,
-            resize_keyboard: true,
-          },
-        },
-      );
+      if (text.toLowerCase() === 'escribirlo manualmente') {
+        await this.sendRegistrationMessage(
+          chatId,
+          'Por favor, escribe tu número de teléfono:',
+          bot,
+          { force_reply: true },
+        );
+        return;
+      }
 
-      // Actualizamos el estado para esperar el contacto
-      userState.currentStep = 'mobile_contact';
+      userState.mobile = text.trim();
+      userState.currentStep = 'confirmation';
       this.resetInactivityTimeout(chatId, bot);
+
+      await this.showConfirmation(chatId, bot);
     } catch (error) {
       this.logger.error(`Error en handleMobile: ${error.message}`);
       throw error;
@@ -219,36 +250,19 @@ export class RegisterCommand {
 
     const chatId = msg.chat.id;
     const userState = this.userStates.get(chatId);
-
-    if (!userState || userState.currentStep !== 'mobile_contact') return;
+    if (!userState || userState.currentStep !== 'mobile') return;
 
     try {
-      // Formatear el número internacionalmente (elimina el + si existe)
       let phoneNumber = msg.contact.phone_number;
-      if (phoneNumber.startsWith('+')) {
-        phoneNumber = phoneNumber.substring(1);
+      if (!phoneNumber.startsWith('+')) {
+        phoneNumber = `+${phoneNumber}`;
       }
 
       userState.mobile = phoneNumber;
       userState.currentStep = 'confirmation';
       this.resetInactivityTimeout(chatId, bot);
 
-      await bot.sendMessage(
-        chatId,
-        `Por favor confirma tus datos:\n\n` +
-          `Nombre: ${userState.name}\n` +
-          `Apellidos: ${userState.lastName || 'No proporcionado'}\n` +
-          `Email: ${userState.email}\n` +
-          `Teléfono: +${userState.mobile}\n\n` +
-          `¿Es correcto? (Sí/No)`,
-        {
-          reply_markup: {
-            force_reply: true,
-            // Limpiamos el teclado especial
-            remove_keyboard: true,
-          },
-        },
-      );
+      await this.showConfirmation(chatId, bot);
     } catch (error) {
       this.logger.error(`Error al procesar contacto: ${error.message}`);
       await bot.sendMessage(
@@ -259,15 +273,40 @@ export class RegisterCommand {
     }
   }
 
-  private async handleConfirmation(
+  private async showConfirmation(
     chatId: number,
-    text: string,
+    bot: TelegramBot,
+  ): Promise<void> {
+    const userState = this.userStates.get(chatId);
+    if (!userState) return;
+
+    await this.sendRegistrationMessage(
+      chatId,
+      `Por favor confirma tus datos:\n\n` +
+        `Nombre: ${userState.name}\n` +
+        `Apellidos: ${userState.lastName || 'No proporcionado'}\n` +
+        `Email: ${userState.email}\n` +
+        `Teléfono: ${userState.mobile}\n\n` +
+        `¿Es correcto?`,
+      bot,
+      {
+        inline_keyboard: [
+          [{ text: '✅ Sí, es correcto', callback_data: 'confirm_yes' }],
+          [{ text: '❌ No, corregir', callback_data: 'confirm_no' }],
+        ],
+      },
+    );
+  }
+
+  public async handleConfirmation(
+    chatId: number,
+    callbackData: string,
     bot: TelegramBot,
   ): Promise<void> {
     try {
       this.resetInactivityTimeout(chatId, bot);
 
-      if (!['sí', 'si', 's'].includes(text.toLowerCase().trim())) {
+      if (callbackData === 'confirm_no') {
         await bot.sendMessage(
           chatId,
           'Registro cancelado. Puedes comenzar de nuevo con /register',
@@ -288,10 +327,9 @@ export class RegisterCommand {
           .flat();
         await bot.sendMessage(
           chatId,
-          `Error en los datos:\n${errorMessages.join('\n')}\n\nPor favor, comienza de nuevo.`,
+          `Error en los datos:\n${errorMessages.join('\n')}\n\nPor favor, comienza de nuevo con /register.`,
         );
       } else {
-        // Aquí llamarías a tu servicio createUser
         // await this.userService.createUser(userData);
         console.log('userData', userData);
         await bot.sendMessage(chatId, '¡Registro completado con éxito!');
@@ -308,7 +346,7 @@ export class RegisterCommand {
   }
 
   public async handleReply(bot: TelegramBot, msg: Message): Promise<void> {
-    if (!msg.reply_to_message || !msg.text) return;
+    if (!msg.reply_to_message?.text || !msg.text) return;
 
     const chatId = msg.chat.id;
     const userState = this.userStates.get(chatId);

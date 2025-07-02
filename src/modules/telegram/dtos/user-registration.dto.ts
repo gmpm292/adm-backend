@@ -32,5 +32,6 @@ export type RegistrationStep =
   | 'confirmation';
 
 export interface UserState extends Partial<UserRegistrationDto> {
+  lastMessageId?: number;
   currentStep?: RegistrationStep;
 }

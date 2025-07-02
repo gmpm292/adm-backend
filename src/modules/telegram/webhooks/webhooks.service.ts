@@ -37,23 +37,45 @@ export class TelegramWebhooksService {
   private setupMessageHandlers(): void {
     this.bots.forEach((bot, botName) => {
       try {
-        // handle Phone Contact
+        // Manejar contactos compartidos
         bot.on('contact', (msg) => {
           if (msg.contact && msg.from?.id === msg.contact.user_id) {
             void this.registerCommand.handleContact(bot, msg);
           }
         });
+        // Manejar callbacks de botones
+        bot.on('callback_query', async (callbackQuery) => {
+          const msg = callbackQuery.message;
+          const chatId = msg?.chat.id;
+          const data = callbackQuery.data;
 
-        // Comandos
+          if (!chatId || !data) return;
+
+          try {
+            // Manejar confirmación de registro
+            if (data.startsWith('confirm_')) {
+              await this.registerCommand.handleConfirmation(chatId, data, bot);
+            }
+
+            // Responder al callback para quitar el "cargando" del botón
+            await bot.answerCallbackQuery(callbackQuery.id);
+          } catch (error) {
+            this.logger.error(`Error al manejar callback: ${error.message}`);
+          }
+        });
+
+        // Comandos directos
         bot.onText(/\/start/, (msg) => this.startCommand.execute(bot, msg));
         bot.onText(/\/help/, (msg) => this.helpCommand.execute(bot, msg));
         bot.onText(/\/register/, (msg) =>
           this.registerCommand.execute(bot, msg),
         );
 
-        // Manejar respuestas
+        // Manejar respuestas a mensajes del sistema
         bot.on('message', (msg) => {
-          if (msg.reply_to_message) {
+          if (!msg.reply_to_message?.text) return;
+
+          if (this.registerCommand.isFlowMessage(msg.reply_to_message.text)) {
             this.registerCommand
               .handleReply(bot, msg)
               .catch((err) =>
@@ -64,7 +86,15 @@ export class TelegramWebhooksService {
 
         // Mensajes regulares
         bot.on('message', (msg) => {
-          if (!msg.text?.startsWith('/')) {
+          if (
+            !msg.text?.startsWith('/') &&
+            !msg.reply_to_message?.text &&
+            !/^\(.{2,5}\).*$/.test(msg.reply_to_message?.text || '')
+          ) {
+            const a =
+              msg.reply_to_message?.text &&
+              /^\(.{2,5}\).*$/.test(msg.reply_to_message.text);
+            console.log('a', a);
             this.regularMessage
               .execute(bot, msg)
               .catch((err) =>
@@ -74,6 +104,22 @@ export class TelegramWebhooksService {
               );
           }
         });
+        // // Mensajes regulares
+        // bot.on('message', (msg) => {
+        //   // Verificar si es un mensaje de respuesta (reply) y cumple con el patrón
+        //   if (
+        //     msg.reply_to_message?.text &&
+        //     /^\(.{2,5}\).*$/.test(msg.reply_to_message.text)
+        //   ) {
+        //     this.regularMessage
+        //       .execute(bot, msg)
+        //       .catch((err) =>
+        //         this.logger.error(
+        //           `Error al manejar mensaje regular: ${err.message}`,
+        //         ),
+        //       );
+        //   }
+        // });
 
         this.logger.log(`Handlers configurados para bot: ${botName}`);
       } catch (error) {
