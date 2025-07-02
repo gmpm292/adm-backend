@@ -42,14 +42,15 @@ export class EmailService implements OnModuleInit {
     private readonly transportService: EmailTransportService,
     @Inject(forwardRef(() => ConfigService))
     private readonly configService: ConfigService,
-  ) {
-    this.initializeOAuth2Client();
-  }
+  ) {}
 
   async onModuleInit(): Promise<void> {
+    this.initializeOAuth2Client();
+
     await this.initializeTransport();
 
-    if (this.configService.get('EMAIL_TEST_ON_STARTUP') === 'true') {
+    const emailTestOonStartup = this.configService.get('EMAIL_TEST_ON_STARTUP');
+    if (emailTestOonStartup || emailTestOonStartup === 'true') {
       await this.sendTestEmail();
     }
   }
@@ -122,7 +123,6 @@ export class EmailService implements OnModuleInit {
         'Error refreshing access token',
         (error as Error).stack,
       );
-      //throw error;
     }
   }
 

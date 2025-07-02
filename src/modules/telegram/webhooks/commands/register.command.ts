@@ -332,6 +332,7 @@ export class RegisterCommand extends ConversationFlow {
           `Error en los datos:\n${errorMessages.join('\n')}\n\nPor favor, comienza de nuevo con /register.`,
         );
       } else {
+        // Llamada a userService para la creación de nuevo usuario.
         await this.userService.create({
           name: userData.name,
           lastName: userData.lastName,
