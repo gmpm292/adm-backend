@@ -11,6 +11,8 @@ import {
   UserState,
 } from '../../dtos/user-registration.dto';
 import { ConversationFlow } from '../conversation-flow.service';
+import { UsersService } from '../../../users/services/users.service';
+import { Role } from '../../../../core/enums/role.enum';
 
 @Injectable()
 export class RegisterCommand extends ConversationFlow {
@@ -26,7 +28,7 @@ export class RegisterCommand extends ConversationFlow {
     (chatId: number, text: string, bot: TelegramBot) => Promise<void>
   >;
 
-  constructor() {
+  constructor(private userService: UsersService) {
     super();
     this.stepHandlers = {
       name: this.handleName.bind(this),
@@ -139,7 +141,7 @@ export class RegisterCommand extends ConversationFlow {
 
       await this.sendRegistrationMessage(
         chatId,
-        'Ahora ingresa tus apellidos (opcional):',
+        '🏷️ Ahora ingresa tus apellidos:',
         bot,
         { force_reply: true },
       );
@@ -227,7 +229,7 @@ export class RegisterCommand extends ConversationFlow {
       if (text.toLowerCase() === 'escribirlo manualmente') {
         await this.sendRegistrationMessage(
           chatId,
-          'Por favor, escribe tu número de teléfono:',
+          '📱 Por favor, escribe tu número de teléfono:',
           bot,
           { force_reply: true },
         );
@@ -330,8 +332,13 @@ export class RegisterCommand extends ConversationFlow {
           `Error en los datos:\n${errorMessages.join('\n')}\n\nPor favor, comienza de nuevo con /register.`,
         );
       } else {
-        // await this.userService.createUser(userData);
-        console.log('userData', userData);
+        await this.userService.create({
+          name: userData.name,
+          lastName: userData.lastName,
+          email: userData.email,
+          mobile: userData.mobile,
+          role: [Role.USER],
+        });
         await bot.sendMessage(chatId, '¡Registro completado con éxito!');
       }
     } catch (error) {
