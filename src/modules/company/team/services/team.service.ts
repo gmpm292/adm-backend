@@ -1,8 +1,11 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-return */
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import { InjectEntityManager, InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, FindOptionsWhere, Repository } from 'typeorm';
+import {
+  DeepPartial,
+  EntityManager,
+  FindOptionsWhere,
+  Repository,
+} from 'typeorm';
 import { CreateTeamInput } from '../dto/create-team.input';
 import { UpdateTeamInput } from '../dto/update-team.input';
 import { BaseService } from '../../../../core/services/base.service';
@@ -19,6 +22,7 @@ import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
 import { UsersService } from '../../../users/services/users.service';
 import { DepartmentService } from '../../department/services/department.service';
 import { ScopedAccessService } from '../../../scoped-access/services/scoped-access.service';
+import { Department } from '../../department/entities/co_department.entity';
 
 @Injectable()
 export class TeamService extends BaseService<Team> {
@@ -42,12 +46,24 @@ export class TeamService extends BaseService<Team> {
     manager?: EntityManager,
   ): Promise<Team> {
     const { departmentId, teamType } = createTeamInput;
-    const team = { department: null, teamType: null } as unknown as Team;
 
-    team.department = departmentId
+    // Get department with its office and business
+    const department = departmentId
       ? await this.departmentService.findOne(departmentId, cu, scopes, manager)
-      : (null as any);
-    team.teamType = teamType;
+      : null;
+
+    if (!department && departmentId) {
+      throw new NotFoundError('Department not found');
+    }
+
+    const team: DeepPartial<Team> = {
+      teamType,
+      department: department ? { id: departmentId } : undefined,
+      office: department?.office ? { id: department.office.id } : undefined,
+      business: department?.office?.business
+        ? { id: department.office.business.id }
+        : undefined,
+    };
 
     await this.validateUniqueTeam(createTeamInput, cu, scopes, manager);
     return super.baseCreate({
@@ -66,7 +82,7 @@ export class TeamService extends BaseService<Team> {
   ): Promise<ListSummary> {
     return await super.baseFind({
       options,
-      relationsToLoad: ['department', 'department.office'],
+      relationsToLoad: ['department', 'office', 'business'],
       cu,
       scopes,
       manager,
@@ -82,7 +98,9 @@ export class TeamService extends BaseService<Team> {
     return super.baseFindOne({
       id,
       relationsToLoad: {
-        department: { office: true },
+        department: true,
+        office: true,
+        business: true,
       },
       cu,
       scopes,
@@ -99,8 +117,9 @@ export class TeamService extends BaseService<Team> {
     return super.baseFindOneByFilters({
       filters,
       relationsToLoad: {
-        department: { office: true },
-        teamType: true as any,
+        department: true,
+        office: true,
+        business: true,
       },
       cu,
       scopes,
@@ -121,14 +140,32 @@ export class TeamService extends BaseService<Team> {
       throw new NotFoundError();
     }
 
-    team.department = departmentId
-      ? await this.departmentService.findOne(departmentId, cu, scopes, manager)
-      : team.department;
-    team.teamType = teamType || team.teamType;
+    let department: Department | undefined;
+    if (departmentId) {
+      department = await this.departmentService.findOne(
+        departmentId,
+        cu,
+        scopes,
+        manager,
+      );
+      if (!department) {
+        throw new NotFoundError('Department not found');
+      }
+    }
+
+    const updateData: DeepPartial<Team> = {
+      ...rest,
+      teamType: teamType || team.teamType,
+      department: departmentId ? { id: departmentId } : team.department,
+      office: department?.office ? { id: department.office.id } : team.office,
+      business: department?.office?.business
+        ? { id: department.office.business.id }
+        : team.business,
+    };
 
     return super.baseUpdate({
       id,
-      data: { ...team, ...rest },
+      data: updateData,
       cu,
       scopes,
       manager,

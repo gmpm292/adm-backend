@@ -45,10 +45,23 @@ export class DepartmentService extends BaseService<Department> {
     manager?: EntityManager,
   ) {
     const { officeId, ...rest } = dto;
+
+    // Get the office with its business
+    const office = await (manager || this.manager).findOne(Office, {
+      where: { id: officeId },
+      relations: ['business'],
+    });
+
+    if (!office) {
+      throw new NotFoundError('Office not found');
+    }
+
     const department: Department = {
       office: { id: officeId } as Office,
+      business: office.business, // Set the business from the office
       ...rest,
     };
+
     await this.validateUniqueDepartment(dto, cu, scopes, manager);
     return super.baseCreate({
       data: department,
@@ -66,7 +79,7 @@ export class DepartmentService extends BaseService<Department> {
   ): Promise<ListSummary> {
     return await super.baseFind({
       options,
-      relationsToLoad: ['office'],
+      relationsToLoad: ['office', 'business'],
       cu,
       scopes,
       manager,
@@ -83,6 +96,7 @@ export class DepartmentService extends BaseService<Department> {
       id,
       relationsToLoad: {
         office: true,
+        business: true,
         teams: true,
       },
       cu,
@@ -101,6 +115,7 @@ export class DepartmentService extends BaseService<Department> {
       filters,
       relationsToLoad: {
         office: true,
+        business: true,
         teams: true,
       },
       cu,
@@ -119,10 +134,24 @@ export class DepartmentService extends BaseService<Department> {
     const { officeId, ...rest } = updateDepartmentInput;
 
     const toUpdate: DeepPartial<Department> = {
-      office: { id: officeId },
       ...rest,
     };
-    if (!officeId) delete toUpdate.office;
+
+    if (officeId) {
+      // Get the office with its business if officeId is provided
+      const office = await (manager || this.manager).findOne(Office, {
+        where: { id: officeId },
+        relations: ['business'],
+      });
+
+      if (!office) {
+        throw new NotFoundError('Office not found');
+      }
+
+      toUpdate.office = { id: officeId };
+      toUpdate.business = office.business; // Update the business from the new office
+    }
+
     return super.baseUpdate({
       id,
       data: toUpdate,

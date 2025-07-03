@@ -4,10 +4,11 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from '../modules/users/entities/user.entity';
 import { ScopedAccessService } from '../modules/scoped-access/services/scoped-access.service';
 import { AppMailerModule } from './mailer/app-mailer.module';
+import { ConfigModule } from '@nestjs/config';
 
 @Global()
 @Module({
-  imports: [TypeOrmModule.forFeature([User]), AppMailerModule],
+  imports: [TypeOrmModule.forFeature([User]), ConfigModule, AppMailerModule],
   providers: [ScopedAccessService, SystemUtilsService],
   exports: [ScopedAccessService, SystemUtilsService],
 })

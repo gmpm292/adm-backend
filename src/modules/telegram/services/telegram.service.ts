@@ -82,7 +82,7 @@ export class TelegramService implements OnModuleInit {
   ): Promise<void> {
     if (data.templateId) {
       const template = await this.templateRepository.findOne({
-        where: { id: data.templateId, isActive: true },
+        where: { name: data.templateId, isActive: true },
       });
 
       if (!template) {

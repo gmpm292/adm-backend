@@ -3,6 +3,8 @@ import { BaseEntity } from '../../../../core/entities/base.entity';
 import { TeamTypeEnum } from '../enums/team-types.enum';
 import { Department } from '../../department/entities/co_department.entity';
 import { User } from '../../../users/entities/user.entity';
+import { Business } from '../../business/entities/co_business.entity';
+import { Office } from '../../office/entities/co_office.entity';
 
 @Entity('co_teams')
 export class Team extends BaseEntity {
@@ -19,6 +21,12 @@ export class Team extends BaseEntity {
 
   @Column({ nullable: true })
   description?: string;
+
+  @ManyToOne(() => Business, (business) => business.offices)
+  business: Business;
+
+  @ManyToOne(() => Office, (office) => office.departments)
+  office: Office;
 
   @ManyToOne(() => Department, (department) => department.teams, {
     eager: true,

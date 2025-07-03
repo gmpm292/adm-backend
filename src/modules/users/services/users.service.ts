@@ -57,7 +57,13 @@ export class UsersService extends BaseService<User> {
   }): Promise<User> {
     const user = await this.usersRepository.findOne({
       where: { confirmationTokens: { tokenValue: confirmationToken } },
-      relations: { confirmationTokens: true },
+      relations: {
+        confirmationTokens: true,
+        business: true,
+        office: true,
+        department: true,
+        team: true,
+      },
     });
     // Bloquear cambio de contraseña para usuario sistema
     if (user?.email === 'system@admin.com') {
@@ -101,7 +107,15 @@ export class UsersService extends BaseService<User> {
         password: await hash(newPassword, 10),
         ...propertiesToUpdateAndRetrieve,
       },
-      cu: { sub: user.id as number, role: user.role as Array<Role> },
+      cu: {
+        sub: user.id as number,
+        role: user.role as Array<Role>,
+        businessId: user.business?.id,
+        officeId: user.office?.id,
+        departmentId: user.department?.id,
+        teamId: user.team?.id,
+      },
+      //cu: { sub: 1 as number, role: [Role.SUPER] as Array<Role> }, //TODO Urgente
     });
 
     // Add Logs in future

@@ -16,7 +16,7 @@ export class AppMailerService implements IAppMailer {
 
   public async notifyUserCreation(user: User): Promise<any> {
     try {
-      const templateId = '29a20ca8-2845-4200-9c84-35bb881ee834'; // ID de la plantilla en la base de datos
+      const templateId = 'user-creation'; // Name de la plantilla en la base de datos
 
       const confirmationToken = user.confirmationToken;
       const setPasswordLink = `${this.confServ.get('FRONTEND_CHANGE_PASSWORD_URL')}/${confirmationToken}`;
@@ -46,7 +46,7 @@ export class AppMailerService implements IAppMailer {
 
   public async notifyPasswordRecovery(user: User): Promise<any> {
     try {
-      const templateId = 'de9ac8f2-0b54-49c1-8939-d67703eb00f0';
+      const templateId = 'password-recovery';
       const recoveryLink = `${this.confServ.get('FRONTEND_CHANGE_PASSWORD_URL')}/${user.confirmationToken}`;
       const expirationTime = `${(this.confServ.get('CONFIRMATION_TOKEN_EXPIRE_IN') || 86400) / 60 / 60} horas`;
 
@@ -72,7 +72,7 @@ export class AppMailerService implements IAppMailer {
 
   public async notifySuccessSettingPassword(user: User): Promise<any> {
     try {
-      const templateId = '5d869b53-4882-48bf-83b8-43c2e78c325e';
+      const templateId = 'password-set-success';
       const context = {
         name: user.name,
         lastName: user.lastName,

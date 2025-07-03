@@ -49,12 +49,11 @@ export class ConfirmationTokenService extends BaseService<ConfirmationToken> {
       );
     }
 
-    const expirationDate = new Date(
-      new Date().getTime() +
-        Number(
-          await this.configService.getAsync('CONFIRMATION_TOKEN_EXPIRE_IN'),
-        ),
-    );
+    const expireIn =
+      Number(
+        await this.configService.getAsync('CONFIRMATION_TOKEN_EXPIRE_IN'),
+      ) * 60;
+    const expirationDate = new Date(new Date().getTime() + expireIn);
 
     const newconfirmationToken = {
       user,

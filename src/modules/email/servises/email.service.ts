@@ -227,7 +227,7 @@ export class EmailService implements OnModuleInit {
     try {
       if (data.templateId) {
         const template = await this.emailTemplateRepository.findOne({
-          where: { id: data.templateId, isActive: true },
+          where: { name: data.templateId, isActive: true },
         });
 
         if (!template) {

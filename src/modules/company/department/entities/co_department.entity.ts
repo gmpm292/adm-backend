@@ -4,6 +4,7 @@ import { DepartmentType } from '../enums/department-type.enum';
 import { Office } from '../../office/entities/co_office.entity';
 import { User } from '../../../users/entities/user.entity';
 import { Team } from '../../team/entities/co_team.entity';
+import { Business } from '../../business/entities/co_business.entity';
 
 @Entity('co_departments')
 export class Department extends BaseEntity {
@@ -20,6 +21,9 @@ export class Department extends BaseEntity {
     cascade: ['soft-remove', 'recover'],
   })
   public teams?: Team[];
+
+  @ManyToOne(() => Business, (business) => business.offices)
+  business: Business;
 
   @ManyToOne(() => Office, (office) => office.departments, {
     eager: true,

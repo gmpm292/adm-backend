@@ -39,7 +39,7 @@ export class BusinessService extends BaseService<Business> {
 
     return super.baseCreate({
       data: business,
-      uniqueFields: ['name', 'taxId'],
+      uniqueFields: ['name'],
       cu,
       scopes,
       manager,
