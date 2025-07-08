@@ -313,18 +313,18 @@ export class ScopedAccessService {
       return this.transformIdsToRelations(createDto);
     }
 
-    // PRINCIPAL users - set businessId and require officeId
+    // PRINCIPAL users - set businessId and // require officeId
     if (cu.role?.some((r) => r === Role.PRINCIPAL)) {
       if (effectiveScopes.includes(ScopedAccessEnum.BUSINESS)) {
         createDto.businessId = cu.businessId;
       }
 
-      if (
-        !createDto.officeId &&
-        effectiveScopes.includes(ScopedAccessEnum.OFFICE)
-      ) {
-        throw new BadRequestError('PRINCIPAL users must provide officeId');
-      }
+      // if (
+      //   !createDto.officeId &&
+      //   effectiveScopes.includes(ScopedAccessEnum.OFFICE)
+      // ) {
+      //   throw new BadRequestError('PRINCIPAL users must provide officeId');
+      // }
       return this.transformIdsToRelations(createDto);
     }
 

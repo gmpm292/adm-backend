@@ -39,7 +39,7 @@ export class UserAccessLevelService {
 
     if (
       !user.role?.some(
-        (r) => r === Role.SUPER || r === Role.PRINCIPAL || r === Role.ADMIN,
+        (r) => r === Role.SUPER, // || r === Role.PRINCIPAL || r === Role.ADMIN,
       )
     ) {
       changePasswordByEmailInput.email = user.email;

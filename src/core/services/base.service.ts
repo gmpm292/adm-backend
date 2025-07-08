@@ -256,8 +256,14 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
     scopes?: ScopedAccessEnum[];
     isSecurityBaseEntity?: boolean;
   }): Promise<Entity> {
-    const { data, uniqueFields, manager, cu, scopes, isSecurityBaseEntity } =
-      params;
+    const {
+      data,
+      uniqueFields,
+      manager,
+      cu,
+      scopes,
+      isSecurityBaseEntity = true,
+    } = params;
     if (uniqueFields?.length) {
       for (const field of uniqueFields) {
         const dataInDB = await this.baseFind({

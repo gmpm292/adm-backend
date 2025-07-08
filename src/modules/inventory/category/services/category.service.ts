@@ -42,7 +42,6 @@ export class CategoryService extends BaseService<Category> {
       cu,
       scopes,
       manager,
-      isSecurityBaseEntity: true,
     });
   }
 

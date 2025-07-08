@@ -151,6 +151,9 @@ export class UsersService extends BaseService<User> {
     { email, newPassword },
     currentUser: JWTPayload,
   ): Promise<User> {
+    if (!email || !newPassword) {
+      throw new BadRequestError('Email and new password are required');
+    }
     if (email === 'system@admin.com') {
       throw new BadRequestError('Cannot change password for system user');
     }
@@ -253,7 +256,6 @@ export class UsersService extends BaseService<User> {
       createdUser = await super.baseCreate({
         data: user,
         cu,
-        isSecurityBaseEntity: true,
       });
     } catch (e) {
       throw new ConflictError(e.message);
