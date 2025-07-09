@@ -54,6 +54,7 @@ export class CurrencyService extends BaseService<Currency> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<ListSummary> {
+    scopes = [];
     return await super.baseFind({
       options,
       cu,

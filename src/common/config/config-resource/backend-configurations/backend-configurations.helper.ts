@@ -54,7 +54,7 @@ export const backendConfigurations: Array<Config> = [
       EMAIL_TEST_RECIPIENT: 'tu-email@example.com',
     },
     configVisibility: ConfigVisibility.PRIVATE,
-    configStatus: ConfigStatus.ENABLED,
+    configStatus: ConfigStatus.DISABLED,
   },
 
   {
@@ -69,7 +69,7 @@ export const backendConfigurations: Array<Config> = [
       EMAIL_SERVICE: 'gmail',
     },
     configVisibility: ConfigVisibility.PRIVATE,
-    configStatus: ConfigStatus.ENABLED,
+    configStatus: ConfigStatus.DISABLED,
   },
 
   {
@@ -83,7 +83,7 @@ export const backendConfigurations: Array<Config> = [
       EMAIL_SECURE: false,
     },
     configVisibility: ConfigVisibility.PRIVATE,
-    configStatus: ConfigStatus.ENABLED,
+    configStatus: ConfigStatus.DISABLED,
   },
 
   {
@@ -110,7 +110,7 @@ export const backendConfigurations: Array<Config> = [
         '{"casa":"5154487565:AAFtY8MhCPwCGGaqMSVytQkDKB95TpoHWFM"}',
     },
     configVisibility: ConfigVisibility.PRIVATE,
-    configStatus: ConfigStatus.ENABLED,
+    configStatus: ConfigStatus.DISABLED,
   },
 
   {
@@ -122,6 +122,6 @@ export const backendConfigurations: Array<Config> = [
       TELEGRAM_SECRET_TOKEN: 'tu_token_secreto',
     },
     configVisibility: ConfigVisibility.PRIVATE,
-    configStatus: ConfigStatus.ENABLED,
+    configStatus: ConfigStatus.DISABLED,
   },
 ];
