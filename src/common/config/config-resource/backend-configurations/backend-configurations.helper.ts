@@ -104,10 +104,8 @@ export const backendConfigurations: Array<Config> = [
     group: 'Telegram-Bots',
     description: 'Configuraciones de transporte de email del sistema',
     values: {
-      //TELEGRAM_BOTS:
-      //  '{"default":"123456789:AAEXAMPLEBOTTOKEN","notifications":"987654321:AAOTHERBOTTOKEN","support":"567891234:AASUPPORTBOTTOKEN"},',
       TELEGRAM_BOTS:
-        '{"casa":"5154487565:AAFtY8MhCPwCGGaqMSVytQkDKB95TpoHWFM"}',
+        '{"default":"123456789:AAEXAMPLEBOTTOKEN","notifications":"987654321:AAOTHERBOTTOKEN","support":"567891234:AASUPPORTBOTTOKEN"}',
     },
     configVisibility: ConfigVisibility.PRIVATE,
     configStatus: ConfigStatus.DISABLED,
