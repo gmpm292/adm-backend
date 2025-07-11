@@ -41,6 +41,7 @@ export class EmailModule implements OnModuleInit {
   async onModuleInit() {
     await this.load();
   }
+
   async load() {
     try {
       this.logger.log('Initializing Email module...');
