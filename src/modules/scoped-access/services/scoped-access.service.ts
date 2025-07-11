@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Injectable } from '@nestjs/common';
-import { FindOptionsWhere, ObjectLiteral, Repository } from 'typeorm';
+import { FindOptionsWhere, IsNull, ObjectLiteral, Repository } from 'typeorm';
 import { ScopedAccessEnum } from '../../../core/enums/scoped-access.enum';
 import { JWTPayload } from '../../auth/dto/jwt-payload.dto';
 import { Role } from '../../../core/enums/role.enum';
@@ -27,10 +27,10 @@ export class ScopedAccessService {
     const effectiveScopes =
       scopes ??
       Object.values(ScopedAccessEnum).filter(
-        (e) => e != ScopedAccessEnum.PERSONAL,
+        (e) => e != ScopedAccessEnum.GENERAL && e != ScopedAccessEnum.PERSONAL,
       );
 
-    // SUPER users bypass all filters
+    // SUPER users or Scopes includes GENERAL, bypass all filters
     if (cu.role?.some((r) => r === Role.SUPER)) {
       return [{}]; // Empty filter means no restrictions
     }
@@ -57,6 +57,22 @@ export class ScopedAccessService {
       (c) => c.propertyName === 'updatedBy',
     );
 
+    // GENERAL scope
+    if (
+      effectiveScopes.includes(ScopedAccessEnum.GENERAL) &&
+      hasBusinessId &&
+      hasOfficeId &&
+      hasDepartmentId &&
+      hasTeamId
+    ) {
+      filters.push({
+        business: IsNull(),
+        office: IsNull(),
+        department: IsNull(),
+        team: IsNull(),
+      } as unknown as FindOptionsWhere<Entity>);
+    }
+
     // PERSONAL scope (user's own entities)
     if (effectiveScopes.includes(ScopedAccessEnum.PERSONAL)) {
       if (hasCreatedBy || hasUpdatedBy) {
@@ -68,14 +84,16 @@ export class ScopedAccessService {
     }
 
     // Hierarchical scopes
+    let hierarchicalFilter = {};
     if (
       effectiveScopes.includes(ScopedAccessEnum.BUSINESS) &&
       hasBusinessId &&
       cu.businessId
     ) {
-      filters.push({
+      hierarchicalFilter = {
+        ...hierarchicalFilter,
         business: { id: cu.businessId },
-      } as unknown as FindOptionsWhere<Entity>);
+      };
     }
 
     if (
@@ -83,9 +101,10 @@ export class ScopedAccessService {
       hasOfficeId &&
       cu.officeId
     ) {
-      filters.push({
+      hierarchicalFilter = {
+        ...hierarchicalFilter,
         office: { id: cu.officeId },
-      } as unknown as FindOptionsWhere<Entity>);
+      };
     }
 
     if (
@@ -93,9 +112,10 @@ export class ScopedAccessService {
       hasDepartmentId &&
       cu.departmentId
     ) {
-      filters.push({
+      hierarchicalFilter = {
+        ...hierarchicalFilter,
         department: { id: cu.departmentId },
-      } as unknown as FindOptionsWhere<Entity>);
+      };
     }
 
     if (
@@ -103,9 +123,14 @@ export class ScopedAccessService {
       hasTeamId &&
       cu.teamId
     ) {
-      filters.push({
+      hierarchicalFilter = {
+        ...hierarchicalFilter,
         team: { id: cu.teamId },
-      } as unknown as FindOptionsWhere<Entity>);
+      };
+    }
+
+    if (hierarchicalFilter) {
+      filters.push(hierarchicalFilter);
     }
 
     // If no filters and user isn't SUPER, deny access
@@ -134,14 +159,21 @@ export class ScopedAccessService {
     const effectiveScopes =
       scopes ??
       Object.values(ScopedAccessEnum).filter(
-        (e) => e != ScopedAccessEnum.PERSONAL,
+        (e) => e != ScopedAccessEnum.GENERAL && e != ScopedAccessEnum.PERSONAL,
       );
 
-    // If SUPER, no filters.
+    // If SUPER or Scopes includes GENERAL, no filters.
     if (cu.role?.some((r) => r === Role.SUPER)) return [];
 
     // Company filters
-    this.forBaseFindCompanyFilters(cu, repository, effectiveScopes, filters);
+    const companyFilters = this.forBaseFindCompanyFilters(
+      cu,
+      repository,
+      effectiveScopes,
+    );
+    if (companyFilters.filters?.length || 0 > 0) {
+      filters.push(companyFilters);
+    }
 
     // RELATED filters
     if (effectiveScopes.includes(ScopedAccessEnum.RELATED)) {
@@ -162,8 +194,12 @@ export class ScopedAccessService {
     cu: JWTPayload,
     repository: Repository<T>,
     scopes: ScopedAccessEnum[],
-    filters: ListFilter[],
-  ) {
+  ): ListFilter {
+    // Create new filte
+    const newFilter: ListFilter = {
+      filters: [],
+    } as unknown as ListFilter;
+
     // Check existing fields in the entity.
     const entityMetadata = repository.metadata;
     const hasBusinessId = entityMetadata.columns.some(
@@ -185,12 +221,44 @@ export class ScopedAccessService {
       (c) => c.propertyName === 'updatedBy',
     );
 
+    // GENERAL scope
+    if (
+      scopes.includes(ScopedAccessEnum.GENERAL) &&
+      hasBusinessId &&
+      hasOfficeId &&
+      hasDepartmentId &&
+      hasTeamId
+    ) {
+      newFilter.filters?.push({
+        logicalOperator: LogicalOperator.OR,
+        filters: [
+          {
+            property: 'businessId',
+            operator: ConditionalOperator.IS_NULL,
+          },
+          {
+            property: 'officeId',
+            operator: ConditionalOperator.IS_NULL,
+          },
+          {
+            property: 'departmentId',
+            operator: ConditionalOperator.IS_NULL,
+          },
+          {
+            property: 'teamId',
+            operator: ConditionalOperator.IS_NULL,
+          },
+        ],
+      } as ListFilter);
+    }
+
     // PERSONAL filters (created/updated by the user).
     if (
       scopes.includes(ScopedAccessEnum.PERSONAL) &&
       (hasCreatedBy || hasUpdatedBy)
     ) {
-      filters.push({
+      newFilter.filters?.push({
+        logicalOperator: LogicalOperator.OR,
         filters: [
           {
             property: 'createdById',
@@ -208,12 +276,17 @@ export class ScopedAccessService {
     }
 
     // Hierarchical filters.
+    // Create Hierarchical filtes
+    const hierarchicalFilter: ListFilter = {
+      logicalOperator: LogicalOperator.OR,
+      filters: [],
+    } as unknown as ListFilter;
     if (
       scopes.includes(ScopedAccessEnum.BUSINESS) &&
       hasBusinessId &&
       cu.businessId
     ) {
-      filters.push({
+      hierarchicalFilter.filters?.push({
         property: 'businessId',
         operator: ConditionalOperator.EQUAL,
         value: cu.businessId?.toString(),
@@ -224,7 +297,7 @@ export class ScopedAccessService {
       hasOfficeId &&
       cu.officeId
     ) {
-      filters.push({
+      hierarchicalFilter.filters?.push({
         property: 'officeId',
         operator: ConditionalOperator.EQUAL,
         value: cu.officeId.toString(),
@@ -235,19 +308,25 @@ export class ScopedAccessService {
       hasDepartmentId &&
       cu.departmentId
     ) {
-      filters.push({
+      hierarchicalFilter.filters?.push({
         property: 'departmentId',
         operator: ConditionalOperator.EQUAL,
         value: cu.departmentId.toString(),
       });
     }
     if (scopes.includes(ScopedAccessEnum.TEAM) && hasTeamId && cu.teamId) {
-      filters.push({
+      hierarchicalFilter.filters?.push({
         property: 'teamId',
         operator: ConditionalOperator.EQUAL,
         value: cu.teamId.toString(),
       });
     }
+
+    if (hierarchicalFilter.filters?.length || 0 > 0) {
+      newFilter.filters?.push(hierarchicalFilter);
+    }
+
+    return newFilter;
   }
 
   private async forBaseFindRelatedFilters<T extends ObjectLiteral>(

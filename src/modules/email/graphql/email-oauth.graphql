@@ -1,0 +1,33 @@
+type OAuth2AuthUrl {
+  url: String!
+  clientId: String!
+  redirectUri: String!
+}
+
+type OAuth2CallbackResult {
+  success: Boolean!
+  message: String
+}
+
+type OAuth2TokenStatus {
+  isConfigured: Boolean!
+  expiresAt: Date
+  email: String
+}
+
+type EmailHealthStatus {
+  isHealthy: Boolean!
+  provider: String!
+  lastChecked: Date
+  error: String
+}
+
+type Query {
+  oauth2InitEmailAuth: OAuth2AuthUrl!
+  oauth2EmailStatus: OAuth2TokenStatus!
+  emailHealthStatus: EmailHealthStatus!
+}
+
+type Mutation {
+  oauth2EmailCallback(code: String!): OAuth2CallbackResult!
+}

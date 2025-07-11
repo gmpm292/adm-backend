@@ -52,6 +52,7 @@ export const backendConfigurations: Array<Config> = [
       TEMPLATE_DIR: '/templates/email',
       EMAIL_TEST_ON_STARTUP: false,
       EMAIL_TEST_RECIPIENT: 'tu-email@example.com',
+      ENCRYPTION_KEY: 'default-key-32-chars-long-need',
     },
     configVisibility: ConfigVisibility.PRIVATE,
     configStatus: ConfigStatus.DISABLED,

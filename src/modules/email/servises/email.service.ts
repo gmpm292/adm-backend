@@ -1,13 +1,8 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unnecessary-type-assertion */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import {
-  forwardRef,
-  Inject,
-  Injectable,
-  Logger,
-  OnModuleInit,
-} from '@nestjs/common';
+
+import { forwardRef, Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LessThan, MoreThanOrEqual, Repository } from 'typeorm';
 import { Email } from '../entities/email.entity';
@@ -22,17 +17,14 @@ import { SentMessageInfo, Transporter } from 'nodemailer';
 import { CreateEmailTemplateInput } from '../dto/create-email-template.input';
 import { UpdateEmailTemplateInput } from '../dto/update-email-template.input';
 import { NotFoundError } from '../../../core/errors/appErrors/NotFoundError.error';
-import { OAuth2Client } from 'google-auth-library';
-import * as crypto from 'crypto';
+
 import { ConfigService } from '../../../common/config';
+import { EmailHealthService } from './email-health.service';
 
 @Injectable()
-export class EmailService implements OnModuleInit {
+export class EmailService {
   private readonly logger = new Logger(EmailService.name);
-  private oauth2Client!: OAuth2Client;
-  private accessToken: string | null = null;
-  private accessTokenExpiry: Date | null = null;
-  private transporter!: Transporter;
+  private transporter: Transporter | undefined;
 
   constructor(
     @InjectRepository(Email)
@@ -42,155 +34,55 @@ export class EmailService implements OnModuleInit {
     private readonly transportService: EmailTransportService,
     @Inject(forwardRef(() => ConfigService))
     private readonly configService: ConfigService,
+    private readonly healthService: EmailHealthService,
   ) {}
 
-  async onModuleInit(): Promise<void> {
-    this.initializeOAuth2Client();
-
+  async init(): Promise<void> {
     await this.initializeTransport();
 
-    const emailTestOonStartup = this.configService.get('EMAIL_TEST_ON_STARTUP');
-    if (emailTestOonStartup || emailTestOonStartup === 'true') {
+    const emailTestOnStartup = this.configService.get('EMAIL_TEST_ON_STARTUP');
+    if (emailTestOnStartup === 'true' || emailTestOnStartup) {
       await this.sendTestEmail();
     }
   }
 
-  private initializeOAuth2Client(): void {
-    const clientId = this.configService.get<string>('EMAIL_CLIENT_ID');
-    const clientSecret = this.configService.get<string>('EMAIL_SECRET_KEY');
-    const redirectUri = this.configService.get<string>('EMAIL_REDIRECT_URI');
-
-    if (!clientId || !clientSecret || !redirectUri) {
-      this.logger.error('Missing OAuth2 configuration');
-    }
-
-    this.oauth2Client = new OAuth2Client({
-      clientId,
-      clientSecret,
-      redirectUri,
-    });
-
-    this.oauth2Client.on('tokens', (tokens) => {
-      if (tokens.refresh_token) {
-        this.handleNewRefreshToken(tokens.refresh_token).catch((err) =>
-          this.logger.error('Error handling new refresh token', err),
-        );
-      }
-      if (tokens.access_token) {
-        this.accessToken = tokens.access_token;
-        this.accessTokenExpiry = new Date(
-          Date.now() + (tokens.expiry_date ?? 3600 * 1000),
-        );
-      }
-    });
-  }
-
-  // eslint-disable-next-line @typescript-eslint/require-await, @typescript-eslint/no-unused-vars
-  private async handleNewRefreshToken(refreshToken: string): Promise<void> {
-    this.logger.log('New refresh token received');
-    // TODO: Implement secure persistence of new refresh token
-    // Example: await this.saveRefreshToken(refreshToken);
-  }
-
-  private async ensureValidAccessToken(): Promise<void> {
-    if (
-      !this.accessToken ||
-      (this.accessTokenExpiry !== null && new Date() > this.accessTokenExpiry)
-    ) {
-      await this.refreshAccessToken();
-    }
-  }
-
-  private async refreshAccessToken(): Promise<void> {
-    const refreshToken = this.configService.get<string>('EMAIL_REFRESH_TOKEN');
-    if (!refreshToken) {
-      this.logger.error('Refresh token not configured');
-    }
-
-    try {
-      this.oauth2Client.setCredentials({ refresh_token: refreshToken });
-      const accessTokenResponse = await this.oauth2Client.getAccessToken();
-
-      const token = accessTokenResponse?.token;
-      if (!token) {
-        throw new Error('Failed to get access token');
-      }
-
-      this.accessToken = token;
-      this.accessTokenExpiry = new Date(Date.now() + 3500 * 1000); // 58 min approx.
-    } catch (error) {
-      this.logger.error(
-        'Error refreshing access token',
-        (error as Error).stack,
-      );
-    }
-  }
-
   private async initializeTransport(): Promise<void> {
-    await this.ensureValidAccessToken();
-
-    this.transporter = await this.transportService.getTransporter();
-  }
-
-  private encryptToken(token: string): string {
-    const iv = crypto.randomBytes(16);
-    const key = Buffer.from(
-      this.configService.get<string>('ENCRYPTION_KEY') ??
-        'default-key-32-chars-long-need',
-      'utf-8',
-    );
-    const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
-    const encrypted = Buffer.concat([
-      cipher.update(token, 'utf8'),
-      cipher.final(),
-    ]);
-    return `${iv.toString('hex')}:${encrypted.toString('hex')}`;
-  }
-
-  private decryptToken(encryptedToken: string): string {
-    const [ivHex, encryptedHex] = encryptedToken.split(':');
-    if (!ivHex || !encryptedHex) {
-      throw new Error('Invalid encrypted token format');
+    try {
+      this.transporter = await this.transportService.getTransporter();
+      if (!this.transporter) {
+        this.logger.warn('Email transporter not initialized');
+      }
+    } catch (error) {
+      this.logger.error('Failed to initialize transport', error);
     }
-    const iv = Buffer.from(ivHex, 'hex');
-    const encryptedText = Buffer.from(encryptedHex, 'hex');
-    const key = Buffer.from(
-      this.configService.get<string>('ENCRYPTION_KEY') ??
-        'default-key-32-chars-long-need',
-      'utf-8',
-    );
-    const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
-    const decrypted = Buffer.concat([
-      decipher.update(encryptedText),
-      decipher.final(),
-    ]);
-    return decrypted.toString('utf8');
   }
 
   private async sendTestEmail(): Promise<void> {
     const testEmail = this.configService.get<string>('EMAIL_TEST_RECIPIENT');
     if (!testEmail) {
-      this.logger.warn(
-        'EMAIL_TEST_RECIPIENT not configured - skipping test email',
-      );
+      this.logger.warn('EMAIL_TEST_RECIPIENT not configured');
       return;
     }
 
-    this.logger.log(`Sending test email to: ${testEmail}`);
-
     try {
+      const status = await this.healthService.checkEmailStatus();
+      if (!status.configured) {
+        this.logger.warn('Email service not configured, skipping test email');
+        return;
+      }
+
       const result = await this.sendEmail({
         to: testEmail,
         subject: 'Prueba de servicio de correo',
         body: `
           <h1>¡Este es un correo de prueba!</h1>
-          <p>Si estás recibiendo este mensaje, el servicio de correo de tu aplicación está configurado correctamente.</p>
-          <p><strong>Fecha de envío:</strong> ${new Date().toISOString()}</p>
+          <p>Si estás recibiendo este mensaje, el servicio de correo está configurado correctamente.</p>
+          <p><strong>Fecha:</strong> ${new Date().toISOString()}</p>
         `,
       });
-      this.logger.log(`Test email sent successfully! Email ID: ${result.id}`);
+      this.logger.log(`Test email sent successfully: ${result.id}`);
     } catch (error) {
-      this.logger.error('Failed to send test email', (error as Error).stack);
+      this.logger.error('Failed to send test email', error);
     }
   }
 
@@ -216,9 +108,7 @@ export class EmailService implements OnModuleInit {
       attachments: data.attachments,
       status: EmailStatus.PENDING,
       provider: this.configService.get<EmailProvider>('EMAIL_PROVIDER'),
-      from: `"${this.configService.get<string>('FROM')}" <${this.configService.get<string>(
-        'FROM_EMAIL',
-      )}>`,
+      from: this.getFromAddress(),
       retryCount: 0,
     });
 
@@ -226,30 +116,12 @@ export class EmailService implements OnModuleInit {
 
     try {
       if (data.templateId) {
-        const template = await this.emailTemplateRepository.findOne({
-          where: { name: data.templateId, isActive: true },
-        });
-
-        if (!template) {
-          throw new NotFoundError(
-            `Template with ID ${data.templateId} not found or inactive`,
-          );
-        }
-
-        const compiledSubject = compile(template.subject);
-        const compiledBody = compile(template.body);
-
-        emailRecord.subject = compiledSubject(
-          data.context ?? template.defaultContext ?? {},
-        );
-        emailRecord.body = compiledBody(
-          data.context ?? template.defaultContext ?? {},
-        );
-
-        await this.emailRepository.save(emailRecord);
+        await this.applyTemplate(data, emailRecord);
       }
 
-      await this.ensureValidAccessToken();
+      if (!this.transporter) {
+        throw new Error('Email transporter not initialized');
+      }
 
       const mailOptions = {
         from: emailRecord.from,
@@ -269,28 +141,68 @@ export class EmailService implements OnModuleInit {
       await this.emailRepository.save(emailRecord);
 
       this.logger.log(`Email sent to ${data.to}: ${info.messageId}`);
-
       return emailRecord;
     } catch (error) {
-      const err = error as Error;
+      await this.handleEmailError(emailRecord, error);
+      throw error;
+    }
+  }
 
-      if (err.message.includes('invalid_grant')) {
-        this.logger.error(
-          'OAuth2 token expired or revoked - needs reauthentication',
-        );
-      }
+  private getFromAddress(): string {
+    return `"${this.configService.get<string>('FROM')}" <${this.configService.get<string>(
+      'FROM_EMAIL',
+    )}>`;
+  }
 
-      emailRecord.status = EmailStatus.FAILED;
-      emailRecord.error = {
-        message: err.message,
-        stack: err.stack,
-        code: (error as any)?.code,
-      };
-      await this.emailRepository.save(emailRecord);
+  private async applyTemplate(
+    data: SendEmailInput,
+    emailRecord: Email,
+  ): Promise<void> {
+    const template = await this.emailTemplateRepository.findOne({
+      where: { name: data.templateId, isActive: true },
+    });
 
-      this.logger.error(`Failed to send email to ${data.to}: ${err.message}`);
+    if (!template) {
+      throw new NotFoundError(
+        `Template with ID ${data.templateId} not found or inactive`,
+      );
+    }
 
-      throw err;
+    const compiledSubject = compile(template.subject);
+    const compiledBody = compile(template.body);
+
+    emailRecord.subject = compiledSubject(
+      data.context ?? template.defaultContext ?? {},
+    );
+    emailRecord.body = compiledBody(
+      data.context ?? template.defaultContext ?? {},
+    );
+
+    await this.emailRepository.save(emailRecord);
+  }
+
+  private async handleEmailError(
+    emailRecord: Email,
+    error: any,
+  ): Promise<void> {
+    const err = error as Error;
+
+    emailRecord.status = EmailStatus.FAILED;
+    emailRecord.error = {
+      message: err.message,
+      stack: err.stack,
+      code: (error as any)?.code,
+    };
+
+    await this.emailRepository.save(emailRecord);
+    this.logger.error(
+      `Failed to send email to ${emailRecord.to}: ${err.message}`,
+    );
+
+    if (err.message.includes('invalid_grant')) {
+      this.logger.error(
+        'OAuth2 token expired or revoked - needs reauthentication',
+      );
     }
   }
 

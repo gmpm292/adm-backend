@@ -1,8 +1,9 @@
 export enum ScopedAccessEnum {
-  BUSINESS = 'BUSINESS', //Jefes del negocio
-  OFFICE = 'OFFICE', //Jefe de Oficinas
-  DEPARTMENT = 'DEPARTMENT', //Jefe de departamentos
-  TEAM = 'TEAM', //Jefe de equipo
-  PERSONAL = 'PERSONAL',
-  RELATED = 'RELATED',
+  GENERAL = 'GENERAL', //Nivel General (Todo el contenido)
+  BUSINESS = 'BUSINESS', //Nivel de negocio
+  OFFICE = 'OFFICE', //Nivel de oficina
+  DEPARTMENT = 'DEPARTMENT', //Nivel de departamento
+  TEAM = 'TEAM', //Nivel de equipo
+  PERSONAL = 'PERSONAL', //Creado o modificado por el usuario
+  RELATED = 'RELATED', //Solo relacionados con el usuario
 }

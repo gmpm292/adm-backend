@@ -54,11 +54,16 @@ export class CurrencyService extends BaseService<Currency> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<ListSummary> {
-    scopes = [];
+    const effectiveScopes =
+      scopes ??
+      Object.values(ScopedAccessEnum).filter(
+        (e) => e != ScopedAccessEnum.PERSONAL,
+      );
+
     return await super.baseFind({
       options,
       cu,
-      scopes,
+      scopes: effectiveScopes,
       manager,
     });
   }
