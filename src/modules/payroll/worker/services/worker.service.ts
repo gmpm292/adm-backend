@@ -97,10 +97,10 @@ export class WorkerService extends BaseService<Worker> {
 
     // Si se creó un usuario, limpiar campos temporales
     if (createdUser) {
-      workerData.tempFirstName = null;
-      workerData.tempLastName = null;
-      workerData.tempEmail = null;
-      workerData.tempPhone = null;
+      workerData.tempFirstName = undefined;
+      workerData.tempLastName = undefined;
+      workerData.tempEmail = undefined;
+      workerData.tempPhone = undefined;
       workerData.tempRole = [];
     }
 
@@ -141,7 +141,7 @@ export class WorkerService extends BaseService<Worker> {
       enabled: true,
     };
 
-    return this.userService.create(createUserInput, cu, scopes, manager);
+    return this.userService.create(createUserInput, cu /*scopes, manager*/);
   }
 
   async find(
