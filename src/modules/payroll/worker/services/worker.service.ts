@@ -133,7 +133,7 @@ export class WorkerService extends BaseService<Worker> {
       role:
         input.tempRole && input.tempRole.length > 0
           ? input.tempRole
-          : [input.role || Role.AGENT],
+          : [Role.AGENT],
       businessId: input.businessId,
       officeId: input.officeId,
       departmentId: input.departmentId,
@@ -354,7 +354,6 @@ export class WorkerService extends BaseService<Worker> {
         tempLastName: worker.tempLastName,
         tempPhone: worker.tempPhone,
         tempRole: worker.tempRole,
-        role: worker.tempRole?.[0] || Role.AGENT,
         businessId: worker.business?.id,
         officeId: worker.office?.id,
         departmentId: worker.department?.id,

@@ -5,13 +5,11 @@ enum WorkerType {
   COURIER
   TECHNICIAN
   OPERATIVE
-
   PRINCIPAL
   ADMINISTRATIVE
   MANAGER
   SUPERVISOR
   AGENT
-
   OTHER
 }
 
@@ -30,12 +28,19 @@ type Worker implements SecurityBaseEntity {
   department: Department
   team: Team
 
-  workerType: String!
+  workerType: WorkerType!
   baseSalary: Float!
   customPaymentSettings: JSON
   user: User
   role: Role
   paymentRule: PaymentRule
+
+  # Campos temporales
+  tempFirstName: String
+  tempLastName: String
+  tempEmail: String
+  tempPhone: String
+  tempRole: [Role!]
 }
 
 type WorkersSummary {
@@ -51,10 +56,17 @@ input CreateWorkerInput {
 
   userId: Int
   role: Role!
-  workerType: String!
+  workerType: WorkerType!
   paymentRuleId: Int
   baseSalary: Float
   customPaymentSettings: JSON
+
+  # Campos temporales para creación de usuario
+  tempFirstName: String
+  tempLastName: String
+  tempEmail: String
+  tempPhone: String
+  tempRole: [Role!]
 }
 
 input UpdateWorkerInput {
@@ -66,17 +78,23 @@ input UpdateWorkerInput {
   id: Int!
   userId: Int
   role: Role
-  workerType: String
+  workerType: WorkerType
   paymentRuleId: Int
   baseSalary: Float
   customPaymentSettings: JSON
+
+  # Campos temporales para actualización
+  tempFirstName: String
+  tempLastName: String
+  tempEmail: String
+  tempPhone: String
+  tempRole: [Role!]
 }
 
 extend type Query {
   workers(options: ListOptions): WorkersSummary!
   worker(id: Int!): Worker
   workersByOffice(officeId: Int!): [Worker]!
-  workersByType(type: String!): [Worker]!
 }
 
 extend type Mutation {

@@ -21,9 +21,6 @@ export class CreateWorkerInput extends CreateSecurityBaseInput {
   @IsPositive()
   userId?: number;
 
-  @IsEnum(Role)
-  role: Role;
-
   @IsString()
   @IsEnum(WorkerType)
   workerType: WorkerType;
@@ -69,17 +66,20 @@ export class CreateWorkerInput extends CreateSecurityBaseInput {
   }
 
   private checkWorkerInformation(currentUser: { role: Role[] }): void {
-    if (this.role === Role.SUPER) {
+    // Acceder al rol desde la clase base
+    const workerRole = this.tempRole?.at(0);
+
+    if (workerRole === Role.SUPER) {
       throw new BadRequestError('A worker cannot have a SUPER role.');
     }
-    if (this.role === Role.PRINCIPAL) {
+    if (workerRole === Role.PRINCIPAL) {
       if (this.officeId || this.departmentId || this.teamId) {
         throw new BadRequestError(
           'PRINCIPAL cannot have office, department or team',
         );
       }
     }
-    if (this.role === Role.ADMIN) {
+    if (workerRole === Role.ADMIN) {
       if (!this.officeId) {
         throw new BadRequestError('The administrator has no office');
       }
@@ -89,7 +89,7 @@ export class CreateWorkerInput extends CreateSecurityBaseInput {
         );
       }
     }
-    if (this.role === Role.MANAGER) {
+    if (workerRole === Role.MANAGER) {
       if (!this.officeId || !this.departmentId) {
         throw new BadRequestError('The manager has no office or department');
       }
@@ -98,7 +98,7 @@ export class CreateWorkerInput extends CreateSecurityBaseInput {
       }
     }
     if (
-      this.role === Role.SUPERVISOR &&
+      workerRole === Role.SUPERVISOR &&
       (!this.officeId || !this.departmentId || !this.teamId)
     ) {
       throw new BadRequestError(
@@ -106,7 +106,7 @@ export class CreateWorkerInput extends CreateSecurityBaseInput {
       );
     }
     if (
-      this.role === Role.AGENT &&
+      workerRole === Role.AGENT &&
       (!this.officeId || !this.departmentId || !this.teamId)
     ) {
       throw new BadRequestError('The agent has no office, department or team');
@@ -114,7 +114,7 @@ export class CreateWorkerInput extends CreateSecurityBaseInput {
 
     // Check that a role cannot create a higher one
     if (currentUser.role.some((r) => r === Role.ADMIN)) {
-      if (this.role === Role.PRINCIPAL || this.role === Role.ADMIN) {
+      if (workerRole === Role.PRINCIPAL || workerRole === Role.ADMIN) {
         throw new BadRequestError(
           'You cannot create a user with a role greater than or equal to yours',
         );
@@ -122,9 +122,9 @@ export class CreateWorkerInput extends CreateSecurityBaseInput {
     }
     if (currentUser.role.some((r) => r === Role.MANAGER)) {
       if (
-        this.role === Role.PRINCIPAL ||
-        this.role === Role.ADMIN ||
-        this.role === Role.MANAGER
+        workerRole === Role.PRINCIPAL ||
+        workerRole === Role.ADMIN ||
+        workerRole === Role.MANAGER
       ) {
         throw new BadRequestError(
           'You cannot create a user with a role greater than or equal to yours',
@@ -133,10 +133,10 @@ export class CreateWorkerInput extends CreateSecurityBaseInput {
     }
     if (currentUser.role.some((r) => r === Role.SUPERVISOR)) {
       if (
-        this.role === Role.PRINCIPAL ||
-        this.role === Role.ADMIN ||
-        this.role === Role.MANAGER ||
-        this.role === Role.SUPERVISOR
+        workerRole === Role.PRINCIPAL ||
+        workerRole === Role.ADMIN ||
+        workerRole === Role.MANAGER ||
+        workerRole === Role.SUPERVISOR
       ) {
         throw new BadRequestError(
           'You cannot create a user with a role greater than or equal to yours',
@@ -145,11 +145,11 @@ export class CreateWorkerInput extends CreateSecurityBaseInput {
     }
     if (currentUser.role.some((r) => r === Role.AGENT)) {
       if (
-        this.role === Role.PRINCIPAL ||
-        this.role === Role.ADMIN ||
-        this.role === Role.MANAGER ||
-        this.role === Role.SUPERVISOR ||
-        this.role === Role.AGENT
+        workerRole === Role.PRINCIPAL ||
+        workerRole === Role.ADMIN ||
+        workerRole === Role.MANAGER ||
+        workerRole === Role.SUPERVISOR ||
+        workerRole === Role.AGENT
       ) {
         throw new BadRequestError(
           'You cannot create a user with a role greater than or equal to yours',
