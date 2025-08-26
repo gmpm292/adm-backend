@@ -59,9 +59,10 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
   private processConditions(
     paymentType: PaymentType,
     conditions: ConditionsInput,
-  ) {
+  ): Conditions {
     const result: Conditions = {
       paymentCurrency: conditions.paymentCurrency,
+      scope: conditions.scope,
     };
 
     switch (paymentType) {
@@ -74,7 +75,6 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
           max: range.max ?? null,
           currency: range.currency,
           amount: range.amount,
-          scope: range.scope,
         }));
         break;
 
@@ -87,7 +87,6 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
         result.saleQuantity = conditions.saleQuantity.map((sq) => ({
           minProducts: sq.minProducts,
           ratePerProduct: sq.ratePerProduct,
-          scope: sq.scope,
         }));
         break;
 
@@ -99,7 +98,6 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
         }
         result.fixedAmount = {
           amount: conditions.fixedAmount.amount,
-          scope: conditions.fixedAmount.scope,
         };
         break;
 
@@ -111,7 +109,6 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
         }
         result.percentage = {
           percentage: conditions.percentage.percentage,
-          scope: conditions.percentage.scope,
         };
         break;
 

@@ -8,7 +8,6 @@ import {
   IsUUID,
   ValidateIf,
 } from 'class-validator';
-import { CreateSecurityBaseInput } from '../../../../core/dtos/create-security-base.input';
 
 /**
  * DTO for creating a new inventory movement record
@@ -23,7 +22,7 @@ import { CreateSecurityBaseInput } from '../../../../core/dtos/create-security-b
  *   referenceId: "sale-123"
  * }
  */
-export class CreateInventoryMovementInput extends CreateSecurityBaseInput {
+export class CreateInventoryMovementInput {
   @IsInt()
   inventoryId: number;
 

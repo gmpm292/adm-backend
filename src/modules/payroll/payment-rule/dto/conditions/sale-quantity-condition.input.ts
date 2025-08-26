@@ -1,5 +1,4 @@
-import { IsNumber, IsEnum } from 'class-validator';
-import { ScopedAccessEnum } from '../../../../../core/enums/scoped-access.enum';
+import { IsNumber } from 'class-validator';
 
 export class SaleQuantityConditionInput {
   @IsNumber()
@@ -7,7 +6,4 @@ export class SaleQuantityConditionInput {
 
   @IsNumber()
   ratePerProduct: number;
-
-  @IsEnum(ScopedAccessEnum)
-  scope: ScopedAccessEnum;
 }

@@ -1,12 +1,27 @@
-import { PartialType } from '@nestjs/mapped-types';
-import { CreateInventoryInput } from './create-inventory.input';
-import { IsInt } from 'class-validator';
+import { IsInt, IsOptional, IsString, Min } from 'class-validator';
 
 /**
  * DTO for updating an existing inventory record
  * All fields are optional except id
  */
-export class UpdateInventoryInput extends PartialType(CreateInventoryInput) {
+export class UpdateInventoryInput {
   @IsInt()
   id: number;
+
+  // @IsOptional()
+  // @IsInt()
+  // productId: number;
+
+  // @IsInt()
+  // @Min(0)
+  // currentStock: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  minStock?: number;
+
+  @IsOptional()
+  @IsString()
+  location?: string;
 }

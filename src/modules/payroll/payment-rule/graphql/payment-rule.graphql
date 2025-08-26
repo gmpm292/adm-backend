@@ -20,7 +20,8 @@ type Conditions {
   saleQuantity: [SaleQuantityCondition]
   fixedAmount: FixedAmountCondition
   percentage: PercentageCondition
-  paymentCurrency: String
+  paymentCurrency: String!
+  scope: ScopedAccessEnum
 }
 
 type PriceRangeCondition {
@@ -28,23 +29,19 @@ type PriceRangeCondition {
   max: Float
   currency: String!
   amount: Float!
-  scope: ScopedAccessEnum!
 }
 
 type SaleQuantityCondition {
   minProducts: Int!
   ratePerProduct: Float!
-  scope: ScopedAccessEnum!
 }
 
 type FixedAmountCondition {
   amount: Float!
-  scope: ScopedAccessEnum!
 }
 
 type PercentageCondition {
   percentage: Float!
-  scope: ScopedAccessEnum!
 }
 
 type PaymentRule implements SecurityBaseEntity {
@@ -81,6 +78,7 @@ input ConditionsInput {
   fixedAmount: FixedAmountConditionInput
   percentage: PercentageConditionInput
   paymentCurrency: String!
+  scope: ScopedAccessEnum!
 }
 
 input PriceRangeConditionInput {
@@ -88,23 +86,19 @@ input PriceRangeConditionInput {
   max: Float
   currency: String!
   amount: Float!
-  scope: ScopedAccessEnum!
 }
 
 input SaleQuantityConditionInput {
   minProducts: Int!
   ratePerProduct: Float!
-  scope: ScopedAccessEnum!
 }
 
 input FixedAmountConditionInput {
   amount: Float!
-  scope: ScopedAccessEnum!
 }
 
 input PercentageConditionInput {
   percentage: Float!
-  scope: ScopedAccessEnum!
 }
 
 input CreatePaymentRuleInput {

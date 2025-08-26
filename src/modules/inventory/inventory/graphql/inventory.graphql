@@ -41,14 +41,8 @@ input CreateInventoryInput {
 }
 
 input UpdateInventoryInput {
-  businessId: Int
-  officeId: Int
-  departmentId: Int
-  teamId: Int
-
   id: Int!
-  productId: Int
-  currentStock: Int
+  #  productId: Int
   minStock: Int
   location: String
 }

@@ -3,9 +3,6 @@ import { SecurityBaseEntity } from '../../../../core/entities/security-base.enti
 
 @Entity('py_work_schedules')
 export class WorkSchedule extends SecurityBaseEntity {
-  //   @ManyToOne(() => Office)
-  //   office: Office;
-
   @Column({ type: 'date' })
   startDate: Date;
 

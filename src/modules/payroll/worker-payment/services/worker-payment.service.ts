@@ -41,12 +41,7 @@ export class WorkerPaymentService extends BaseService<WorkerPayment> {
     const { workerId, payrollPeriodId, ...rest } = createWorkerPaymentInput;
     const [worker, payrollPeriod] = await Promise.all([
       this.workerService.findOne(workerId, cu, scopes, manager),
-      this.payrollPeriodService.findOne(
-        payrollPeriodId,
-        cu,
-        scopes,
-        manager,
-      ),
+      this.payrollPeriodService.findOne(payrollPeriodId, cu, scopes, manager),
     ]);
 
     if (!worker) {

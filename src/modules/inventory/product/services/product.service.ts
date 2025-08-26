@@ -60,6 +60,10 @@ export class ProductService extends BaseService<Product> {
     const product: Product = {
       ...rest,
       category,
+      business: category.business,
+      office: category.office,
+      department: category.department,
+      team: category.team,
     } as Product;
 
     return super.baseCreate({
@@ -97,6 +101,13 @@ export class ProductService extends BaseService<Product> {
       relationsToLoad: {
         category: true,
         inventories: true,
+        business: true,
+        office: true,
+        department: true,
+        team: true,
+        createdBy: true,
+        updatedBy: true,
+        deletedBy: true,
       },
       cu,
       scopes,
@@ -140,13 +151,17 @@ export class ProductService extends BaseService<Product> {
         throw new NotFoundError('Category not found');
       }
       product.category = category;
+      product.business = category.business;
+      product.office = category.office;
+      product.department = category.department;
+      product.team = category.team;
     }
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { categoryId, ...rest } = updateProductInput;
     return super.baseUpdate({
       id,
-      data: { ...product, ...rest },
+      data: { ...rest, ...product },
       cu,
       scopes,
       manager,
@@ -383,7 +398,6 @@ export class ProductService extends BaseService<Product> {
 
     for (const inventoryItem of sortedInventory) {
       if (remainingQuantity <= 0) break;
-
       const quantityToDeduct = Math.min(
         remainingQuantity,
         inventoryItem.currentStock,

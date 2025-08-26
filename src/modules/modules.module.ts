@@ -9,6 +9,7 @@ import { SaleModule } from './sales/sale/sale.module';
 import { PayrollModule } from './payroll/payroll.module';
 import { EmailModule } from './email/email.module';
 import { TelegramModule } from './telegram/telegram.module';
+import { AttendanceModule } from './payroll/attendance/attendance.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { TelegramModule } from './telegram/telegram.module';
     PayrollModule,
     EmailModule,
     TelegramModule,
+    AttendanceModule,
   ],
   providers: [],
 })

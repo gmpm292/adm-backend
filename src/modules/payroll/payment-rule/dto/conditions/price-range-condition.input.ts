@@ -4,9 +4,7 @@ import {
   IsString,
   MaxLength,
   MinLength,
-  IsEnum,
 } from 'class-validator';
-import { ScopedAccessEnum } from '../../../../../core/enums/scoped-access.enum';
 
 export class PriceRangeConditionInput {
   @IsNumber()
@@ -23,7 +21,4 @@ export class PriceRangeConditionInput {
 
   @IsNumber()
   amount: number;
-
-  @IsEnum(ScopedAccessEnum)
-  scope: ScopedAccessEnum;
 }

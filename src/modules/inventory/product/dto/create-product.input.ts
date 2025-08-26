@@ -69,7 +69,8 @@ export class PricingConfigDto {
   decimalPlaces?: number;
 }
 
-export class CreateProductInput extends CreateSecurityBaseInput {
+// export class CreateProductInput extends CreateSecurityBaseInput {
+export class CreateProductInput {
   @IsNumber()
   categoryId: number;
 

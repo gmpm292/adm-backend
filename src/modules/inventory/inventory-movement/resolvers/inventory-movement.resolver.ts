@@ -2,7 +2,7 @@ import { UseGuards } from '@nestjs/common';
 import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { AccessTokenAuthGuard } from '../../../auth/guards/access-token-auth.guard';
 import { CreateInventoryMovementInput } from '../dto/create-inventory-movement.input';
-import { UpdateInventoryMovementInput } from '../dto/update-inventory-movement.input';
+//import { UpdateInventoryMovementInput } from '../dto/update-inventory-movement.input';
 import { RoleGuard } from '../../../auth/guards/role.guard';
 import { Roles } from '../../../auth/decorators/roles.decorator';
 import { CurrentUser } from '../../../auth/decorators/current-user.decorator';
@@ -49,30 +49,30 @@ export class InventoryMovementResolver {
     return this.movementService.findOne(id, user);
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
-  @UseGuards(AccessTokenAuthGuard, RoleGuard)
-  @Mutation('updateInventoryMovement')
-  async update(
-    @CurrentUser() user: JWTPayload,
-    @Args('updateInventoryMovementInput')
-    updateInput: UpdateInventoryMovementInput,
-  ) {
-    return this.movementService.update(updateInput.id, updateInput, user);
-  }
+  // @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
+  // @UseGuards(AccessTokenAuthGuard, RoleGuard)
+  // @Mutation('updateInventoryMovement')
+  // async update(
+  //   @CurrentUser() user: JWTPayload,
+  //   @Args('updateInventoryMovementInput')
+  //   updateInput: UpdateInventoryMovementInput,
+  // ) {
+  //   return this.movementService.update(updateInput.id, updateInput, user);
+  // }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL)
-  @UseGuards(AccessTokenAuthGuard, RoleGuard)
-  @Mutation('removeInventoryMovements')
-  async remove(@CurrentUser() user: JWTPayload, @Args('ids') ids: number[]) {
-    return this.movementService.remove(ids, user);
-  }
+  // @Roles(Role.SUPER, Role.PRINCIPAL)
+  // @UseGuards(AccessTokenAuthGuard, RoleGuard)
+  // @Mutation('removeInventoryMovements')
+  // async remove(@CurrentUser() user: JWTPayload, @Args('ids') ids: number[]) {
+  //   return this.movementService.remove(ids, user);
+  // }
 
-  @Roles(Role.SUPER)
-  @UseGuards(AccessTokenAuthGuard, RoleGuard)
-  @Mutation('restoreInventoryMovements')
-  async restore(@CurrentUser() user: JWTPayload, @Args('ids') ids: number[]) {
-    return this.movementService.restore(ids, user);
-  }
+  // @Roles(Role.SUPER)
+  // @UseGuards(AccessTokenAuthGuard, RoleGuard)
+  // @Mutation('restoreInventoryMovements')
+  // async restore(@CurrentUser() user: JWTPayload, @Args('ids') ids: number[]) {
+  //   return this.movementService.restore(ids, user);
+  // }
 
   @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER, Role.SUPERVISOR)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)

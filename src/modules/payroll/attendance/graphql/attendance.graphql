@@ -1,0 +1,114 @@
+type Attendance implements SecurityBaseEntity {
+  id: Int!
+  createdAt: Date!
+  updatedAt: Date!
+  deletedAt: Date
+
+  createdBy: User
+  updatedBy: User
+  deletedBy: User
+
+  business: Business
+  office: Office
+  department: Department
+  team: Team
+
+  worker: Worker!
+  attendanceDate: Date!
+  checkInTime: String
+  checkOutTime: String
+  status: AttendanceStatus!
+  hoursWorked: Float!
+  isPaid: Boolean!
+  workSchedule: WorkSchedule
+  notes: String
+  isHoliday: Boolean!
+  recordedAt: Date!
+}
+
+type AttendancesSummary {
+  data: [Attendance!]!
+  totalCount: Int!
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EARLY_DEPARTURE
+  VACATION
+  SICK_LEAVE
+}
+
+input CreateAttendanceInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  workerId: Int!
+  attendanceDate: Date!
+  checkInTime: String
+  checkOutTime: String
+  status: AttendanceStatus
+  hoursWorked: Float
+  workScheduleId: Int
+  notes: String
+  isHoliday: Boolean
+}
+
+input UpdateAttendanceInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  id: Int!
+  workerId: Int
+  attendanceDate: Date
+  checkInTime: String
+  checkOutTime: String
+  status: AttendanceStatus
+  hoursWorked: Float
+  isPaid: Boolean
+  workScheduleId: Int
+  notes: String
+  isHoliday: Boolean
+}
+
+input CheckInInput {
+  workerId: Int!
+  time: String
+  notes: String
+}
+
+input CheckOutInput {
+  workerId: Int!
+  time: String
+  notes: String
+}
+
+extend type Query {
+  attendances(options: ListOptions): AttendancesSummary!
+  attendance(id: Int!): Attendance
+  dailyAttendance(date: Date!): [Attendance!]!
+  workerAttendance(
+    workerId: Int!
+    startDate: Date!
+    endDate: Date!
+  ): [Attendance!]!
+}
+
+extend type Mutation {
+  createAttendance(createAttendanceInput: CreateAttendanceInput!): Attendance!
+  updateAttendance(updateAttendanceInput: UpdateAttendanceInput!): Attendance!
+  checkIn(checkInInput: CheckInInput!): Attendance!
+  checkOut(checkOutInput: CheckOutInput!): Attendance!
+  markAsPaid(ids: [Int!]!): [Attendance!]!
+  removeAttendances(ids: [Int!]!): [Attendance!]!
+  restoreAttendances(ids: [Int!]!): Int
+}
+
+extend type Subscription {
+  attendanceChanged: Boolean
+}

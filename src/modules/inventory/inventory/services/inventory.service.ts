@@ -15,6 +15,11 @@ import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
 import { ScopedAccessService } from '../../../scoped-access/services/scoped-access.service';
 import { ProductService } from '../../product/services/product.service';
 import { InventoryMovementService } from '../../inventory-movement/services/inventory-movement.service';
+import { ConflictError } from '../../../../core/errors/appErrors/ConflictError.error';
+import { Business } from '../../../company/business/entities/co_business.entity';
+import { Office } from '../../../company/office/entities/co_office.entity';
+import { Department } from '../../../company/department/entities/co_department.entity';
+import { Team } from '../../../company/team/entities/co_team.entity';
 
 @Injectable()
 export class InventoryService extends BaseService<Inventory> {
@@ -35,8 +40,9 @@ export class InventoryService extends BaseService<Inventory> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Inventory> {
-    const { productId, ...rest } = createInventoryInput;
+    const { productId, currentStock, ...rest } = createInventoryInput;
 
+    // 1. Obtener el producto
     const product = await this.productService.findOne(
       productId,
       cu,
@@ -47,17 +53,82 @@ export class InventoryService extends BaseService<Inventory> {
       throw new NotFoundError('Product not found');
     }
 
+    // 2. Validar que los scopes del producto coincidan con el usuario actual
+    const validateScope = (
+      scopeName: string,
+      entityId?: number,
+      userScopeId?: number,
+    ) => {
+      if (entityId && userScopeId && entityId !== userScopeId) {
+        throw new ConflictError(
+          `Product ${scopeName} does not match user ${scopeName}`,
+        );
+      }
+    };
+
+    validateScope('business', product.business?.id, cu?.businessId);
+    validateScope('office', product.office?.id, cu?.officeId);
+    validateScope('department', product.department?.id, cu?.departmentId);
+    validateScope('team', product.team?.id, cu?.teamId);
+
+    // 3. Función para determinar el scope
+    const getScopeEntity = <T extends { id?: number | null }>(
+      productEntity: T | undefined | null,
+      userScopeId: number | undefined,
+      inputScopeId: number | undefined,
+    ): T | undefined => {
+      if (productEntity?.id) return productEntity;
+      const id = userScopeId || inputScopeId;
+      return id ? ({ id } as T) : undefined;
+    };
+
+    // 4. Crear el objeto de inventario
     const inventory: Inventory = {
       ...rest,
       product,
+      business: getScopeEntity<Business>(
+        product.business,
+        cu?.businessId,
+        rest.businessId,
+      ),
+      office: getScopeEntity<Office>(
+        product.office,
+        cu?.officeId,
+        rest.officeId,
+      ),
+      department: getScopeEntity<Department>(
+        product.department,
+        cu?.departmentId,
+        rest.departmentId,
+      ),
+      team: getScopeEntity<Team>(product.team, cu?.teamId, rest.teamId),
+      currentStock: 0,
     };
 
-    return super.baseCreate({
+    // 5. Crear el inventario
+    const invCreated = await super.baseCreate({
       data: inventory,
       cu,
       scopes,
       manager,
     });
+
+    // 6. Registrar movimiento inicial si corresponde
+    if (currentStock > 0) {
+      await this.movementService.create(
+        {
+          inventoryId: invCreated.id as number,
+          type: 'IN',
+          quantity: currentStock,
+          reason: 'INITIAL_INVENTORY',
+        },
+        cu,
+        scopes,
+        manager,
+      );
+    }
+
+    return invCreated;
   }
 
   async find(
@@ -68,7 +139,14 @@ export class InventoryService extends BaseService<Inventory> {
   ): Promise<ListSummary> {
     return await super.baseFind({
       options,
-      relationsToLoad: ['product', 'inventoryMovements'],
+      relationsToLoad: [
+        'product',
+        'inventoryMovements',
+        'business',
+        'office',
+        'department',
+        'team',
+      ],
       cu,
       scopes,
       manager,
@@ -84,8 +162,15 @@ export class InventoryService extends BaseService<Inventory> {
     return super.baseFindOne({
       id,
       relationsToLoad: {
-        product: true,
-        inventoryMovements: true,
+        product: { category: true },
+        //inventoryMovements: { user: true },
+        business: true,
+        office: true,
+        department: true,
+        team: true,
+        createdBy: true,
+        updatedBy: true,
+        deletedBy: true,
       },
       cu,
       scopes,
@@ -121,9 +206,8 @@ export class InventoryService extends BaseService<Inventory> {
 
     const newStock = inventory.currentStock + adjustment;
     if (newStock < 0) {
-      throw new Error('Cannot adjust inventory below zero');
+      throw new ConflictError('Cannot adjust inventory below zero');
     }
-
     // // Create movement record
     // await this.movementService.create(
     //   {
@@ -159,21 +243,24 @@ export class InventoryService extends BaseService<Inventory> {
       throw new NotFoundError();
     }
 
-    if (updateInventoryInput.productId) {
-      const product = await this.productService.findOne(
-        updateInventoryInput.productId,
-        cu,
-        scopes,
-        manager,
-      );
-      if (!product) {
-        throw new NotFoundError('Product not found');
-      }
-      inventory.product = product;
-    }
+    // if (updateInventoryInput.productId) {
+    //   const product = await this.productService.findOne(
+    //     updateInventoryInput.productId,
+    //     cu,
+    //     scopes,
+    //     manager,
+    //   );
+    //   if (!product) {
+    //     throw new NotFoundError('Product not found');
+    //   }
+    //   inventory.product = product;
+    //   inventory.business = product.business;
+    //   inventory.office = product.office;
+    //   inventory.department = product.department;
+    //   inventory.team = product.team;
+    // }
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { productId, ...rest } = updateInventoryInput;
+    const { /*productId,*/ ...rest } = updateInventoryInput;
     return super.baseUpdate({
       id,
       data: { ...inventory, ...rest },
@@ -191,7 +278,7 @@ export class InventoryService extends BaseService<Inventory> {
   ): Promise<Inventory[]> {
     const inventories = await super.baseFindByIds({
       ids,
-      relationsToLoad: { inventoryMovements: true },
+      relationsToLoad: { inventoryMovements: true, product: true },
       cu,
       scopes,
       manager,
@@ -202,16 +289,23 @@ export class InventoryService extends BaseService<Inventory> {
     }
 
     await Promise.all(
-      inventories.map((inventory) =>
-        inventory.inventoryMovements?.length
+      inventories.map((inventory) => {
+        // Check if current stock is not zero
+        if (inventory.currentStock !== 0) {
+          throw new ConflictError(
+            `Cannot proceed with operation. Inventory item ${inventory.product.name} has ${inventory.currentStock} units in stock. Stock must be zero to perform this action.`,
+          );
+        }
+
+        return inventory.inventoryMovements?.length
           ? this.movementService.remove(
               inventory.inventoryMovements.map((m) => m.id) as number[],
               cu,
               scopes,
               manager,
             )
-          : Promise.resolve(),
-      ),
+          : Promise.resolve();
+      }),
     );
 
     return super.baseDeleteMany({

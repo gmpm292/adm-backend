@@ -7,12 +7,9 @@ import { Role } from '../../../../core/enums/role.enum';
 
 @Entity('py_workers')
 export class Worker extends SecurityBaseEntity {
-  @OneToOne(() => User)
+  @OneToOne(() => User, { nullable: true })
   @JoinColumn()
   user?: User;
-
-  @Column({ type: 'text', default: Role.AGENT })
-  role: Role;
 
   @Column({ type: 'varchar', length: 20 })
   workerType: WorkerType;
@@ -25,4 +22,21 @@ export class Worker extends SecurityBaseEntity {
 
   @Column({ type: 'jsonb', nullable: true })
   customPaymentSettings?: Record<string, unknown>;
+
+  // Campos temporales para creación de usuario
+
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  tempFirstName?: string;
+
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  tempLastName?: string;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  tempEmail?: string;
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  tempPhone?: string;
+
+  @Column({ type: 'text', array: true, default: [] })
+  tempRole?: Role[];
 }

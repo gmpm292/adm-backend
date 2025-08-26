@@ -34,11 +34,6 @@ enum MovementType {
 }
 
 input CreateInventoryMovementInput {
-  businessId: Int
-  officeId: Int
-  departmentId: Int
-  teamId: Int
-
   inventoryId: Int!
   #userId: Int!
   type: MovementType!
@@ -46,19 +41,13 @@ input CreateInventoryMovementInput {
   reason: String!
 }
 
-input UpdateInventoryMovementInput {
-  businessId: Int
-  officeId: Int
-  departmentId: Int
-  teamId: Int
-
-  id: Int!
-  inventoryId: Int
-  userId: Int
-  type: MovementType
-  quantity: Int
-  reason: String
-}
+#input UpdateInventoryMovementInput {
+#  id: Int!
+#  #  inventoryId: Int
+#  type: MovementType
+#  quantity: Int
+#  reason: String
+#}
 
 extend type Query {
   inventoryMovements(options: ListOptions): InventoryMovementsSummary!
@@ -71,11 +60,11 @@ extend type Mutation {
   createInventoryMovement(
     createInventoryMovementInput: CreateInventoryMovementInput!
   ): InventoryMovement!
-  updateInventoryMovement(
-    updateInventoryMovementInput: UpdateInventoryMovementInput!
-  ): InventoryMovement!
-  removeInventoryMovements(ids: [Int!]!): [InventoryMovement]!
-  restoreInventoryMovements(ids: [Int!]!): Int
+  #  updateInventoryMovement(
+  #    updateInventoryMovementInput: UpdateInventoryMovementInput!
+  #  ): InventoryMovement!
+  # removeInventoryMovements(ids: [Int!]!): [InventoryMovement]!
+  # restoreInventoryMovements(ids: [Int!]!): Int
 }
 
 extend type Subscription {

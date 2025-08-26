@@ -16,6 +16,7 @@ import {
   ListOptions,
   ListSummary,
 } from '../../../../core/graphql/remote-operations';
+import { ConflictError } from '../../../../core/errors/appErrors/ConflictError.error';
 
 @Injectable()
 export class InventoryMovementService extends BaseService<InventoryMovement> {
@@ -37,6 +38,11 @@ export class InventoryMovementService extends BaseService<InventoryMovement> {
     manager?: EntityManager,
   ): Promise<InventoryMovement> {
     const { inventoryId, isReservation, ...rest } = createMovementInput;
+    if (rest.quantity === 0) {
+      throw new ConflictError(
+        'InventoryMovementError: Quantity cannot be zero.',
+      );
+    }
 
     const [inventory, user] = await Promise.all([
       this.inventoryService.findOne(inventoryId, cu, scopes, manager),
@@ -61,6 +67,10 @@ export class InventoryMovementService extends BaseService<InventoryMovement> {
       inventory,
       user,
       isReservation: isReservation || false,
+      business: inventory.business,
+      office: inventory.office,
+      department: inventory.department,
+      team: inventory.team,
     };
 
     // Update inventory stock
@@ -111,6 +121,13 @@ export class InventoryMovementService extends BaseService<InventoryMovement> {
       relationsToLoad: {
         inventory: { product: true },
         user: true,
+        business: true,
+        office: true,
+        department: true,
+        team: true,
+        createdBy: true,
+        updatedBy: true,
+        deletedBy: true,
       },
       cu,
       scopes,
