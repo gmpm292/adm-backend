@@ -16,6 +16,9 @@ import { ScopedAccessService } from '../../../scoped-access/services/scoped-acce
 import { PaymentRuleService } from '../../payment-rule/services/payment-rule.service';
 import { OfficeService } from '../../../company/office/services/office.service';
 import { UsersService } from '../../../users/services/users.service';
+import { CreateUserInput } from '../../../users/dto/create-user.input';
+import { Role } from '../../../../core/enums/role.enum';
+import { User } from '../../../users/entities/user.entity';
 
 @Injectable()
 export class WorkerService extends BaseService<Worker> {
@@ -41,13 +44,15 @@ export class WorkerService extends BaseService<Worker> {
     await createWorkerInput.validateCustomRules(cu as JWTPayload);
 
     const [user, paymentRule, office] = await Promise.all([
-      this.userService.findOne(
-        createWorkerInput.userId as number,
-        undefined,
-        cu,
-        scopes,
-        manager,
-      ),
+      createWorkerInput.userId
+        ? this.userService.findOne(
+            createWorkerInput.userId,
+            undefined,
+            cu,
+            scopes,
+            manager,
+          )
+        : Promise.resolve(undefined),
       createWorkerInput.paymentRuleId
         ? this.paymentRuleService.findOne(
             createWorkerInput.paymentRuleId,
@@ -66,25 +71,77 @@ export class WorkerService extends BaseService<Worker> {
         : Promise.resolve(undefined),
     ]);
 
-    // if (!user) {
-    //   throw new NotFoundError('User not found');
-    // }
+    // CAMBIO PRINCIPAL: Crear usuario si no existe pero hay datos temporales
+    let createdUser: User | undefined;
+    if (!user && this.hasUserCreationData(createWorkerInput)) {
+      createdUser = await this.createUserFromWorkerData(
+        createWorkerInput,
+        cu,
+        scopes,
+        manager,
+      );
+    }
 
-    const worker: Worker = {
+    // Validar que si se proporcionó userId, el usuario debe existir
+    if (createWorkerInput.userId && !user) {
+      throw new NotFoundError('User not found');
+    }
+
+    const workerData: Partial<Worker> = {
       ...createWorkerInput,
-      user,
+      user: user || createdUser,
       paymentRule,
       office,
       baseSalary: createWorkerInput.baseSalary || 0,
-    } as Worker;
+    };
+
+    // Si se creó un usuario, limpiar campos temporales
+    if (createdUser) {
+      workerData.tempFirstName = null;
+      workerData.tempLastName = null;
+      workerData.tempEmail = null;
+      workerData.tempPhone = null;
+      workerData.tempRole = [];
+    }
 
     return super.baseCreate({
-      data: worker,
+      data: workerData as Worker,
       uniqueFields: ['user'],
       cu,
       scopes,
       manager,
     });
+  }
+
+  // CAMBIO: Método para verificar si hay datos para crear usuario
+  private hasUserCreationData(input: CreateWorkerInput): boolean {
+    return !!(input.tempEmail && input.tempFirstName && input.tempLastName);
+  }
+
+  // CAMBIO: Método para crear usuario desde datos temporales
+  private async createUserFromWorkerData(
+    input: CreateWorkerInput,
+    cu?: JWTPayload,
+    scopes?: ScopedAccessEnum[],
+    manager?: EntityManager,
+  ): Promise<User> {
+    const createUserInput: CreateUserInput = {
+      name: input.tempFirstName!,
+      lastName: input.tempLastName!,
+      email: input.tempEmail!,
+      mobile: input.tempPhone || '',
+      role:
+        input.tempRole && input.tempRole.length > 0
+          ? input.tempRole
+          : [input.role || Role.AGENT],
+      businessId: input.businessId,
+      officeId: input.officeId,
+      departmentId: input.departmentId,
+      teamId: input.teamId,
+      enabled: true,
+    };
+
+    return this.userService.create(createUserInput, cu, scopes, manager);
   }
 
   async find(
@@ -146,18 +203,31 @@ export class WorkerService extends BaseService<Worker> {
       throw new NotFoundError();
     }
 
-    if (updateWorkerInput.userId) {
-      const user = await this.userService.findOne(
-        updateWorkerInput.userId,
-        undefined,
-        cu,
-        scopes,
-        manager,
-      );
-      if (!user) {
-        throw new NotFoundError('User not found');
+    // CAMBIO: Manejar actualización de usuario
+    if (updateWorkerInput.userId !== undefined) {
+      if (updateWorkerInput.userId === null) {
+        // Permitir desasociar usuario
+        worker.user = undefined;
+      } else {
+        const user = await this.userService.findOne(
+          updateWorkerInput.userId,
+          undefined,
+          cu,
+          scopes,
+          manager,
+        );
+        if (!user) {
+          throw new NotFoundError('User not found');
+        }
+        worker.user = user;
+
+        // Limpiar campos temporales si se asocia un usuario
+        worker.tempFirstName = undefined;
+        worker.tempLastName = undefined;
+        worker.tempEmail = undefined;
+        worker.tempPhone = undefined;
+        worker.tempRole = [];
       }
-      worker.user = user;
     }
 
     if (updateWorkerInput.paymentRuleId) {
@@ -218,5 +288,91 @@ export class WorkerService extends BaseService<Worker> {
       scopes,
       manager,
     });
+  }
+
+  // CAMBIO: Nuevo método para asociar usuario existente a worker
+  async associateUser(
+    workerId: number,
+    userId: number,
+    cu?: JWTPayload,
+    scopes?: ScopedAccessEnum[],
+    manager?: EntityManager,
+  ): Promise<Worker> {
+    const worker = await this.findOne(workerId, cu, scopes, manager);
+    const user = await this.userService.findOne(
+      userId,
+      undefined,
+      cu,
+      scopes,
+      manager,
+    );
+
+    if (!worker) {
+      throw new NotFoundError('Worker not found');
+    }
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+
+    worker.user = user;
+    // Limpiar campos temporales
+    worker.tempFirstName = undefined;
+    worker.tempLastName = undefined;
+    worker.tempEmail = undefined;
+    worker.tempPhone = undefined;
+    worker.tempRole = [];
+
+    return this.workerRepository.save(worker);
+  }
+
+  // CAMBIO: Nuevo método para crear usuario desde worker existente
+  async createUserFromWorker(
+    workerId: number,
+    cu?: JWTPayload,
+    scopes?: ScopedAccessEnum[],
+    manager?: EntityManager,
+  ): Promise<Worker> {
+    const worker = await this.findOne(workerId, cu, scopes, manager);
+    if (!worker) {
+      throw new NotFoundError('Worker not found');
+    }
+
+    if (worker.user) {
+      throw new NotFoundError('Worker already has a user associated');
+    }
+
+    if (!worker.tempEmail || !worker.tempFirstName || !worker.tempLastName) {
+      throw new NotFoundError(
+        'Worker does not have enough data to create user',
+      );
+    }
+
+    const user = await this.createUserFromWorkerData(
+      {
+        tempEmail: worker.tempEmail,
+        tempFirstName: worker.tempFirstName,
+        tempLastName: worker.tempLastName,
+        tempPhone: worker.tempPhone,
+        tempRole: worker.tempRole,
+        role: worker.tempRole?.[0] || Role.AGENT,
+        businessId: worker.business?.id,
+        officeId: worker.office?.id,
+        departmentId: worker.department?.id,
+        teamId: worker.team?.id,
+      } as CreateWorkerInput,
+      cu,
+      scopes,
+      manager,
+    );
+
+    worker.user = user;
+    // Limpiar campos temporales
+    worker.tempFirstName = undefined;
+    worker.tempLastName = undefined;
+    worker.tempEmail = undefined;
+    worker.tempPhone = undefined;
+    worker.tempRole = [];
+
+    return this.workerRepository.save(worker);
   }
 }

@@ -84,6 +84,9 @@ extend type Mutation {
   updateWorker(updateWorkerInput: UpdateWorkerInput!): Worker!
   removeWorkers(ids: [Int!]!): [Worker]!
   restoreWorkers(ids: [Int!]!): Int
+
+  associateUserToWorker(workerId: Int!, userId: Int!): Worker!
+  createUserFromWorker(workerId: Int!): Worker!
 }
 
 extend type Subscription {

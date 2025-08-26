@@ -24,7 +24,6 @@ export class Worker extends SecurityBaseEntity {
   customPaymentSettings?: Record<string, unknown>;
 
   // Campos temporales para creación de usuario
-
   @Column({ type: 'varchar', length: 50, nullable: true })
   tempFirstName?: string;
 

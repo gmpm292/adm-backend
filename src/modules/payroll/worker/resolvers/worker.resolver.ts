@@ -85,4 +85,27 @@ export class WorkerResolver {
   async restore(@CurrentUser() user: JWTPayload, @Args('ids') ids: number[]) {
     return this.workerService.restore(ids, user);
   }
+
+  // CAMBIO: Nueva mutación para asociar usuario
+  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
+  @UseGuards(AccessTokenAuthGuard, RoleGuard)
+  @Mutation('associateUserToWorker')
+  async associateUserToWorker(
+    @CurrentUser() user: JWTPayload,
+    @Args('workerId') workerId: number,
+    @Args('userId') userId: number,
+  ) {
+    return this.workerService.associateUser(workerId, userId, user);
+  }
+
+  // CAMBIO: Nueva mutación para crear usuario desde worker
+  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
+  @UseGuards(AccessTokenAuthGuard, RoleGuard)
+  @Mutation('createUserFromWorker')
+  async createUserFromWorker(
+    @CurrentUser() user: JWTPayload,
+    @Args('workerId') workerId: number,
+  ) {
+    return this.workerService.createUserFromWorker(workerId, user);
+  }
 }

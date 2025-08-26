@@ -5,6 +5,9 @@ import {
   IsOptional,
   IsPositive,
   IsInt,
+  IsEmail,
+  IsPhoneNumber,
+  IsArray,
 } from 'class-validator';
 import { WorkerType } from '../enums/worker-type.enum';
 import { Role } from '../../../../core/enums/role.enum';
@@ -25,8 +28,8 @@ export class CreateWorkerInput extends CreateSecurityBaseInput {
   @IsEnum(WorkerType)
   workerType: WorkerType;
 
-  @IsNumber()
   @IsOptional()
+  @IsNumber()
   @IsPositive()
   paymentRuleId?: number;
 
@@ -38,19 +41,41 @@ export class CreateWorkerInput extends CreateSecurityBaseInput {
   @IsOptional()
   customPaymentSettings?: Record<string, unknown>;
 
+  // Campos temporales para creación de usuario
+  @IsOptional()
+  @IsString()
+  tempFirstName?: string;
+
+  @IsOptional()
+  @IsString()
+  tempLastName?: string;
+
+  @IsOptional()
+  @IsEmail()
+  tempEmail?: string;
+
+  @IsOptional()
+  @IsPhoneNumber()
+  tempPhone?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsEnum(Role, { each: true })
+  tempRole?: Role[];
+
   async validateCustomRules(currentUser: JWTPayload): Promise<void> {
     // eslint-disable-next-line @typescript-eslint/await-thenable
-    await this.checkworkerInformation(currentUser);
+    await this.checkWorkerInformation(currentUser);
   }
 
-  private checkworkerInformation(currentUser: { role: Role[] }): void {
+  private checkWorkerInformation(currentUser: { role: Role[] }): void {
     if (this.role === Role.SUPER) {
       throw new BadRequestError('A worker cannot have a SUPER role.');
     }
     if (this.role === Role.PRINCIPAL) {
       if (this.officeId || this.departmentId || this.teamId) {
         throw new BadRequestError(
-          'SUPER cannot have office, department or team',
+          'PRINCIPAL cannot have office, department or team',
         );
       }
     }
@@ -87,7 +112,7 @@ export class CreateWorkerInput extends CreateSecurityBaseInput {
       throw new BadRequestError('The agent has no office, department or team');
     }
 
-    //Check that a role cannot create a higher one
+    // Check that a role cannot create a higher one
     if (currentUser.role.some((r) => r === Role.ADMIN)) {
       if (this.role === Role.PRINCIPAL || this.role === Role.ADMIN) {
         throw new BadRequestError(
@@ -132,5 +157,4 @@ export class CreateWorkerInput extends CreateSecurityBaseInput {
       }
     }
   }
-  return;
 }
