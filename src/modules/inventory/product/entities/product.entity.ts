@@ -3,6 +3,7 @@ import { SecurityBaseEntity } from '../../../../core/entities/security-base.enti
 import { Category } from '../../category/entities/category.entity';
 import { Inventory } from '../../inventory/entities/inventory.entity';
 import { SaleDetail } from '../../../sales/sale-detail/entities/sale-detail.entity';
+import { PaymentRule } from '../../../payroll/payment-rule/entities/payment-rule.entity';
 
 /**
  * Description: Items sold or managed in the system.
@@ -64,4 +65,7 @@ export class Product extends SecurityBaseEntity {
       applicableCurrencies: string[]; // Monedas donde aplica
     }>;
   };
+
+  @OneToMany(() => PaymentRule, (paymentRule) => paymentRule.product)
+  paymentRules: PaymentRule[];
 }

@@ -48,16 +48,6 @@ export class WorkerResolver {
     return this.workerService.findOne(id, user);
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER)
-  @UseGuards(AccessTokenAuthGuard, RoleGuard)
-  @Query('workersByOffice')
-  async findByOffice(
-    @CurrentUser() user: JWTPayload,
-    @Args('officeId') officeId: number,
-  ) {
-    return this.workerService.findByOffice(officeId, user);
-  }
-
   @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('updateWorker')

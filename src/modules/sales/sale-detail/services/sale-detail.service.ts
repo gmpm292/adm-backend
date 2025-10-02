@@ -1,5 +1,6 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
-import { EntityManager, Repository } from 'typeorm';
+import { EntityManager, Repository, In } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CreateSaleDetailInput } from '../dto/create-sale-detail.input';
 import { UpdateSaleDetailInput } from '../dto/update-sale-detail.input';
@@ -17,20 +18,19 @@ import { SaleService } from '../../sale/services/sale.service';
 import { ProductService } from '../../../inventory/product/services/product.service';
 import { Sale } from '../../sale/entities/sale.entity';
 import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
-import { InventoryService } from '../../../inventory/inventory/services/inventory.service';
-import { InventoryMovementService } from '../../../inventory/inventory-movement/services/inventory-movement.service';
 import { ReserveReleaseReason } from '../../../inventory/product/enums/reserve-release-reason';
+import { Worker } from '../../../payroll/worker/entities/worker.entity';
 
 @Injectable()
 export class SaleDetailService extends BaseService<SaleDetail> {
   constructor(
     @InjectRepository(SaleDetail)
     private saleDetailRepository: Repository<SaleDetail>,
+    @InjectRepository(Worker)
+    private workerRepository: Repository<Worker>,
     @Inject(forwardRef(() => SaleService))
     private saleService: SaleService,
     private productService: ProductService,
-    // private inventoryService: InventoryService,
-    // private inventoryMovementService: InventoryMovementService,
 
     protected scopedAccessService: ScopedAccessService,
   ) {
@@ -43,7 +43,8 @@ export class SaleDetailService extends BaseService<SaleDetail> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<SaleDetail> {
-    const { saleId, productId, quantity, ...rest } = createSaleDetailInput;
+    const { saleId, productId, quantity, publicistIds, ...rest } =
+      createSaleDetailInput;
 
     // Obtener la venta y producto
     const [sale, product] = await Promise.all([
@@ -71,7 +72,17 @@ export class SaleDetailService extends BaseService<SaleDetail> {
         quantity,
       );
 
-    // Calcular opciones de pago para el producto
+    // Obtener publicistas si se proporcionaron IDs
+    let publicists: Worker[] = [];
+    if (publicistIds && publicistIds.length > 0) {
+      publicists = await this.findPublicistsByIds(
+        publicistIds,
+        cu,
+        scopes,
+        manager,
+      );
+    }
+
     const saleDetail: SaleDetail = {
       ...rest,
       sale,
@@ -80,6 +91,7 @@ export class SaleDetailService extends BaseService<SaleDetail> {
       productSnapshot: { ...product },
       productPaymentOptions,
       reservationId,
+      publicists,
     };
 
     return super.baseCreate({
@@ -98,7 +110,7 @@ export class SaleDetailService extends BaseService<SaleDetail> {
   ): Promise<ListSummary> {
     return await super.baseFind({
       options,
-      relationsToLoad: ['sale', 'product'],
+      relationsToLoad: ['sale', 'product', 'publicists'],
       cu,
       scopes,
       manager,
@@ -116,6 +128,7 @@ export class SaleDetailService extends BaseService<SaleDetail> {
       relationsToLoad: {
         sale: true,
         product: true,
+        publicists: true,
       },
       cu,
       scopes,
@@ -132,7 +145,7 @@ export class SaleDetailService extends BaseService<SaleDetail> {
     await this.saleService.findOne(saleId, cu, scopes, manager);
     return this.saleDetailRepository.find({
       where: { sale: { id: saleId } },
-      relations: ['sale', 'product'],
+      relations: ['sale', 'product', 'publicists'],
     });
   }
 
@@ -145,7 +158,7 @@ export class SaleDetailService extends BaseService<SaleDetail> {
   ): Promise<SaleDetail> {
     const saleDetail = await super.baseFindOne({
       id,
-      relationsToLoad: { sale: true, product: true },
+      relationsToLoad: { sale: true, product: true, publicists: true },
       cu,
       scopes,
       manager,
@@ -162,6 +175,7 @@ export class SaleDetailService extends BaseService<SaleDetail> {
       saleId,
       productId,
       quantity,
+      publicistIds,
       id: saleDetailId,
     } = updateSaleDetailInput;
     const updateData: Partial<SaleDetail> = { id: saleDetailId };
@@ -245,6 +259,23 @@ export class SaleDetailService extends BaseService<SaleDetail> {
       }
     }
 
+    // Manejar cambio de publicistas
+    if (publicistIds !== undefined) {
+      if (publicistIds.length === 0) {
+        // Si se envía un array vacío, eliminar todos los publicistas
+        updateData.publicists = [];
+      } else {
+        // Obtener los nuevos publicistas
+        const publicists = await this.findPublicistsByIds(
+          publicistIds,
+          cu,
+          scopes,
+          manager,
+        );
+        updateData.publicists = publicists;
+      }
+    }
+
     // Recalcular opciones de pago si cambió producto o cantidad
     if (productId || quantity !== undefined) {
       const finalProductId = productId ?? saleDetail.product.id;
@@ -274,7 +305,7 @@ export class SaleDetailService extends BaseService<SaleDetail> {
   ): Promise<SaleDetail[]> {
     const details = await super.baseFindByIds({
       ids,
-      relationsToLoad: { sale: true, product: true },
+      relationsToLoad: { sale: true, product: true, publicists: true },
       cu,
       scopes,
       manager,
@@ -340,5 +371,25 @@ export class SaleDetailService extends BaseService<SaleDetail> {
         'Cannot modify a sale that has already been finalized',
       );
     }
+  }
+
+  private async findPublicistsByIds(
+    publicistIds: number[],
+    cu?: JWTPayload,
+    scopes?: ScopedAccessEnum[],
+    manager?: EntityManager,
+  ): Promise<Worker[]> {
+    const publicists = await this.workerRepository.find({
+      where: { id: In(publicistIds) },
+    });
+
+    // Validar que se encontraron todos los publicistas solicitados
+    if (publicists.length !== publicistIds.length) {
+      const foundIds = publicists.map((p) => p.id);
+      const missingIds = publicistIds.filter((id) => !foundIds.includes(id));
+      throw new NotFoundError(`Publicists not found: ${missingIds.join(', ')}`);
+    }
+
+    return publicists;
   }
 }

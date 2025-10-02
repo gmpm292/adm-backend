@@ -1,8 +1,9 @@
-import { Entity, Column, ManyToOne } from 'typeorm';
+import { Entity, Column, ManyToOne, ManyToMany, JoinTable } from 'typeorm';
 import { SecurityBaseEntity } from '../../../../core/entities/security-base.entity';
 import { Sale } from '../../sale/entities/sale.entity';
 import { Product } from '../../../inventory/product/entities/product.entity';
 import { ProductPaymentOptions } from '../../../inventory/product/types/product-payment-options.type';
+import { Worker } from '../../../payroll/worker/entities/worker.entity';
 
 /**
  * Description: Products sold in a transaction.
@@ -35,4 +36,21 @@ export class SaleDetail extends SecurityBaseEntity {
 
   @Column({ nullable: false })
   reservationId: string; //Se define cuando es validado y reservado un stock de un producto.
+
+  @ManyToMany(() => Worker, {
+    nullable: true,
+    onDelete: 'CASCADE',
+  })
+  @JoinTable({
+    name: 'sl_sale_details_publicists', // Nombre de la tabla intermedia
+    joinColumn: {
+      name: 'sale_details_id',
+      referencedColumnName: 'id',
+    },
+    inverseJoinColumn: {
+      name: 'publicist_id',
+      referencedColumnName: 'id',
+    },
+  })
+  publicists?: Worker[];
 }

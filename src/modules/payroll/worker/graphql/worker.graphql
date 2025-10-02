@@ -5,11 +5,14 @@ enum WorkerType {
   COURIER
   TECHNICIAN
   OPERATIVE
+  COMMUNITY_MANAGER
+
   PRINCIPAL
   ADMINISTRATIVE
   MANAGER
   SUPERVISOR
   AGENT
+  
   OTHER
 }
 
@@ -32,7 +35,6 @@ type Worker implements SecurityBaseEntity {
   baseSalary: Float!
   customPaymentSettings: JSON
   user: User
-  role: Role
   paymentRule: PaymentRule
 
   # Campos temporales
@@ -55,7 +57,6 @@ input CreateWorkerInput {
   teamId: Int
 
   userId: Int
-  role: Role!
   workerType: WorkerType!
   paymentRuleId: Int
   baseSalary: Float
@@ -77,7 +78,6 @@ input UpdateWorkerInput {
 
   id: Int!
   userId: Int
-  role: Role
   workerType: WorkerType
   paymentRuleId: Int
   baseSalary: Float
@@ -94,7 +94,6 @@ input UpdateWorkerInput {
 extend type Query {
   workers(options: ListOptions): WorkersSummary!
   worker(id: Int!): Worker
-  workersByOffice(officeId: Int!): [Worker]!
 }
 
 extend type Mutation {

@@ -6,6 +6,7 @@ import { UpdatePaymentRuleInput } from '../dto/update-payment-rule.input';
 import { BaseService } from '../../../../core/services/base.service';
 import { PaymentRule } from '../entities/payment-rule.entity';
 import {
+  ListFilter,
   ListOptions,
   ListSummary,
 } from '../../../../core/graphql/remote-operations';
@@ -16,6 +17,9 @@ import { PaymentType } from '../enums/payment-type.enum';
 import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
 import { Conditions } from '../types/conditions.type';
 import { ConditionsInput } from '../dto/conditions/conditions-input.dto';
+import { ConditionalOperator } from '../../../../core/graphql/remote-operations/enums/conditional-operation.enum';
+import { LogicalOperator } from '../../../../core/graphql/remote-operations/enums/logical-operator.enum';
+import { WorkerType } from '../../worker/enums/worker-type.enum';
 
 @Injectable()
 export class PaymentRuleService extends BaseService<PaymentRule> {
@@ -40,6 +44,12 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
     paymentRule.description = createPaymentRuleInput.description;
     paymentRule.isActive = createPaymentRuleInput.isActive ?? true;
     paymentRule.workerType = createPaymentRuleInput.workerType;
+    paymentRule.otherType = createPaymentRuleInput.otherType;
+
+    paymentRule.paymentCurrency = createPaymentRuleInput.paymentCurrency;
+    paymentRule.scope = createPaymentRuleInput.scope;
+    paymentRule.distributeProfits =
+      createPaymentRuleInput.distributeProfits ?? false;
 
     // Process conditions based on payment type
     paymentRule.conditions = this.processConditions(
@@ -60,10 +70,7 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
     paymentType: PaymentType,
     conditions: ConditionsInput,
   ): Conditions {
-    const result: Conditions = {
-      paymentCurrency: conditions.paymentCurrency,
-      scope: conditions.scope,
-    };
+    const result: Conditions = {};
 
     switch (paymentType) {
       case PaymentType.PRICE_RANGE:
@@ -75,6 +82,7 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
           max: range.max ?? null,
           currency: range.currency,
           amount: range.amount,
+          percentage: range.percentage,
         }));
         break;
 
@@ -87,6 +95,7 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
         result.saleQuantity = conditions.saleQuantity.map((sq) => ({
           minProducts: sq.minProducts,
           ratePerProduct: sq.ratePerProduct,
+          percentagePerProduct: sq.percentagePerProduct,
         }));
         break;
 
@@ -127,6 +136,7 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
   ): Promise<ListSummary> {
     return await super.baseFind({
       options,
+      relationsToLoad: ['product', 'category'],
       cu,
       scopes,
       manager,
@@ -141,6 +151,7 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
   ): Promise<PaymentRule> {
     return super.baseFindOne({
       id,
+      relationsToLoad: { product: true, category: true },
       cu,
       scopes,
       manager,
@@ -174,6 +185,19 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
     }
     if (updatePaymentRuleInput.workerType !== undefined) {
       paymentRule.workerType = updatePaymentRuleInput.workerType;
+    }
+    if (updatePaymentRuleInput.otherType !== undefined) {
+      paymentRule.otherType = updatePaymentRuleInput.otherType;
+    }
+
+    if (updatePaymentRuleInput.paymentCurrency !== undefined) {
+      paymentRule.paymentCurrency = updatePaymentRuleInput.paymentCurrency;
+    }
+    if (updatePaymentRuleInput.scope !== undefined) {
+      paymentRule.scope = updatePaymentRuleInput.scope;
+    }
+    if (updatePaymentRuleInput.distributeProfits !== undefined) {
+      paymentRule.distributeProfits = updatePaymentRuleInput.distributeProfits;
     }
 
     // Process conditions if provided
@@ -240,5 +264,81 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
       scopes,
       manager,
     });
+  }
+
+  /**
+   * Encuentra reglas de pago únicas por workerType y si es null por otherType y paymentType. Prioriza reglas con producto asociado.
+   */
+  async findPaymentRulesByWorkerType(
+    workerType?: WorkerType,
+    otherType?: string,
+    cu?: JWTPayload,
+    scopes?: ScopedAccessEnum[],
+    manager?: EntityManager,
+  ): Promise<PaymentRule[]> {
+    // Primero buscamos reglas específicas para el workerType
+    const rules = await this.find(
+      {
+        filters: [
+          {
+            property: 'isActive',
+            operator: ConditionalOperator.EQUAL,
+            value: 'true',
+          },
+          {
+            filters: [
+              {
+                property: 'workerType',
+                operator: ConditionalOperator.EQUAL,
+                value: String(workerType),
+                logicalOperator: LogicalOperator.OR,
+              },
+              {
+                property: 'otherType',
+                operator: ConditionalOperator.EQUAL,
+                value: otherType,
+                logicalOperator: LogicalOperator.OR,
+              },
+            ],
+          } as ListFilter,
+        ],
+      },
+      cu,
+      scopes,
+      manager,
+    );
+
+    // // Agrupar y priorizar reglas
+    // const result: PaymentRule[] = [];
+    // const processedTuples = new Set<string>();
+
+    // // Primera pasada: buscar reglas con producto (prioridad alta)
+    // for (const rule of rules.data as Array<PaymentRule>) {
+    //   const worType =
+    //     rule.workerType !== null
+    //       ? `workerType:${rule.workerType}`
+    //       : `otherType:${rule.otherType}`;
+
+    //   if (!processedTuples.has(worType) && rule.product) {
+    //     result.push(rule);
+    //     processedTuples.add(worType);
+    //   }
+    // }
+
+    // // Segunda pasada: agregar reglas sin producto pero con la misma tupla(workerType, otherType)
+    // for (const rule of rules.data as Array<PaymentRule>) {
+    //   const worType =
+    //     rule.workerType !== null
+    //       ? `workerType:${rule.workerType}`
+    //       : `otherType:${rule.otherType}`;
+
+    //   if (!processedTuples.has(worType)) {
+    //     result.push(rule);
+    //     processedTuples.add(worType);
+    //   }
+    // }
+    //return result;
+
+    return rules.data as Array<PaymentRule>;
   }
 }

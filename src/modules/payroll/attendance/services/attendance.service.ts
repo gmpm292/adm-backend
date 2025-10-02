@@ -110,6 +110,7 @@ export class AttendanceService extends BaseService<Attendance> {
   ): Promise<ListSummary> {
     return await super.baseFind({
       options,
+      relationsToLoad: ['worker'],
       cu,
       scopes,
       manager,
@@ -148,7 +149,7 @@ export class AttendanceService extends BaseService<Attendance> {
             value: dateString,
           },
         ],
-        take: 0, // Get all records
+        take: 0,
       },
       relationsToLoad: ['worker', 'workSchedule'],
       cu,
@@ -284,7 +285,7 @@ export class AttendanceService extends BaseService<Attendance> {
       manager,
     );
 
-    const isHoliday = this.isHoliday(/*today, cu, scopes, manager*/);
+    const isHoliday = this.isHoliday(today, cu, scopes, manager);
     const shouldWork = await this.shouldWorkToday(
       checkInInput.workerId,
       today,
@@ -551,9 +552,9 @@ export class AttendanceService extends BaseService<Attendance> {
     });
   }
 
-  // ========== MÉTODOS AUXILIARES PRIVADOS ==========
+  // ========== MÉTODOS AUXILIARES ==========
 
-  private async findDailyAttendanceForWorker(
+  public async findDailyAttendanceForWorker(
     workerId: number,
     date: Date,
     cu?: JWTPayload,
@@ -610,7 +611,7 @@ export class AttendanceService extends BaseService<Attendance> {
     }
 
     // Verificar si es día festivo
-    const isHoliday = this.isHoliday(/*date, cu, scopes, manager*/);
+    const isHoliday = this.isHoliday(date, cu, scopes, manager);
     if (isHoliday) {
       return AttendanceStatus.PRESENT; // O podría ser un estado especial para festivos
     }
@@ -684,7 +685,7 @@ export class AttendanceService extends BaseService<Attendance> {
     return Math.round(hours * 100) / 100;
   }
 
-  private getLocalDateString(date: Date): string {
+  public getLocalDateString(date: Date): string {
     const year = date.getFullYear();
     const month = (date.getMonth() + 1).toString().padStart(2, '0');
     const day = date.getDate().toString().padStart(2, '0');
@@ -726,7 +727,7 @@ export class AttendanceService extends BaseService<Attendance> {
     }
   }
 
-  private async shouldWorkToday(
+  public async shouldWorkToday(
     workerId: number,
     date: Date,
     cu?: JWTPayload,
@@ -789,7 +790,7 @@ export class AttendanceService extends BaseService<Attendance> {
    * - Debe tener un registro de asistencia válido para la fecha
    *
    */
-  private async shouldCountForProfitSharing(
+  public async shouldCountForProfitSharing(
     workerId: number,
     date: Date,
     cu?: JWTPayload,
@@ -872,11 +873,12 @@ export class AttendanceService extends BaseService<Attendance> {
     }
   }
 
-  private isHoliday() // date: Date,
-  // cu?: JWTPayload,
-  // scopes?: ScopedAccessEnum[],
-  // manager?: EntityManager,
-  : boolean {
+  public isHoliday(
+    date: Date,
+    cu?: JWTPayload,
+    scopes?: ScopedAccessEnum[],
+    manager?: EntityManager,
+  ): boolean {
     // Implementar lógica para verificar si es día festivo
     // Esto podría consultar una base de datos de días festivos
     // Por ahora, retornamos false

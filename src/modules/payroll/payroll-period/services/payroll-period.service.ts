@@ -15,6 +15,7 @@ import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
 import { ScopedAccessService } from '../../../scoped-access/services/scoped-access.service';
 import { WorkerPaymentService } from '../../worker-payment/services/worker-payment.service';
 import { ConditionalOperator } from '../../../../core/graphql/remote-operations/enums/conditional-operation.enum';
+import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
 
 @Injectable()
 export class PayrollPeriodService extends BaseService<PayrollPeriod> {
@@ -38,6 +39,8 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
       ...createPayrollPeriodInput,
       isClosed: createPayrollPeriodInput.isClosed ?? false,
     } as PayrollPeriod;
+
+    this.validatePeriodIntegrity(payrollPeriod);
 
     return super.baseCreate({
       data: payrollPeriod,
@@ -201,5 +204,87 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
       scopes,
       manager,
     });
+  }
+
+  async validatePeriod(
+    payrollPeriodId: number,
+    cu?: JWTPayload,
+    scopes?: ScopedAccessEnum[],
+    manager?: EntityManager,
+  ) {
+    // 1. Verificar que el período existe
+    const payrollPeriod = await this.findOne(
+      payrollPeriodId,
+      cu,
+      scopes,
+      manager,
+    );
+
+    if (!payrollPeriod) {
+      throw new NotFoundError('Payroll period not found');
+    }
+
+    // 2. Verificar que el período no esté cerrado
+    if (payrollPeriod.isClosed) {
+      throw new BadRequestError('Payroll period is already closed');
+    }
+
+    // 3. Validar fechas del período
+    const today = new Date();
+    if (payrollPeriod.endDate > today) {
+      throw new BadRequestError('Payroll period has not ended yet');
+    }
+
+    // 4. Verificar que no haya pagos ya procesados para este período
+    const existingPayments = (
+      await this.workerPaymentService.find(
+        {
+          filters: [
+            {
+              property: 'payrollPeriod.id',
+              operator: ConditionalOperator.EQUAL,
+              value: payrollPeriodId.toString(),
+            },
+            {
+              property: 'paidDate',
+              operator: ConditionalOperator.IS_NULL,
+              value: '',
+            },
+          ],
+          take: 0,
+        },
+        cu,
+        scopes,
+        manager,
+      )
+    ).totalCount;
+
+    if (existingPayments > 0) {
+      throw new BadRequestError(
+        `Payroll period already has ${existingPayments} processed payments.`,
+      );
+    }
+
+    // 6. Verificar integridad de datos del período
+    this.validatePeriodIntegrity(payrollPeriod);
+
+    return payrollPeriod;
+  }
+
+  private validatePeriodIntegrity(payrollPeriod: PayrollPeriod) {
+    // Verificar que startDate sea anterior a endDate
+    if (payrollPeriod.startDate >= payrollPeriod.endDate) {
+      throw new BadRequestError('Start date must be before end date');
+    }
+
+    // Verificar que el período no sea demasiado largo (ej: máximo 31 días)
+    const daysDiff = Math.ceil(
+      (payrollPeriod.endDate.getTime() - payrollPeriod.startDate.getTime()) /
+        (1000 * 3600 * 24),
+    );
+
+    if (daysDiff > 31) {
+      throw new BadRequestError('Payroll period cannot exceed 31 days');
+    }
   }
 }

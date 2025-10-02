@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import { EntityManager, Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -6,6 +7,7 @@ import { UpdateWorkerInput } from '../dto/update-worker.input';
 import { BaseService } from '../../../../core/services/base.service';
 import { Worker } from '../entities/worker.entity';
 import {
+  ListFilter,
   ListOptions,
   ListSummary,
 } from '../../../../core/graphql/remote-operations';
@@ -19,6 +21,10 @@ import { UsersService } from '../../../users/services/users.service';
 import { CreateUserInput } from '../../../users/dto/create-user.input';
 import { Role } from '../../../../core/enums/role.enum';
 import { User } from '../../../users/entities/user.entity';
+import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
+import { WorkerType } from '../enums/worker-type.enum';
+import { ConditionalOperator } from '../../../../core/graphql/remote-operations/enums/conditional-operation.enum';
+import { LogicalOperator } from '../../../../core/graphql/remote-operations/enums/logical-operator.enum';
 
 @Injectable()
 export class WorkerService extends BaseService<Worker> {
@@ -39,82 +45,114 @@ export class WorkerService extends BaseService<Worker> {
     createWorkerInput: CreateWorkerInput,
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
-    manager?: EntityManager,
+    externalManager?: EntityManager,
   ): Promise<Worker> {
-    await createWorkerInput.validateCustomRules(cu as JWTPayload);
+    this.checkWorkerInformation(createWorkerInput, {
+      role: cu?.role ?? [],
+    });
 
-    const [user, paymentRule, office] = await Promise.all([
-      createWorkerInput.userId
-        ? this.userService.findOne(
-            createWorkerInput.userId,
-            undefined,
-            cu,
-            scopes,
-            manager,
-          )
-        : Promise.resolve(undefined),
-      createWorkerInput.paymentRuleId
-        ? this.paymentRuleService.findOne(
-            createWorkerInput.paymentRuleId,
-            cu,
-            scopes,
-            manager,
-          )
-        : Promise.resolve(undefined),
-      createWorkerInput.officeId
-        ? this.officeService.findOne(
-            createWorkerInput.officeId,
-            cu,
-            scopes,
-            manager,
-          )
-        : Promise.resolve(undefined),
-    ]);
+    // Función interna que contiene toda la lógica de creación
+    const createWorkerTransaction = async (
+      manager: EntityManager,
+    ): Promise<Worker> => {
+      const [user, paymentRule, office] = await Promise.all([
+        createWorkerInput.userId
+          ? this.userService.findOne(
+              createWorkerInput.userId,
+              undefined,
+              cu,
+              scopes,
+              manager, // Pasar el manager de la transacción
+            )
+          : Promise.resolve(undefined),
+        createWorkerInput.paymentRuleId
+          ? this.paymentRuleService.findOne(
+              createWorkerInput.paymentRuleId,
+              cu,
+              scopes,
+              manager, // Pasar el manager de la transacción
+            )
+          : Promise.resolve(undefined),
+        createWorkerInput.officeId
+          ? this.officeService.findOne(
+              createWorkerInput.officeId,
+              cu,
+              scopes,
+              manager, // Pasar el manager de la transacción
+            )
+          : Promise.resolve(undefined),
+      ]);
 
-    // CAMBIO PRINCIPAL: Crear usuario si no existe pero hay datos temporales
-    let createdUser: User | undefined;
-    if (!user && this.hasUserCreationData(createWorkerInput)) {
-      createdUser = await this.createUserFromWorkerData(
-        createWorkerInput,
+      // CAMBIO PRINCIPAL: Crear usuario si no existe pero hay datos temporales
+      let createdUser: User | undefined;
+      if (!user && this.hasUserCreationData(createWorkerInput)) {
+        createdUser = await this.createUserFromWorkerData(
+          createWorkerInput,
+          cu,
+          scopes,
+          manager, // Pasar el manager de la transacción
+        );
+      }
+
+      // Validar que si se proporcionó userId, el usuario debe existir
+      if (createWorkerInput.userId && !user) {
+        throw new NotFoundError('User not found');
+      }
+
+      const workerData: Partial<Worker> = {
+        ...createWorkerInput,
+        user: user || createdUser,
+        paymentRule,
+        //office,
+        baseSalary: createWorkerInput.baseSalary || 0,
+      };
+
+      // Si se creó un usuario, limpiar campos temporales
+      if (createdUser) {
+        workerData.tempFirstName = undefined;
+        workerData.tempLastName = undefined;
+        workerData.tempEmail = undefined;
+        workerData.tempPhone = undefined;
+        workerData.tempRole = [];
+      }
+
+      const worker = await super.baseCreate({
+        data: workerData as Worker,
+        uniqueFields: [],
         cu,
         scopes,
-        manager,
-      );
-    }
+        manager, // Pasar el manager de la transacción
+      });
 
-    // Validar que si se proporcionó userId, el usuario debe existir
-    if (createWorkerInput.userId && !user) {
-      throw new NotFoundError('User not found');
-    }
-
-    const workerData: Partial<Worker> = {
-      ...createWorkerInput,
-      user: user || createdUser,
-      paymentRule,
-      office,
-      baseSalary: createWorkerInput.baseSalary || 0,
+      return worker;
     };
 
-    // Si se creó un usuario, limpiar campos temporales
-    if (createdUser) {
-      workerData.tempFirstName = undefined;
-      workerData.tempLastName = undefined;
-      workerData.tempEmail = undefined;
-      workerData.tempPhone = undefined;
-      workerData.tempRole = [];
-    }
+    try {
+      // Si ya estamos dentro de una transacción (manager externo proporcionado)
+      if (externalManager) {
+        return await createWorkerTransaction(externalManager);
+      }
 
-    return super.baseCreate({
-      data: workerData as Worker,
-      uniqueFields: ['user'],
-      cu,
-      scopes,
-      manager,
-    });
+      // Si no hay transacción externa, crear una nueva
+      return await this.workerRepository.manager.transaction(
+        async (transactionalEntityManager) => {
+          return await createWorkerTransaction(transactionalEntityManager);
+        },
+      );
+    } catch (error) {
+      // Manejar errores específicos si es necesario
+      if (error instanceof NotFoundError) {
+        throw error;
+      }
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      throw new Error(`Failed to create worker: ${error.message}`);
+    }
   }
 
   // CAMBIO: Método para verificar si hay datos para crear usuario
-  private hasUserCreationData(input: CreateWorkerInput): boolean {
+  private hasUserCreationData(
+    input: CreateWorkerInput | UpdateWorkerInput,
+  ): boolean {
     return !!(input.tempEmail && input.tempFirstName && input.tempLastName);
   }
 
@@ -178,17 +216,72 @@ export class WorkerService extends BaseService<Worker> {
     });
   }
 
-  async findByOffice(
-    officeId: number,
+  async findWorkersByScope(
+    filters: {
+      businessId?: number;
+      officeId?: number;
+      departmentId?: number;
+      teamId?: number;
+      workerIds?: number[];
+    },
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
-  ): Promise<Worker[]> {
-    await this.officeService.findOne(officeId, cu, scopes, manager);
-    return this.workerRepository.find({
-      where: { office: { id: officeId } },
-      relations: ['user', 'paymentRule', 'office'],
-    });
+  ): Promise<ListSummary> {
+    // Construir el objeto fltrs dinámicamente
+    const fltrs = new Array<ListFilter>();
+
+    if (filters.businessId) {
+      fltrs.push({
+        property: 'businessId',
+        operator: ConditionalOperator.EQUAL,
+        value: filters.businessId.toString(),
+      });
+    }
+
+    if (filters.officeId) {
+      fltrs.push({
+        property: 'officeId',
+        operator: ConditionalOperator.EQUAL,
+        value: filters.officeId.toString(),
+      });
+    }
+
+    if (filters.departmentId) {
+      fltrs.push({
+        property: 'departmentId',
+        operator: ConditionalOperator.EQUAL,
+        value: filters.departmentId.toString(),
+      });
+    }
+
+    if (filters.teamId) {
+      fltrs.push({
+        property: 'teamId',
+        operator: ConditionalOperator.EQUAL,
+        value: filters.teamId.toString(),
+      });
+    }
+
+    if (filters.workerIds && filters.workerIds.length > 0) {
+      const workeIdFlts: ListFilter = {
+        filters: [],
+        property: '',
+        operator: ConditionalOperator.EQUAL,
+        value: '',
+      };
+      filters.workerIds.forEach((workerId) => {
+        workeIdFlts.filters!.push({
+          property: 'id',
+          operator: ConditionalOperator.EQUAL,
+          value: workerId.toString(),
+          logicalOperator: LogicalOperator.OR,
+        });
+      });
+      fltrs.push(workeIdFlts);
+    }
+
+    return this.find({ filters: fltrs }, cu, scopes, manager);
   }
 
   async update(
@@ -196,70 +289,231 @@ export class WorkerService extends BaseService<Worker> {
     updateWorkerInput: UpdateWorkerInput,
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
-    manager?: EntityManager,
+    externalManager?: EntityManager,
   ): Promise<Worker> {
-    const worker = await super.baseFindOne({ id, cu, scopes, manager });
-    if (!worker) {
-      throw new NotFoundError();
-    }
+    // Verificar información del worker primero
+    this.checkWorkerInformation(updateWorkerInput, {
+      role: cu?.role ?? [],
+    });
 
-    // CAMBIO: Manejar actualización de usuario
-    if (updateWorkerInput.userId !== undefined) {
-      if (updateWorkerInput.userId === null) {
-        // Permitir desasociar usuario
-        worker.user = undefined;
-      } else {
-        const user = await this.userService.findOne(
-          updateWorkerInput.userId,
-          undefined,
+    // Función interna que contiene toda la lógica de actualización
+    const updateWorkerTransaction = async (
+      manager: EntityManager,
+    ): Promise<Worker> => {
+      // Obtener el worker existente
+      const worker = await super.baseFindOne({
+        id,
+        cu,
+        scopes,
+        manager,
+      });
+
+      if (!worker) {
+        throw new NotFoundError('Worker not found');
+      }
+
+      // Obtener entidades relacionadas
+      const [user, paymentRule, office] = await Promise.all([
+        updateWorkerInput.userId !== undefined
+          ? updateWorkerInput.userId
+            ? this.userService.findOne(
+                updateWorkerInput.userId,
+                undefined,
+                cu,
+                scopes,
+                manager,
+              )
+            : Promise.resolve(null) // userId explícitamente null
+          : Promise.resolve(undefined), // userId no proporcionado
+        updateWorkerInput.paymentRuleId
+          ? this.paymentRuleService.findOne(
+              updateWorkerInput.paymentRuleId,
+              cu,
+              scopes,
+              manager,
+            )
+          : Promise.resolve(undefined),
+        updateWorkerInput.officeId
+          ? this.officeService.findOne(
+              updateWorkerInput.officeId,
+              cu,
+              scopes,
+              manager,
+            )
+          : Promise.resolve(undefined),
+      ]);
+
+      // CAMBIO PRINCIPAL: Crear usuario si hay datos temporales y no hay usuario existente/asignado
+      let createdUser: User | undefined;
+      const shouldCreateUser =
+        !user &&
+        this.hasUserCreationData(updateWorkerInput) &&
+        updateWorkerInput.userId === undefined; // Solo crear si no se está asignando un usuario explícitamente
+
+      if (shouldCreateUser) {
+        createdUser = await this.createUserFromWorkerData(
+          {
+            ...updateWorkerInput,
+            workerType: updateWorkerInput.workerType ?? WorkerType.AGENT,
+          } as CreateWorkerInput,
           cu,
           scopes,
           manager,
         );
-        if (!user) {
-          throw new NotFoundError('User not found');
-        }
-        worker.user = user;
-
-        // Limpiar campos temporales si se asocia un usuario
-        worker.tempFirstName = undefined;
-        worker.tempLastName = undefined;
-        worker.tempEmail = undefined;
-        worker.tempPhone = undefined;
-        worker.tempRole = [];
       }
-    }
 
-    if (updateWorkerInput.paymentRuleId) {
-      const paymentRule = await this.paymentRuleService.findOne(
-        updateWorkerInput.paymentRuleId,
+      // Validar que si se proporcionó userId, el usuario debe existir
+      if (
+        updateWorkerInput.userId !== undefined &&
+        updateWorkerInput.userId !== null &&
+        !user
+      ) {
+        throw new NotFoundError('User not found');
+      }
+
+      // Preparar datos de actualización
+      const updateData: Partial<Worker> = {
+        ...updateWorkerInput,
+        user:
+          user !== undefined && user !== null
+            ? user
+            : createdUser || worker.user,
+        paymentRule:
+          paymentRule !== undefined ? paymentRule : worker.paymentRule,
+        office: office !== undefined ? office : worker.office,
+      };
+
+      // Manejar limpieza de campos temporales
+      if (
+        createdUser ||
+        (updateWorkerInput.userId !== undefined &&
+          updateWorkerInput.userId !== null)
+      ) {
+        // Si se creó un usuario o se asignó uno existente, limpiar campos temporales
+        updateData.tempFirstName = undefined;
+        updateData.tempLastName = undefined;
+        updateData.tempEmail = undefined;
+        updateData.tempPhone = undefined;
+        updateData.tempRole = [];
+      } else if (updateWorkerInput.userId === null) {
+        // Si se desasocia explícitamente el usuario, mantener campos temporales si existen
+        updateData.user = undefined;
+        // No limpiar campos temporales en este caso
+      }
+
+      // Si se están proporcionando datos temporales y no hay usuario asignado/creado,
+      // actualizar los campos temporales
+      if (this.hasUserCreationData(updateWorkerInput) && !updateData.user) {
+        updateData.tempFirstName = updateWorkerInput.tempFirstName;
+        updateData.tempLastName = updateWorkerInput.tempLastName;
+        updateData.tempEmail = updateWorkerInput.tempEmail;
+        updateData.tempPhone = updateWorkerInput.tempPhone;
+        updateData.tempRole = updateWorkerInput.tempRole || [];
+      }
+
+      return super.baseUpdate({
+        id,
+        data: updateData as Worker,
         cu,
         scopes,
         manager,
-      );
-      worker.paymentRule = paymentRule;
-    }
+      });
+    };
 
-    if (updateWorkerInput.officeId) {
-      const office = await this.officeService.findOne(
-        updateWorkerInput.officeId,
-        cu,
-        scopes,
-        manager,
-      );
-      worker.office = office;
-    }
+    try {
+      // Si ya estamos dentro de una transacción (manager externo proporcionado)
+      if (externalManager) {
+        return await updateWorkerTransaction(externalManager);
+      }
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { userId, paymentRuleId, officeId, ...rest } = updateWorkerInput;
-    return super.baseUpdate({
-      id,
-      data: { ...worker, ...rest },
-      cu,
-      scopes,
-      manager,
-    });
+      // Si no hay transacción externa, crear una nueva
+      return await this.workerRepository.manager.transaction(
+        async (transactionalEntityManager) => {
+          return await updateWorkerTransaction(transactionalEntityManager);
+        },
+      );
+    } catch (error) {
+      // Manejar errores específicos
+      if (error instanceof NotFoundError) {
+        throw error;
+      }
+      if (error instanceof BadRequestError) {
+        throw error;
+      }
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      throw new Error(`Failed to update worker: ${error.message}`);
+    }
   }
+
+  // async update(
+  //   id: number,
+  //   updateWorkerInput: UpdateWorkerInput,
+  //   cu?: JWTPayload,
+  //   scopes?: ScopedAccessEnum[],
+  //   manager?: EntityManager,
+  // ): Promise<Worker> {
+  //   const worker = await super.baseFindOne({ id, cu, scopes, manager });
+  //   if (!worker) {
+  //     throw new NotFoundError();
+  //   }
+
+  //   // CAMBIO: Manejar actualización de usuario
+  //   if (updateWorkerInput.userId !== undefined) {
+  //     if (updateWorkerInput.userId === null) {
+  //       // Permitir desasociar usuario
+  //       worker.user = undefined;
+  //     } else {
+  //       const user = await this.userService.findOne(
+  //         updateWorkerInput.userId,
+  //         undefined,
+  //         cu,
+  //         scopes,
+  //         manager,
+  //       );
+  //       if (!user) {
+  //         throw new NotFoundError('User not found');
+  //       }
+  //       worker.user = user;
+
+  //       // Limpiar campos temporales si se asocia un usuario
+  //       worker.tempFirstName = undefined;
+  //       worker.tempLastName = undefined;
+  //       worker.tempEmail = undefined;
+  //       worker.tempPhone = undefined;
+  //       worker.tempRole = [];
+  //     }
+  //   }
+
+  //   if (updateWorkerInput.paymentRuleId) {
+  //     const paymentRule = await this.paymentRuleService.findOne(
+  //       updateWorkerInput.paymentRuleId,
+  //       cu,
+  //       scopes,
+  //       manager,
+  //     );
+  //     worker.paymentRule = paymentRule;
+  //   }
+
+  //   if (updateWorkerInput.officeId) {
+  //     const office = await this.officeService.findOne(
+  //       updateWorkerInput.officeId,
+  //       cu,
+  //       scopes,
+  //       manager,
+  //     );
+  //     worker.office = office;
+  //   }
+
+  //   // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  //   const { userId, paymentRuleId, officeId, ...rest } = updateWorkerInput;
+  //   return super.baseUpdate({
+  //     id,
+  //     data: { ...worker, ...rest },
+  //     cu,
+  //     scopes,
+  //     manager,
+  //   });
+  // }
 
   async remove(
     ids: number[],
@@ -373,5 +627,109 @@ export class WorkerService extends BaseService<Worker> {
     worker.tempRole = [];
 
     return this.workerRepository.save(worker);
+  }
+
+  private checkWorkerInformation(
+    workerInput: CreateWorkerInput | UpdateWorkerInput,
+    currentUser: { role: Role[] },
+  ): void {
+    // Acceder al rol desde la clase base
+    const workerRole = workerInput.tempRole?.at(0);
+
+    if (workerRole === Role.SUPER) {
+      throw new BadRequestError('A worker cannot have a SUPER role.');
+    }
+    if (workerRole === Role.PRINCIPAL) {
+      if (
+        workerInput.officeId ||
+        workerInput.departmentId ||
+        workerInput.teamId
+      ) {
+        throw new BadRequestError(
+          'PRINCIPAL cannot have office, department or team',
+        );
+      }
+    }
+    if (workerRole === Role.ADMIN) {
+      if (!workerInput.officeId) {
+        throw new BadRequestError('The administrator has no office');
+      }
+      if (workerInput.departmentId || workerInput.teamId) {
+        throw new BadRequestError(
+          'The administrator cannot have a department or team',
+        );
+      }
+    }
+    if (workerRole === Role.MANAGER) {
+      if (!workerInput.officeId || !workerInput.departmentId) {
+        throw new BadRequestError('The manager has no office or department');
+      }
+      if (workerInput.teamId) {
+        throw new BadRequestError('The manager cannot have a team');
+      }
+    }
+    if (
+      workerRole === Role.SUPERVISOR &&
+      (!workerInput.officeId ||
+        !workerInput.departmentId ||
+        !workerInput.teamId)
+    ) {
+      throw new BadRequestError(
+        'The supervisor has no office, department or team',
+      );
+    }
+    if (
+      workerRole === Role.AGENT &&
+      (!workerInput.officeId ||
+        !workerInput.departmentId ||
+        !workerInput.teamId)
+    ) {
+      throw new BadRequestError('The agent has no office, department or team');
+    }
+
+    // Check that a role cannot create a higher one
+    if (currentUser.role.some((r) => r === Role.ADMIN)) {
+      if (workerRole === Role.PRINCIPAL || workerRole === Role.ADMIN) {
+        throw new BadRequestError(
+          'You cannot create a user with a role greater than or equal to yours',
+        );
+      }
+    }
+    if (currentUser.role.some((r) => r === Role.MANAGER)) {
+      if (
+        workerRole === Role.PRINCIPAL ||
+        workerRole === Role.ADMIN ||
+        workerRole === Role.MANAGER
+      ) {
+        throw new BadRequestError(
+          'You cannot create a user with a role greater than or equal to yours',
+        );
+      }
+    }
+    if (currentUser.role.some((r) => r === Role.SUPERVISOR)) {
+      if (
+        workerRole === Role.PRINCIPAL ||
+        workerRole === Role.ADMIN ||
+        workerRole === Role.MANAGER ||
+        workerRole === Role.SUPERVISOR
+      ) {
+        throw new BadRequestError(
+          'You cannot create a user with a role greater than or equal to yours',
+        );
+      }
+    }
+    if (currentUser.role.some((r) => r === Role.AGENT)) {
+      if (
+        workerRole === Role.PRINCIPAL ||
+        workerRole === Role.ADMIN ||
+        workerRole === Role.MANAGER ||
+        workerRole === Role.SUPERVISOR ||
+        workerRole === Role.AGENT
+      ) {
+        throw new BadRequestError(
+          'You cannot create a user with a role greater than or equal to yours',
+        );
+      }
+    }
   }
 }

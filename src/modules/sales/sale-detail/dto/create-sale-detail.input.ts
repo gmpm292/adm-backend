@@ -1,4 +1,4 @@
-import { IsNumber, IsOptional } from 'class-validator';
+import { IsArray, IsNumber, IsOptional } from 'class-validator';
 import { CreateSecurityBaseInput } from '../../../../core/dtos/create-security-base.input';
 
 export class CreateSaleDetailInput extends CreateSecurityBaseInput {
@@ -10,6 +10,11 @@ export class CreateSaleDetailInput extends CreateSecurityBaseInput {
 
   @IsNumber()
   quantity: number;
+
+  @IsOptional()
+  @IsArray()
+  @IsNumber({}, { each: true })
+  publicistIds?: number[];
 
   // @IsNumber()
   // unitPrice: number;

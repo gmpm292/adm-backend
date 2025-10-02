@@ -70,7 +70,7 @@ export class CustomerService extends BaseService<Customer> {
   ): Promise<ListSummary> {
     return await super.baseFind({
       options,
-      relationsToLoad: ['user', 'sales'],
+      relationsToLoad: ['user', 'sales', 'business', 'office'],
       cu,
       scopes,
       manager,
@@ -88,6 +88,8 @@ export class CustomerService extends BaseService<Customer> {
       relationsToLoad: {
         user: true,
         sales: true,
+        business: true,
+        office: true,
       },
       cu,
       scopes,

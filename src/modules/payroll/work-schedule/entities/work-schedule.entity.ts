@@ -3,6 +3,9 @@ import { SecurityBaseEntity } from '../../../../core/entities/security-base.enti
 
 @Entity('py_work_schedules')
 export class WorkSchedule extends SecurityBaseEntity {
+  @Column({ type: 'varchar', length: 100 })
+  name: string;
+
   @Column({ type: 'date' })
   startDate: Date;
 

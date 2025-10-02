@@ -18,8 +18,11 @@ type SaleDetail implements SecurityBaseEntity {
   subtotal: Float!
   discountPercentage: Float
   productSnapshot: JSON
+  productPaymentOptions: JSON
+  reservationId: String!
   sale: Sale!
   product: Product!
+  publicists: [Worker!]
 }
 
 type SaleDetailsSummary {
@@ -36,8 +39,7 @@ input CreateSaleDetailInput {
   saleId: Int!
   productId: Int!
   quantity: Float!
-  #unitPrice: Float!
-  #discountPercentage: Float
+  publicistIds: [Int!]
 }
 
 input UpdateSaleDetailInput {
@@ -52,6 +54,7 @@ input UpdateSaleDetailInput {
   quantity: Float
   unitPrice: Float
   discountPercentage: Float
+  publicistIds: [Int!]
 }
 
 extend type Query {

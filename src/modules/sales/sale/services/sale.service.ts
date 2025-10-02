@@ -6,6 +6,7 @@ import { UpdateSaleInput } from '../dto/update-sale.input';
 import { BaseService } from '../../../../core/services/base.service';
 import { Sale } from '../entities/sale.entity';
 import {
+  ListFilter,
   ListOptions,
   ListSummary,
 } from '../../../../core/graphql/remote-operations';
@@ -17,11 +18,12 @@ import { CustomerService } from '../../customer/services/customer.service';
 import { SaleDetailService } from '../../sale-detail/services/sale-detail.service';
 import { ProductService } from '../../../inventory/product/services/product.service';
 import { WorkerService } from '../../../payroll/worker/services/worker.service';
-import { InventoryService } from '../../../inventory/inventory/services/inventory.service';
-import { InventoryMovementService } from '../../../inventory/inventory-movement/services/inventory-movement.service';
 import { PaymentMethod } from '../enums/payment-method.enum';
 import { SaleDetail } from '../../sale-detail/entities/sale-detail.entity';
 import { CurrencyService } from '../../../payroll/currency/services/currency.service';
+import { Worker } from '../../../payroll/worker/entities/worker.entity';
+import { ConditionalOperator } from '../../../../core/graphql/remote-operations/enums/conditional-operation.enum';
+import { ConflictError } from '../../../../core/errors/appErrors/ConflictError.error';
 
 @Injectable()
 export class SaleService extends BaseService<Sale> {
@@ -102,7 +104,14 @@ export class SaleService extends BaseService<Sale> {
   ): Promise<ListSummary> {
     return await super.baseFind({
       options,
-      relationsToLoad: ['salesWorker', 'customer', 'details'],
+      relationsToLoad: [
+        'salesWorker',
+        'customer',
+        'details',
+        'details.publicists',
+        'details.product',
+        'product.category',
+      ],
       cu,
       scopes,
       manager,
@@ -120,7 +129,7 @@ export class SaleService extends BaseService<Sale> {
       relationsToLoad: {
         salesWorker: true,
         customer: true,
-        details: true,
+        details: { product: { category: true }, publicists: true },
       },
       cu,
       scopes,
@@ -514,5 +523,123 @@ export class SaleService extends BaseService<Sale> {
 
     backtrack(0, []);
     return result;
+  }
+
+  async getSalesByScope(
+    params: {
+      businessId?: number;
+      officeId?: number;
+      departmentId?: number;
+      teamId?: number;
+      worker?: Worker;
+      ownSales?: boolean;
+      scope: ScopedAccessEnum;
+      startDate: Date;
+      endDate: Date;
+      productId?: number;
+      categoryId?: number;
+    },
+    cu?: JWTPayload,
+    scopes?: ScopedAccessEnum[],
+    manager?: EntityManager,
+  ): Promise<Sale[]> {
+    const {
+      businessId,
+      officeId,
+      departmentId,
+      teamId,
+      worker,
+      ownSales = false,
+      scope,
+      startDate,
+      endDate,
+      productId,
+      categoryId,
+    } = params;
+
+    // Validar que el worker tenga el ID del scope requerido o se pase el ID de acuerdo al scope.
+    let scopeProp: string | undefined;
+    let scopeId: number | undefined;
+    switch (scope) {
+      case ScopedAccessEnum.BUSINESS:
+        scopeProp = 'business.id';
+        scopeId = worker?.business?.id || businessId;
+        break;
+      case ScopedAccessEnum.OFFICE:
+        scopeProp = 'office.id';
+        scopeId = worker?.office?.id || officeId;
+        break;
+      case ScopedAccessEnum.DEPARTMENT:
+        scopeProp = 'department.id';
+        scopeId = worker?.department?.id || departmentId;
+        break;
+      case ScopedAccessEnum.TEAM:
+        scopeProp = 'team.id';
+        scopeId = worker?.team?.id || teamId;
+        break;
+      default:
+        scopeId = undefined;
+    }
+    if (!scopeId || !scopeProp) {
+      throw new ConflictError(
+        `Worker or requested scope does not have required scope ID for ${scope}`,
+      );
+    }
+
+    const filters: ListFilter[] = [
+      {
+        property: 'effectiveDate',
+        operator: ConditionalOperator.IS_NOT_NULL,
+      } as ListFilter,
+      {
+        property: 'effectiveDate',
+        operator: ConditionalOperator.GREATER_EQUAL_THAN,
+        value: startDate.toISOString(),
+      },
+      {
+        property: 'effectiveDate',
+        operator: ConditionalOperator.LESS_EQUAL_THAN,
+        value: endDate.toISOString(),
+      },
+      {
+        property: scopeProp,
+        operator: ConditionalOperator.EQUAL,
+        value: String(scopeId),
+      },
+    ];
+
+    // Solo filtrar por salesWorker si ownSales es true
+    if (ownSales) {
+      if (!worker)
+        throw new ConflictError('For find ownSales, the worker is required.');
+      filters.push({
+        property: 'salesWorker.id',
+        operator: ConditionalOperator.EQUAL,
+        value: String(worker.id),
+      });
+    }
+
+    // Si existe productId filtrar para este producto.
+    if (productId) {
+      filters.push({
+        property: 'product.id',
+        operator: ConditionalOperator.EQUAL,
+        value: String(productId),
+      });
+    }
+
+    // Si existe categoryId filtrar para este producto.
+    if (categoryId) {
+      filters.push({
+        property: 'category.id',
+        operator: ConditionalOperator.EQUAL,
+        value: String(categoryId),
+      });
+    }
+
+    const sales = (await this.find({ filters }, cu, scopes, manager))
+      .data as Array<Sale>;
+
+    return sales;
   }
 }

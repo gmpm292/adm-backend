@@ -1,18 +1,9 @@
-import {
-  IsOptional,
-  IsArray,
-  ValidateNested,
-  IsString,
-  MaxLength,
-  MinLength,
-  IsEnum,
-} from 'class-validator';
+import { IsOptional, IsArray, ValidateNested } from 'class-validator';
 import { PriceRangeConditionInput } from './price-range-condition.input';
 import { SaleQuantityConditionInput } from './sale-quantity-condition.input';
 import { FixedAmountConditionInput } from './fixed-amount-condition.input';
 import { PercentageConditionInput } from './percentage-condition.input';
 import { Type } from 'class-transformer';
-import { ScopedAccessEnum } from '../../../../../core/enums/scoped-access.enum';
 
 export class ConditionsInput {
   @IsOptional()
@@ -36,12 +27,4 @@ export class ConditionsInput {
   @ValidateNested()
   @Type(() => PercentageConditionInput)
   percentage?: PercentageConditionInput;
-
-  @IsString()
-  @MaxLength(3)
-  @MinLength(3)
-  paymentCurrency: string; // "CUP", "MLC", "USD"
-
-  @IsEnum(ScopedAccessEnum)
-  scope: ScopedAccessEnum;
 }

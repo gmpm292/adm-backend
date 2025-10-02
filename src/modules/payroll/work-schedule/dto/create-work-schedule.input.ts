@@ -1,6 +1,12 @@
-import { IsDate, IsBoolean, IsOptional, IsObject } from 'class-validator';
+import {
+  IsDate,
+  IsBoolean,
+  IsOptional,
+  IsObject,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 import { CreateSecurityBaseInput } from '../../../../core/dtos/create-security-base.input';
-import { Role } from '../../../../core/enums/role.enum';
 
 /**
  * DTO for creating a work schedule
@@ -20,6 +26,11 @@ import { Role } from '../../../../core/enums/role.enum';
  * }
  */
 export class CreateWorkScheduleInput extends CreateSecurityBaseInput {
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  name?: string;
+
   @IsDate()
   startDate: Date;
 

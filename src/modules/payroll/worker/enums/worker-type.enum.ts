@@ -5,6 +5,7 @@ export enum WorkerType {
   COURIER = 'COURIER', // Mensajero
   TECHNICIAN = 'TECHNICIAN', // Técnicos/especialistas
   OPERATIVE = 'OPERATIVE', // Personal operativo
+  COMMUNITY_MANAGER = 'COMMUNITY_MANAGER', // Administrador de Redes Sociales.
 
   PRINCIPAL = 'PRINCIPAL', // Nivel Negocio
   ADMINISTRATIVE = 'ADMINISTRATIVE', // Nivel Oficina

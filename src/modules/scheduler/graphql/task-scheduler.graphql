@@ -1,0 +1,45 @@
+type ScheduledTask implements BaseEntity {
+  id: Int!
+  createdAt: Date!
+  updatedAt: Date!
+  deletedAt: Date
+
+  name: String!
+  description: String!
+  handlerType: String!
+  cronExpression: String!
+  isActive: Boolean!
+  lastRun: Date
+  nextRun: Date
+}
+
+type ScheduledTaskSummary {
+  data: [ScheduledTask]!
+  totalCount: Int!
+}
+
+input CreateScheduledTaskInput {
+  name: String!
+  description: String!
+  handlerType: String!
+  cronExpression: String!
+  isActive: Boolean
+}
+
+extend type Query {
+  scheduledTasks(options: ListOptions): ScheduledTaskSummary!
+}
+
+extend type Mutation {
+  createScheduledTask(
+    createScheduledTaskInput: CreateScheduledTaskInput!
+  ): ScheduledTask!
+
+  updateScheduledTask(
+    id: Int!
+    cronExpression: String!
+    isActive: Boolean!
+  ): ScheduledTask!
+
+  removeScheduledTask(id: Int!): Boolean!
+}

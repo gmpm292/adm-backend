@@ -14,6 +14,9 @@ export class Worker extends SecurityBaseEntity {
   @Column({ type: 'varchar', length: 20 })
   workerType: WorkerType;
 
+  @Column({ type: 'text', nullable: true })
+  otherType?: string;
+
   @ManyToOne(() => PaymentRule, { nullable: true })
   paymentRule?: PaymentRule;
 

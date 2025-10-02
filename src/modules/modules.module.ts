@@ -10,6 +10,7 @@ import { PayrollModule } from './payroll/payroll.module';
 import { EmailModule } from './email/email.module';
 import { TelegramModule } from './telegram/telegram.module';
 import { AttendanceModule } from './payroll/attendance/attendance.module';
+import { TaskSchedulerModule } from './scheduler/scheduler.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { AttendanceModule } from './payroll/attendance/attendance.module';
     EmailModule,
     TelegramModule,
     AttendanceModule,
+    TaskSchedulerModule,
   ],
   providers: [],
 })

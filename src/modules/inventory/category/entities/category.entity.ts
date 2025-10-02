@@ -1,6 +1,7 @@
 import { Entity, Column, OneToMany } from 'typeorm';
 import { SecurityBaseEntity } from '../../../../core/entities/security-base.entity';
 import { Product } from '../../product/entities/product.entity';
+import { PaymentRule } from '../../../payroll/payment-rule/entities/payment-rule.entity';
 
 /**
  * Description: Classification of products (e.g., Clothing, Electronics).
@@ -16,4 +17,7 @@ export class Category extends SecurityBaseEntity {
 
   @OneToMany(() => Product, (product) => product.category)
   products: Product[];
+
+  @OneToMany(() => PaymentRule, (paymentRule) => paymentRule.category)
+  paymentRules: PaymentRule[];
 }
