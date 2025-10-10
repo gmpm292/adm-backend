@@ -51,7 +51,8 @@ export class SaleService extends BaseService<Sale> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Sale> {
-    const { salesWorkerId, customerId, details, ...rest } = createSaleInput;
+    const { customerId, details, ...rest } = createSaleInput;
+    const salesWorkerId = createSaleInput.salesWorkerId ?? cu?.sub;
 
     const [salesWorker, customer] = await Promise.all([
       await this.workerService.findOne(salesWorkerId, cu, scopes, manager),

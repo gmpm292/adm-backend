@@ -23,6 +23,7 @@ import { InventoryMovementService } from '../../inventory-movement/services/inve
 import { ReserveReleaseReason } from '../enums/reserve-release-reason';
 import { ConditionalOperator } from '../../../../core/graphql/remote-operations/enums/conditional-operation.enum';
 import { InventoryMovement } from '../../inventory-movement/entities/inventory-movement.entity';
+import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
 
 @Injectable()
 export class ProductService extends BaseService<Product> {
@@ -271,14 +272,18 @@ export class ProductService extends BaseService<Product> {
       product.saleRules?.minQuantity &&
       quantity < product.saleRules.minQuantity
     ) {
-      throw new Error(`La cantidad mínima es ${product.saleRules.minQuantity}`);
+      throw new BadRequestError(
+        `La cantidad mínima es ${product.saleRules.minQuantity}`,
+      );
     }
 
     if (
       product.saleRules?.maxQuantity &&
       quantity > product.saleRules.maxQuantity
     ) {
-      throw new Error(`La cantidad máxima es ${product.saleRules.maxQuantity}`);
+      throw new BadRequestError(
+        `La cantidad máxima es ${product.saleRules.maxQuantity}`,
+      );
     }
 
     // Validar moneda si fue introducida.
@@ -286,7 +291,9 @@ export class ProductService extends BaseService<Product> {
       currency &&
       product.pricingConfig.acceptedCurrencies.includes(currency)
     ) {
-      throw new Error(`La moneda ${currency} no se permite para este producto`);
+      throw new BadRequestError(
+        `La moneda ${currency} no se permite para este producto`,
+      );
     }
 
     // Calcular opciones para la moneda dada o cada moneda aceptada.
@@ -383,7 +390,7 @@ export class ProductService extends BaseService<Product> {
     );
 
     if (availableStock < quantity) {
-      throw new Error(
+      throw new BadRequestError(
         `Insufficient stock for product ${productId}. Available: ${availableStock}, Requested: ${quantity}`,
       );
     }
@@ -425,7 +432,9 @@ export class ProductService extends BaseService<Product> {
     }
 
     if (remainingQuantity > 0) {
-      throw new Error(`Error processing inventory for product ${productId}`);
+      throw new BadRequestError(
+        `Error processing inventory for product ${productId}`,
+      );
     }
 
     return reservationId;
@@ -459,7 +468,9 @@ export class ProductService extends BaseService<Product> {
     ).data as Array<InventoryMovement>;
 
     if (!reservations || reservations.length === 0) {
-      throw new Error(`No stock reservations found with ID ${reservationId}`);
+      throw new BadRequestError(
+        `No stock reservations found with ID ${reservationId}`,
+      );
     }
 
     const reservedQuantity = reservations.reduce(
@@ -468,7 +479,7 @@ export class ProductService extends BaseService<Product> {
     );
 
     if (reservedQuantity < quantity) {
-      throw new Error(
+      throw new BadRequestError(
         `Attempting to release ${quantity} but only ${reservedQuantity} were reserved`,
       );
     }

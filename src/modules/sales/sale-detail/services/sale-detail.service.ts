@@ -145,7 +145,7 @@ export class SaleDetailService extends BaseService<SaleDetail> {
     await this.saleService.findOne(saleId, cu, scopes, manager);
     return this.saleDetailRepository.find({
       where: { sale: { id: saleId } },
-      relations: ['sale', 'product', 'publicists'],
+      relations: ['sale', 'product', 'publicists', 'publicists.user'],
     });
   }
 

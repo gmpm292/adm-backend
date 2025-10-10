@@ -21,13 +21,13 @@ type Sale implements SecurityBaseEntity {
   team: Team
 
   effectiveDate: Date
-  totalAmount: Float!
-  paymentMethod: PaymentMethod!
+  totalAmount: Float
+  paymentMethod: PaymentMethod
   invoiceNumber: String
   paymentDetails: JSON
-  salesUser: User!
+  salesUser: User
   customer: Customer
-  details: [SaleDetail]!
+  details: [SaleDetail]
 }
 
 type SalesSummary {
@@ -41,9 +41,10 @@ input CreateSaleInput {
   departmentId: Int
   teamId: Int
 
-  salesWorkerId: Int!
+  salesWorkerId: Int
   customerId: Int
-  totalAmount: Float!
+  #totalAmount: Float!
+  #effectiveDate: Date
   paymentMethod: PaymentMethod!
   paymentDetails: JSON
   invoiceNumber: String

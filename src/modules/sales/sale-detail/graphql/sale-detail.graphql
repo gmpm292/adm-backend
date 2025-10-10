@@ -14,12 +14,12 @@ type SaleDetail implements SecurityBaseEntity {
   team: Team
 
   quantity: Float!
-  unitPrice: Float!
-  subtotal: Float!
+  unitPrice: Float
+  subtotal: Float
   discountPercentage: Float
   productSnapshot: JSON
   productPaymentOptions: JSON
-  reservationId: String!
+  reservationId: String
   sale: Sale!
   product: Product!
   publicists: [Worker!]

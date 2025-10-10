@@ -1,4 +1,4 @@
-import { IsNumber, IsEnum, IsOptional, IsJSON } from 'class-validator';
+import { IsNumber, IsEnum, IsOptional, IsJSON, IsDate } from 'class-validator';
 import { PaymentMethod } from '../enums/payment-method.enum';
 import { CreateSecurityBaseInput } from '../../../../core/dtos/create-security-base.input';
 
@@ -10,8 +10,11 @@ export class CreateSaleInput extends CreateSecurityBaseInput {
   @IsOptional()
   customerId?: number;
 
-  @IsNumber()
-  totalAmount: number;
+  // @IsNumber()
+  // totalAmount: number;
+
+  @IsDate()
+  effectiveDate?: Date;
 
   @IsEnum(PaymentMethod)
   paymentMethod: PaymentMethod;

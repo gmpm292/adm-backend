@@ -1,11 +1,4 @@
-import {
-  Entity,
-  Column,
-  ManyToOne,
-  OneToMany,
-  ManyToMany,
-  JoinTable,
-} from 'typeorm';
+import { Entity, Column, ManyToOne, OneToMany } from 'typeorm';
 import { SecurityBaseEntity } from '../../../../core/entities/security-base.entity';
 import { Customer } from '../../customer/entities/customer.entity';
 import { SaleDetail } from '../../sale-detail/entities/sale-detail.entity';
@@ -23,7 +16,7 @@ export class Sale extends SecurityBaseEntity {
   @ManyToOne(() => Customer, (customer) => customer.sales, { nullable: true })
   customer?: Customer; // Nullable for anonymous sales
 
-  @Column({ type: 'jsonb', nullable: false })
+  @Column({ type: 'jsonb', nullable: true })
   payments?: Array<{
     amount: number;
     currency: string; // Código ISO 4217 (USD, EUR, CUP, etc.)
@@ -37,7 +30,7 @@ export class Sale extends SecurityBaseEntity {
   @Column({ type: 'varchar', length: 3, nullable: true })
   totalAmountCurrency?: string; // Moneda base para reportes
 
-  @Column({ type: 'time without time zone', nullable: true })
+  @Column({ type: 'timestamp', nullable: true })
   effectiveDate?: Date;
 
   @Column({ type: 'varchar', length: 50, nullable: true })
