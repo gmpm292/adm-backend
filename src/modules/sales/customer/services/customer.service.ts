@@ -37,6 +37,8 @@ export class CustomerService extends BaseService<Customer> {
   ): Promise<Customer> {
     const customer: Customer = {
       ...createCustomerInput,
+      email: createCustomerInput.email || null,
+      phone: createCustomerInput.phone || null,
     } as Customer;
 
     if (createCustomerInput.userId) {

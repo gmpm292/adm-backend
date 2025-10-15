@@ -266,20 +266,22 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
     } = params;
     if (uniqueFields?.length) {
       for (const field of uniqueFields) {
-        const dataInDB = await this.baseFind({
-          options: {
-            take: 0,
-            filters: [
-              {
-                property: field,
-                operator: ConditionalOperator.EQUAL,
-                value: String(data[field] ?? ''),
-              },
-            ],
-          },
-        });
-        if (dataInDB.totalCount > 0) {
-          throw new ConflictError(`The value of ${field} already exists`);
+        if (data[field] ?? null) {
+          const dataInDB = await this.baseFind({
+            options: {
+              take: 0,
+              filters: [
+                {
+                  property: field,
+                  operator: ConditionalOperator.EQUAL,
+                  value: String(data[field] ?? ''),
+                },
+              ],
+            },
+          });
+          if (dataInDB.totalCount > 0) {
+            throw new ConflictError(`The value of ${field} already exists`);
+          }
         }
       }
     }
