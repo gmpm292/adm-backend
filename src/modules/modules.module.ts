@@ -11,6 +11,7 @@ import { EmailModule } from './email/email.module';
 import { TelegramModule } from './telegram/telegram.module';
 import { AttendanceModule } from './payroll/attendance/attendance.module';
 import { TaskSchedulerModule } from './scheduler/scheduler.module';
+import { QZTrayModule } from './qz-tray/qz-tray.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { TaskSchedulerModule } from './scheduler/scheduler.module';
     TelegramModule,
     AttendanceModule,
     TaskSchedulerModule,
+    QZTrayModule,
   ],
   providers: [],
 })

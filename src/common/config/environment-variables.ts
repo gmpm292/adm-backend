@@ -98,4 +98,8 @@ export class EnvironmentVariables {
   //// Configuración de Telegram_WEBHOOKS
   TELEGRAM_WEBHOOK_URL: string;
   TELEGRAM_SECRET_TOKEN: string;
+
+  // QZ Tray Configuration
+  QZ_PRIVATE_KEY: string;
+  QZ_PUBLIC_KEY: string;
 }

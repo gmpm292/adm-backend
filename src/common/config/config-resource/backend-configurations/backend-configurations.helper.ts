@@ -17,6 +17,21 @@ export const backendConfigurations: Array<Config> = [
   },
 
   {
+    category: ConfigCategory.FRONTEND,
+    group: 'QZ_Tray_Configuration',
+    description:
+      'Configuración de las claves pública y privada de los agentes QZ_Tray',
+    values: {
+      QZ_PRIVATE_KEY:
+        '-----BEGIN PRIVATE KEY-----\nTU_CLAVE_PRIVADA_AQUI\n-----END PRIVATE KEY-----',
+      QZ_PUBLIC_KEY:
+        '-----BEGIN CERTIFICATE-----\nTU_CERTIFICADO_PUBLICO_AQUI\n-----END CERTIFICATE-----',
+    },
+    configVisibility: ConfigVisibility.PRIVATE,
+    configStatus: ConfigStatus.ENABLED,
+  },
+
+  {
     category: ConfigCategory.SECURITY,
     group: 'SECURITY_JWT',
     description: 'Configuraciones de seguridad JWT',

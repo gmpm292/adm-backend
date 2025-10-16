@@ -1,0 +1,11 @@
+type QZTrayPublicKey {
+  publicKey: String!
+}
+
+type Query {
+  getQZPublicKey: QZTrayPublicKey!
+}
+
+type Mutation {
+  signQZRequest(request: String!): String!
+}
