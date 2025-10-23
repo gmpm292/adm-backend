@@ -35,6 +35,12 @@ type SalesSummary {
   totalCount: Int!
 }
 
+type SalePaymentValidation {
+  valid: Boolean
+  message: String
+  totalInBaseCurrency: Float
+}
+
 input CreateSaleInput {
   businessId: Int!
   officeId: Int!
@@ -71,6 +77,25 @@ input UpdateSaleInput {
   invoiceNumber: String
 }
 
+input MakeSalePaymentInput {
+  amount: Float!
+  currency: String!
+  paymentMethod: PaymentMethod!
+}
+
+input MakeSaleInput {
+  saleId: Int!
+  payments: [MakeSalePaymentInput!]!
+  baseCurrency: String
+  customDate: Date
+}
+
+input ValidateSalePaymentsInput {
+  saleId: Int!
+  payments: [MakeSalePaymentInput!]!
+  baseCurrency: String
+}
+
 extend type Query {
   sales(options: ListOptions): SalesSummary!
   sale(id: Int!): Sale
@@ -82,6 +107,11 @@ extend type Mutation {
   updateSale(updateSaleInput: UpdateSaleInput!): Sale!
   removeSales(ids: [Int!]!): [Sale]!
   restoreSales(ids: [Int!]!): Int
+
+  makeSale(makeSaleInput: MakeSaleInput!): Sale!
+  validateSalePayments(
+    validateSalePaymentsInput: ValidateSalePaymentsInput
+  ): SalePaymentValidation!
 }
 
 extend type Subscription {

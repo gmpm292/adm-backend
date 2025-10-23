@@ -43,9 +43,19 @@ export class CurrencyResolver {
 
   @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
-  @Query('currency')
+  @Query('currencyById')
   async findOne(@CurrentUser() user: JWTPayload, @Args('id') id: number) {
     return this.currencyService.findOne(id, user);
+  }
+
+  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER)
+  @UseGuards(AccessTokenAuthGuard, RoleGuard)
+  @Query('currency')
+  async findByCode(
+    @CurrentUser() user: JWTPayload,
+    @Args('code') code: string,
+  ) {
+    return this.currencyService.findByCode(code, user);
   }
 
   @Roles(Role.SUPER, Role.PRINCIPAL)

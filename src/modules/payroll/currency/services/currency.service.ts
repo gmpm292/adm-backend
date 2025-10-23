@@ -75,7 +75,7 @@ export class CurrencyService extends BaseService<Currency> {
     manager?: EntityManager,
   ): Promise<Currency> {
     return super.baseFindOne({
-      id, // Usamos el código como ID
+      id,
       cu,
       scopes,
       manager,

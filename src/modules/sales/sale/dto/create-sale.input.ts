@@ -13,8 +13,8 @@ export class CreateSaleInput extends CreateSecurityBaseInput {
   // @IsNumber()
   // totalAmount: number;
 
-  @IsDate()
-  effectiveDate?: Date;
+  // @IsDate()
+  // effectiveDate?: Date;
 
   @IsEnum(PaymentMethod)
   paymentMethod: PaymentMethod;

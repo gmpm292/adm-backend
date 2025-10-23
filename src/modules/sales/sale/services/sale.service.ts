@@ -34,7 +34,7 @@ export class SaleService extends BaseService<Sale> {
     private customerService: CustomerService,
     @Inject(forwardRef(() => SaleDetailService))
     private saleDetailService: SaleDetailService,
-    @Inject(forwardRef(() => ProductService))
+    //@Inject(forwardRef(() => ProductService))
     // private readonly productService: ProductService,
     // private readonly inventoryService: InventoryService,
     // private readonly inventoryMovementService: InventoryMovementService,
@@ -287,9 +287,9 @@ export class SaleService extends BaseService<Sale> {
       amount: number;
       currency: string;
       paymentMethod: PaymentMethod;
-      paymentDetails?: Record<string, unknown>;
+      //paymentDetails?: Record<string, unknown>;
     }>,
-    baseCurrency: string = 'USD',
+    baseCurrency: string = 'CUP',
     customDate?: Date,
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
@@ -340,10 +340,10 @@ export class SaleService extends BaseService<Sale> {
     return finalizedSale;
   }
 
-  private async validateSalePayments(
+  async validateSalePayments(
     details: SaleDetail[],
     payments: Array<{ amount: number; currency: string }>,
-    baseCurrency: string,
+    baseCurrency: string = 'CUP',
   ): Promise<{
     valid: boolean;
     message?: string;

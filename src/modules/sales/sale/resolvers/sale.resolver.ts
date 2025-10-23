@@ -15,6 +15,9 @@ import {
 import { Opts } from '../../../../core/graphql/remote-operations/decorators/opts.decorator';
 import { SaleService } from '../services/sale.service';
 import { SaleFiltersValidator } from '../filters-validator/sale-filters.validator';
+import { MakeSaleInput } from '../dto/make-sale.input';
+import { ValidateSalePaymentsInput } from '../dto/validate-sale-payments.input';
+import { SalePaymentValidationResponse } from '../types/sale-payment-validation.response';
 
 @Resolver('Sale')
 export class SaleResolver {
@@ -80,5 +83,56 @@ export class SaleResolver {
   @Mutation('restoreSales')
   async restore(@CurrentUser() user: JWTPayload, @Args('ids') ids: number[]) {
     return this.saleService.restore(ids, user);
+  }
+
+  @Roles(
+    Role.SUPER,
+    Role.PRINCIPAL,
+    Role.ADMIN,
+    Role.MANAGER,
+    Role.SUPERVISOR,
+    Role.AGENT,
+  )
+  @UseGuards(AccessTokenAuthGuard, RoleGuard)
+  @Mutation('makeSale')
+  async makeSale(
+    @CurrentUser() user: JWTPayload,
+    @Args('makeSaleInput') makeSaleInput: MakeSaleInput,
+  ) {
+    return this.saleService.makeSale(
+      makeSaleInput.saleId,
+      makeSaleInput.payments,
+      makeSaleInput.baseCurrency,
+      makeSaleInput.customDate,
+      user,
+    );
+  }
+
+  @Roles(
+    Role.SUPER,
+    Role.PRINCIPAL,
+    Role.ADMIN,
+    Role.MANAGER,
+    Role.SUPERVISOR,
+    Role.AGENT,
+  )
+  @UseGuards(AccessTokenAuthGuard, RoleGuard)
+  @Mutation('validateSalePayments')
+  async validateSalePayments(
+    @CurrentUser() user: JWTPayload,
+    @Args('validateSalePaymentsInput')
+    validateSalePaymentsInput: ValidateSalePaymentsInput,
+  ): Promise<SalePaymentValidationResponse> {
+    // Primero obtener la venta para acceder a sus detalles
+    const sale = await this.saleService.findOne(
+      validateSalePaymentsInput.saleId,
+      user,
+    );
+
+    return this.saleService.validateSalePayments(
+      sale.details ?? [],
+      validateSalePaymentsInput.payments,
+      validateSalePaymentsInput.baseCurrency,
+    );
   }
 }

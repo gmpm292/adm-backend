@@ -58,6 +58,7 @@ input UpdateCurrencyInput {
 extend type Query {
   currencies(options: ListOptions): CurrenciesSummary!
   currency(code: String!): Currency
+  currencyById(id: Int!): Currency
   activeCurrencies: [Currency]!
 }
 
