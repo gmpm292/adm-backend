@@ -24,6 +24,7 @@ import { ReserveReleaseReason } from '../enums/reserve-release-reason';
 import { ConditionalOperator } from '../../../../core/graphql/remote-operations/enums/conditional-operation.enum';
 import { InventoryMovement } from '../../inventory-movement/entities/inventory-movement.entity';
 import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
+import { UpdateInventoryMovementInput } from '../../inventory-movement/dto/update-inventory-movement.input';
 
 @Injectable()
 export class ProductService extends BaseService<Product> {
@@ -520,6 +521,60 @@ export class ProductService extends BaseService<Product> {
 
       remainingQuantity = 0;
     }
+  }
+
+  public async confirmSale(
+    reservationId: string,
+    saleReferenceId: string,
+    cu?: JWTPayload,
+    scopes?: ScopedAccessEnum[],
+    manager?: EntityManager,
+  ): Promise<void> {
+    // Buscar todas las reservas con este reservationId
+    const reservations = (
+      await this.inventoryMovementService.find(
+        {
+          filters: [
+            {
+              property: 'reservationId',
+              operator: ConditionalOperator.EQUAL,
+              value: reservationId,
+            },
+            {
+              property: 'isReservation',
+              operator: ConditionalOperator.EQUAL,
+              value: 'true',
+            },
+          ],
+        },
+        cu,
+        scopes,
+        manager,
+      )
+    ).data as Array<InventoryMovement>;
+
+    if (!reservations || reservations.length === 0) {
+      throw new BadRequestError(
+        `No stock reservations found with ID ${reservationId}`,
+      );
+    }
+
+    // Actualizar cada movimiento de reserva para marcarlo como vendido
+    await Promise.all(
+      reservations.map((movement) =>
+        this.inventoryMovementService.update(
+          movement.id as number,
+          {
+            isReservation: false, // Ya no es reserva, es venta confirmada
+            referenceId: saleReferenceId, // ID de la venta final
+            reason: 'SALE_CONFIRMED', // as ReserveReleaseReason,
+          } as UpdateInventoryMovementInput,
+          cu,
+          scopes,
+          manager,
+        ),
+      ),
+    );
   }
 }
 

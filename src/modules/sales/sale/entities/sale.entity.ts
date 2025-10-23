@@ -33,6 +33,9 @@ export class Sale extends SecurityBaseEntity {
   @Column({ type: 'timestamp', nullable: true })
   effectiveDate?: Date;
 
+  @Column({ type: 'boolean', default: false })
+  isConfirmed?: boolean;
+
   @Column({ type: 'varchar', length: 50, nullable: true })
   invoiceNumber?: string; //Identificador único de la factura. Ejemplo: "F2025-0001" (Formato común: [Tipo][Año]-[Secuencial]).
 

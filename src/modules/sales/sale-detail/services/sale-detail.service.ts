@@ -364,6 +364,63 @@ export class SaleDetailService extends BaseService<SaleDetail> {
     });
   }
 
+  public async confirmSaleDetails(
+    saleDetailIds: number[],
+    cu?: JWTPayload,
+    scopes?: ScopedAccessEnum[],
+    manager?: EntityManager,
+  ): Promise<void> {
+    if (saleDetailIds.length === 0) return;
+
+    // Obtener todos los sale details con sus reservas
+    const saleDetails = await super.baseFindByIds({
+      ids: saleDetailIds,
+      relationsToLoad: { sale: true, product: true },
+      cu,
+      scopes,
+      manager,
+    });
+
+    if (saleDetails.length === 0) {
+      throw new NotFoundError('No sale details found');
+    }
+
+    // Validar que la venta esté en estado apropiado para confirmar
+    const sale = saleDetails[0].sale;
+    if (sale.effectiveDate) {
+      throw new BadRequestError(
+        'Cannot confirm sale details for a sale that is finalized',
+      );
+    }
+
+    // Confirmar cada sale detail (marcar reservas como vendidas)
+    await Promise.all(
+      saleDetails.map(async (saleDetail) => {
+        if (saleDetail.reservationId) {
+          await this.productService.confirmSale(
+            saleDetail.reservationId,
+            String(saleDetail.sale.id), // Usar el ID de la venta como referencia
+            cu,
+            scopes,
+            manager,
+          );
+
+          // Opcional: actualizar el sale detail para marcar como confirmado
+          await super.baseUpdate({
+            id: saleDetail.id as number,
+            data: {
+              ...saleDetail,
+              isConfirmed: true, // Si quieres agregar este campo a la entidad
+            },
+            cu,
+            scopes,
+            manager,
+          });
+        }
+      }),
+    );
+  }
+
   private validateSaleForModification(sale: Sale): void {
     // Validar si la venta ya fue finalizada (tiene effectiveDate y es una fecha pasada)
     if (sale.effectiveDate && new Date(sale.effectiveDate) <= new Date()) {

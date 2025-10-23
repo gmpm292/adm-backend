@@ -35,6 +35,8 @@ export class CustomerService extends BaseService<Customer> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Customer> {
+    if (!scopes) scopes = [ScopedAccessEnum.OFFICE];
+
     const customer: Customer = {
       ...createCustomerInput,
       email: createCustomerInput.email || null,

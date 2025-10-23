@@ -37,6 +37,9 @@ export class SaleDetail extends SecurityBaseEntity {
   @Column({ nullable: false })
   reservationId: string; //Se define cuando es validado y reservado un stock de un producto.
 
+  @Column({ type: 'boolean', default: false })
+  isConfirmed?: boolean;
+
   @ManyToMany(() => Worker, {
     nullable: true,
     onDelete: 'CASCADE',

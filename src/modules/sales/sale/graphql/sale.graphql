@@ -21,6 +21,7 @@ type Sale implements SecurityBaseEntity {
   team: Team
 
   effectiveDate: Date
+  isConfirmed: Boolean
   totalAmount: Float
   paymentMethod: PaymentMethod
   invoiceNumber: String

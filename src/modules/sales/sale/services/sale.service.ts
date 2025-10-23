@@ -24,6 +24,7 @@ import { CurrencyService } from '../../../payroll/currency/services/currency.ser
 import { Worker } from '../../../payroll/worker/entities/worker.entity';
 import { ConditionalOperator } from '../../../../core/graphql/remote-operations/enums/conditional-operation.enum';
 import { ConflictError } from '../../../../core/errors/appErrors/ConflictError.error';
+import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
 
 @Injectable()
 export class SaleService extends BaseService<Sale> {
@@ -322,7 +323,10 @@ export class SaleService extends BaseService<Sale> {
       throw new Error(validationResult.message);
     }
 
-    // 6. Actualizar la venta como finalizada
+    // 6. Confirma la venta para que se modifique los marcadores de reserva y pasen a venta confirmada.
+    await this.confirmSale(sale.id || 0, cu, scopes, manager);
+
+    // 7. Actualizar la venta como finalizada
     const finalizedSale = await this.update(
       saleId,
       {
@@ -642,5 +646,48 @@ export class SaleService extends BaseService<Sale> {
       .data as Array<Sale>;
 
     return sales;
+  }
+
+  public async confirmSale(
+    saleId: number,
+    cu?: JWTPayload,
+    scopes?: ScopedAccessEnum[],
+    manager?: EntityManager,
+  ): Promise<Sale> {
+    const sale = await this.findOne(saleId, cu, scopes, manager);
+
+    // Validar que la venta pueda ser confirmada
+    if (!sale.effectiveDate || new Date(sale.effectiveDate) > new Date()) {
+      throw new BadRequestError('Sale is not finalized yet');
+    }
+
+    // Obtener todos los sale details de esta venta
+    const saleDetails = await this.saleDetailService.findBySale(
+      saleId,
+      cu,
+      scopes,
+      manager,
+    );
+
+    // Confirmar todos los sale details (marcar reservas como vendidas)
+    const saleDetailIds = saleDetails.map((detail) => detail.id as number);
+    await this.saleDetailService.confirmSaleDetails(
+      saleDetailIds,
+      cu,
+      scopes,
+      manager,
+    );
+
+    // Marcar la venta como confirmada
+    return await super.baseUpdate({
+      id: saleId,
+      data: {
+        ...sale,
+        isConfirmed: true, // Si tienes este campo
+      },
+      cu,
+      scopes,
+      manager,
+    });
   }
 }
