@@ -10,21 +10,21 @@ export class ListFilter {
    */
   @IsOptional()
   @IsString()
-  property: string;
+  property?: string;
 
   /**
    * Operator to use in the comparison
    */
   @IsOptional()
   @IsEnum(ConditionalOperator)
-  operator: ConditionalOperator;
+  operator?: ConditionalOperator;
 
   /**
    * Value to use in the comparison
    */
   @IsOptional()
   @CheckIsIsoUTCDate()
-  value: string;
+  value?: string;
 
   /**
    * Operator to use in the comparison 'AND' or 'OR'

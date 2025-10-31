@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/restrict-template-expressions */
 /* eslint-disable @typescript-eslint/no-unused-expressions */
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
@@ -253,7 +252,7 @@ export class ListOptionsTypeOrmQueryBuilderMapper {
     // it needs to provide unique parameters in your WHERE expressions and
     // should have to alias
     const { parameterName, propertyWithAlias } =
-      this.createPropertyWithAliasAndParameterName(property);
+      this.createPropertyWithAliasAndParameterName(property || '');
 
     switch (operator) {
       case ConditionalOperator.ANY:
@@ -296,22 +295,22 @@ export class ListOptionsTypeOrmQueryBuilderMapper {
       case ConditionalOperator.START_WITH:
         return [
           `LOWER(${propertyWithAlias}) LIKE :${parameterName}`,
-          { [parameterName]: `${value.toLowerCase()}%` },
+          { [parameterName]: `${value?.toLowerCase()}%` },
         ];
       case ConditionalOperator.END_WITH:
         return [
           `LOWER(${propertyWithAlias}) LIKE :${parameterName}`,
-          { [parameterName]: `%${value.toLowerCase()}` },
+          { [parameterName]: `%${value?.toLowerCase()}` },
         ];
       case ConditionalOperator.CONTAINS:
         return [
           `LOWER(${propertyWithAlias}) LIKE :${parameterName}`,
-          { [parameterName]: `%${value.toLowerCase()}%` },
+          { [parameterName]: `%${value?.toLowerCase()}%` },
         ];
       case ConditionalOperator.NOT_CONTAINS:
         return [
           `LOWER(${propertyWithAlias}) NOT LIKE :${parameterName}`,
-          { [parameterName]: `%${value.toLowerCase()}%` },
+          { [parameterName]: `%${value?.toLowerCase()}%` },
         ];
       case ConditionalOperator.IS_NULL:
         return [`${propertyWithAlias} IS NULL`, {} as Record<string, unknown>];

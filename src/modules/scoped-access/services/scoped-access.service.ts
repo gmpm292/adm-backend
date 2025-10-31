@@ -15,15 +15,25 @@ import { Business } from '../../company/business/entities/co_business.entity';
 import { Office } from '../../company/office/entities/co_office.entity';
 import { Department } from '../../company/department/entities/co_department.entity';
 import { Team } from '../../company/team/entities/co_team.entity';
+import { ResourceScopedAccessService } from './resource-scoped-access.service';
 
 @Injectable()
 export class ScopedAccessService {
+  constructor(
+    private readonly resourceScopedAccessService: ResourceScopedAccessService,
+  ) {}
+
   public forBaseFindOne<Entity extends ObjectLiteral>(
     cu: JWTPayload,
     repository: Repository<Entity>,
     scopes: ScopedAccessEnum[] | undefined,
   ): FindOptionsWhere<Entity>[] {
     const filters: FindOptionsWhere<Entity>[] = [];
+    // const dbScopes: ScopedAccessEnum[] | undefined =
+    //   this.resourceScopedAccessService.findOne();
+
+    // dbScopes;
+
     const effectiveScopes =
       scopes ??
       Object.values(ScopedAccessEnum).filter(

@@ -4,4 +4,10 @@ import { BaseFiltersValidator } from '../../../core/filters-validator/base-filte
 export class FiltersValidator extends BaseFiltersValidator {
   @IsString()
   type: string;
+
+  @IsString()
+  queryOrEndPointURL: string;
+
+  @IsString()
+  description: string;
 }

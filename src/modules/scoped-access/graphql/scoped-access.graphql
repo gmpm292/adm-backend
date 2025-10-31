@@ -1,0 +1,61 @@
+type ScopedAccess {
+  id: Int
+  createdAt: Date
+  updatedAt: Date
+  deletedAt: Date
+  business: Business
+  roleGuard: RoleGuard
+  accessLevels: [ScopedAccessEnum!]!
+  entityStatus: EntityStatus
+}
+
+type ScopedAccessesSummary {
+  data: [ScopedAccess]!
+  totalCount: Int!
+}
+
+input CreateScopedAccessInput {
+  businessId: Int!
+  roleGuardId: Int!
+  accessLevels: [ScopedAccessEnum!]!
+  entityStatus: EntityStatus
+}
+
+input UpdateScopedAccessInput {
+  id: Int!
+  businessId: Int
+  roleGuardId: Int
+  accessLevels: [ScopedAccessEnum!]
+  entityStatus: EntityStatus
+}
+
+enum ScopedAccessEnum {
+  BUSINESS
+  OFFICE
+  DEPARTMENT
+  TEAM
+  GENERAL
+  PERSONAL
+  RELATED
+}
+
+enum EntityStatus {
+  ENABLED
+  DISABLED
+}
+
+type Query {
+  scopedAccesses(options: ListOptions): ScopedAccessesSummary!
+  scopedAccess(id: Int!): ScopedAccess
+}
+
+type Mutation {
+  createScopedAccess(
+    createScopedAccessInput: CreateScopedAccessInput!
+  ): ScopedAccess!
+  updateScopedAccess(
+    updateScopedAccessInput: UpdateScopedAccessInput!
+  ): ScopedAccess!
+  removeScopedAccesses(ids: [Int!]!): [ScopedAccess]!
+  restoreScopedAccesses(ids: [Int!]!): Int
+}
