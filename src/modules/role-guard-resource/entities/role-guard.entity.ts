@@ -40,4 +40,6 @@ export class RoleGuardEntity extends BaseEntity {
 
   @OneToMany(() => ScopedAccessEntity, (scopedAccess) => scopedAccess.roleGuard)
   scopedAccesses?: ScopedAccessEntity[];
+
+  //allowedRoles: any;
 }

@@ -1,6 +1,15 @@
-import { IsNumber, IsEnum, IsOptional, IsJSON, IsDate } from 'class-validator';
+import {
+  IsNumber,
+  IsEnum,
+  IsOptional,
+  IsJSON,
+  IsDate,
+  IsArray,
+  ValidateNested,
+} from 'class-validator';
 import { PaymentMethod } from '../enums/payment-method.enum';
 import { CreateSecurityBaseInput } from '../../../../core/dtos/create-security-base.input';
+import { Type } from 'class-transformer';
 
 export class CreateSaleInput extends CreateSecurityBaseInput {
   @IsNumber()
@@ -26,9 +35,21 @@ export class CreateSaleInput extends CreateSecurityBaseInput {
   @IsOptional()
   invoiceNumber?: string;
 
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SaleDetailInput)
+  details: SaleDetailInput[];
+}
+
+export class SaleDetailInput {
+  @IsNumber()
+  productId: number;
+
+  @IsNumber()
+  quantity: number;
+
+  @IsOptional()
+  @IsArray()
   @IsNumber({}, { each: true })
-  details: {
-    productId: number;
-    quantity: number;
-  }[];
+  publicistIds?: number[];
 }

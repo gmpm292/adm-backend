@@ -3,7 +3,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 
-import { Inject } from '@nestjs/common';
+import { Inject, UseGuards } from '@nestjs/common';
 import { Args, Mutation, Query, Resolver, Subscription } from '@nestjs/graphql';
 import { RedisPubSub } from 'graphql-redis-subscriptions';
 import { LoggerService } from '../../../common/logger';
@@ -12,6 +12,12 @@ import { AppInfoService } from '../services/appInfo.service';
 import { REDIS_PUB_SUB_TOKEN } from '../../../common/graphql/pubsub/pubsub.module';
 import { AppInfo } from '../models/app-info.model';
 import { Notification } from '../models/notification.model';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { Role } from '../../../core/enums/role.enum';
+import { AccessTokenAuthGuard } from '../../auth/guards/access-token-auth.guard';
+import { RoleGuard } from '../../auth/guards/role.guard';
+import { CurrentUserWithContext } from '../../auth/decorators/current-user.decorator';
+import { JWTPayload } from '../../auth/dto/jwt-payload.dto';
 
 @Resolver(() => AppInfo)
 export class AppInfoResolver {
@@ -21,8 +27,11 @@ export class AppInfoResolver {
     @Inject(REDIS_PUB_SUB_TOKEN) private readonly pubSub: RedisPubSub,
   ) {}
 
-  @Query(() => AppInfo)
-  appInfo() {
+  @Roles(Role.SUPER)
+  @UseGuards(AccessTokenAuthGuard, RoleGuard)
+  @Query('appInfo')
+  appInfo(@CurrentUserWithContext() user: JWTPayload) {
+    const a = user;
     return this.appInfoService.appInfo();
   }
 

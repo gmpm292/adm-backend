@@ -29,13 +29,15 @@ export class ScopedAccessService {
     scopes: ScopedAccessEnum[] | undefined,
   ): FindOptionsWhere<Entity>[] {
     const filters: FindOptionsWhere<Entity>[] = [];
-    // const dbScopes: ScopedAccessEnum[] | undefined =
-    //   this.resourceScopedAccessService.findOne();
-
-    // dbScopes;
+    const dbScopes: ScopedAccessEnum[] | undefined =
+      this.resourceScopedAccessService.findByBusinessAndQueryOrEndpoint(
+        cu.businessId as number,
+        cu.currentQueryOrEndpoint as string,
+      )?.accessLevels;
 
     const effectiveScopes =
-      scopes ??
+      scopes ||
+      dbScopes ||
       Object.values(ScopedAccessEnum).filter(
         (e) => e != ScopedAccessEnum.GENERAL && e != ScopedAccessEnum.PERSONAL,
       );
@@ -166,8 +168,15 @@ export class ScopedAccessService {
     scopes?: ScopedAccessEnum[],
   ): Promise<ListFilter[]> {
     const filters: Array<ListFilter> = [];
+    const dbScopes: ScopedAccessEnum[] | undefined =
+      this.resourceScopedAccessService.findByBusinessAndQueryOrEndpoint(
+        cu.businessId as number,
+        cu.currentQueryOrEndpoint as string,
+      )?.accessLevels;
+
     const effectiveScopes =
-      scopes ??
+      scopes ||
+      dbScopes ||
       Object.values(ScopedAccessEnum).filter(
         (e) => e != ScopedAccessEnum.GENERAL && e != ScopedAccessEnum.PERSONAL,
       );
@@ -384,7 +393,18 @@ export class ScopedAccessService {
     createDto: any,
     scopes?: ScopedAccessEnum[],
   ) {
-    const effectiveScopes = scopes ?? Object.values(ScopedAccessEnum);
+    const dbScopes: ScopedAccessEnum[] | undefined =
+      this.resourceScopedAccessService.findByBusinessAndQueryOrEndpoint(
+        cu.businessId as number,
+        cu.currentQueryOrEndpoint as string,
+      )?.accessLevels;
+
+    const effectiveScopes =
+      scopes ||
+      dbScopes ||
+      Object.values(ScopedAccessEnum).filter(
+        (e) => e != ScopedAccessEnum.GENERAL && e != ScopedAccessEnum.PERSONAL,
+      );
 
     if (cu) {
       createDto.createdBy = { id: cu.sub };
@@ -521,7 +541,18 @@ export class ScopedAccessService {
     updateDto: any,
     scopes?: ScopedAccessEnum[],
   ) {
-    const effectiveScopes = scopes ?? Object.values(ScopedAccessEnum);
+    const dbScopes: ScopedAccessEnum[] | undefined =
+      this.resourceScopedAccessService.findByBusinessAndQueryOrEndpoint(
+        cu.businessId as number,
+        cu.currentQueryOrEndpoint as string,
+      )?.accessLevels;
+
+    const effectiveScopes =
+      scopes ||
+      dbScopes ||
+      Object.values(ScopedAccessEnum).filter(
+        (e) => e != ScopedAccessEnum.GENERAL && e != ScopedAccessEnum.PERSONAL,
+      );
 
     // Always update the updatedBy field
     updateDto.updatedBy = { id: cu.sub };

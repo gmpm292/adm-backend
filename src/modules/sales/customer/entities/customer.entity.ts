@@ -12,10 +12,19 @@ export class Customer extends SecurityBaseEntity {
   @Column({ type: 'varchar', length: 100 })
   name: string;
 
-  @Column({ type: 'varchar', length: 100, nullable: true })
+  @Column({ nullable: true, type: 'varchar', length: 100 })
+  lastName?: string;
+
+  @Column({ nullable: true, type: 'varchar', length: 100 })
+  fullName?: string;
+
+  @Column({ nullable: true, type: 'varchar', length: 20 })
+  ci?: string;
+
+  @Column({ nullable: true, type: 'varchar', length: 100 })
   email?: string;
 
-  @Column({ type: 'varchar', length: 20, nullable: true })
+  @Column({ nullable: true, type: 'varchar', length: 20 })
   phone?: string;
 
   @Column({ type: 'integer', default: 0 })

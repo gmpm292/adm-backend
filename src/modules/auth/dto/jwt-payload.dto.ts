@@ -18,4 +18,7 @@ export interface JWTPayload {
 
   twoFactorAuthRequired?: boolean;
   twoFactorAuthPassed?: boolean;
+
+  // Only used in the system. CurrentUserWithContext decorator.
+  currentQueryOrEndpoint?: string;
 }

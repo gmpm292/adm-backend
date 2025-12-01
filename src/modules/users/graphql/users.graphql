@@ -51,6 +51,7 @@ type Profile {
 }
 
 type LimitedProfile {
+  role: [Role!]
   email: String
   isTwoFactorEnabled: Boolean
   isTwoFactorConfigured: Boolean

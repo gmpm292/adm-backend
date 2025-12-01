@@ -87,6 +87,7 @@ export class SaleService extends BaseService<Sale> {
             saleId: createdSale.id as number,
             productId: detail.productId,
             quantity: detail.quantity,
+            publicistIds: detail.publicistIds,
           },
           cu,
           scopes,

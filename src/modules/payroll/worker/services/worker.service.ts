@@ -190,7 +190,14 @@ export class WorkerService extends BaseService<Worker> {
   ): Promise<ListSummary> {
     return await super.baseFind({
       options,
-      relationsToLoad: ['user', 'paymentRule', 'office'],
+      relationsToLoad: [
+        'user',
+        'paymentRule',
+        'business',
+        'office',
+        'department',
+        'team',
+      ],
       cu,
       scopes,
       manager,

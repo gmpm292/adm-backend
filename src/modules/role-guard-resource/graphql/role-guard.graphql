@@ -14,6 +14,11 @@ type RoleGuardsSummary {
   totalCount: Int!
 }
 
+type PermissionResponse {
+  allowed: Boolean!
+  requiredRoles: [String!]!
+}
+
 input UpdateRoleGuardInput {
   id: Int!
   roles: [Role]
@@ -23,9 +28,10 @@ input UpdateRoleGuardInput {
 type Query {
   roleGuards(options: ListOptions): RoleGuardsSummary!
   roleGuard(id: Int!): RoleGuard
+  checkPermissions(operationName: String!): PermissionResponse!
 }
 
 type Mutation {
   updateRoleGuard(updateRoleGuardInput: UpdateRoleGuardInput!): RoleGuard!
-#  removeRoleGuards(ids: [Int!]!): [RoleGuard]!
+  #  removeRoleGuards(ids: [Int!]!): [RoleGuard]!
 }

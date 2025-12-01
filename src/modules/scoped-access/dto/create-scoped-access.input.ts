@@ -22,6 +22,6 @@ export class CreateScopedAccessInput {
   accessLevels: ScopedAccessEnum[];
 
   @IsOptional()
-  @IsEnum(EntityStatus)
-  entityStatus?: EntityStatus;
+  //@IsEnum(EntityStatus)
+  entityStatus?: string;
 }

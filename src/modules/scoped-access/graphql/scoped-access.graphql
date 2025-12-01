@@ -6,7 +6,7 @@ type ScopedAccess {
   business: Business
   roleGuard: RoleGuard
   accessLevels: [ScopedAccessEnum!]!
-  entityStatus: EntityStatus
+  entityStatus: Int
 }
 
 type ScopedAccessesSummary {

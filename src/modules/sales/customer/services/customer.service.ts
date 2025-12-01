@@ -29,6 +29,13 @@ export class CustomerService extends BaseService<Customer> {
     super(customerRepository);
   }
 
+  private generateFullName(name: string, lastName?: string): string {
+    if (lastName) {
+      return `${name} ${lastName}`.trim();
+    }
+    return name.trim();
+  }
+
   async create(
     createCustomerInput: CreateCustomerInput,
     cu?: JWTPayload,
@@ -37,10 +44,18 @@ export class CustomerService extends BaseService<Customer> {
   ): Promise<Customer> {
     if (!scopes) scopes = [ScopedAccessEnum.OFFICE];
 
+    // Generar fullName automáticamente
+    const fullName = this.generateFullName(
+      createCustomerInput.name,
+      createCustomerInput.lastName,
+    );
+
     const customer: Customer = {
       ...createCustomerInput,
+      fullName, // Agregar el fullName generado
       email: createCustomerInput.email || null,
       phone: createCustomerInput.phone || null,
+      loyaltyPoints: createCustomerInput.loyaltyPoints || 0, // Valor por defecto
     } as Customer;
 
     if (createCustomerInput.userId) {
@@ -111,6 +126,13 @@ export class CustomerService extends BaseService<Customer> {
     const customer = await super.baseFindOne({ id, cu, scopes, manager });
     if (!customer) {
       throw new NotFoundError();
+    }
+
+    // Si se actualizan name o lastName, regenerar fullName
+    if (updateCustomerInput.name || updateCustomerInput.lastName) {
+      const newName = updateCustomerInput.name || customer.name;
+      const newLastName = updateCustomerInput.lastName ?? customer.lastName;
+      customer.fullName = this.generateFullName(newName, newLastName);
     }
 
     if (updateCustomerInput.userId) {

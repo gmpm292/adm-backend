@@ -14,6 +14,9 @@ type Customer implements SecurityBaseEntity {
   team: Team
 
   name: String!
+  lastName: String
+  fullName: String
+  ci: String
   email: String
   phone: String
   loyaltyPoints: Int!
@@ -34,8 +37,11 @@ input CreateCustomerInput {
   teamId: Int
 
   name: String!
+  lastName: String
+  ci: String
   email: String
   phone: String
+  loyaltyPoints: Int
   additionalInfo: JSON
   userId: Int
 }
@@ -48,8 +54,11 @@ input UpdateCustomerInput {
 
   id: Int!
   name: String
+  lastName: String
+  ci: String
   email: String
   phone: String
+  loyaltyPoints: Int
   additionalInfo: JSON
   userId: Int
 }

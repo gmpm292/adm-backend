@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, UseGuards } from '@nestjs/common';
 import {
   HealthCheck,
   HealthCheckService,
@@ -8,6 +8,13 @@ import {
 } from '@nestjs/terminus';
 
 import { AppInfoService } from '../services/appInfo.service';
+import {
+  CurrentUser,
+  CurrentUserWithContext,
+} from '../../auth/decorators/current-user.decorator';
+import { JWTPayload } from '../../auth/dto/jwt-payload.dto';
+import { AccessTokenAuthGuard } from '../../auth/guards/access-token-auth.guard';
+import { RoleGuard } from '../../auth/guards/role.guard';
 
 @Controller()
 export class AppInfoController {
@@ -18,8 +25,10 @@ export class AppInfoController {
     private http: HttpHealthIndicator,
   ) {}
 
+  @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Get('/appInfo')
-  public appInfo() {
+  public appInfo(@CurrentUserWithContext() user: JWTPayload) {
+    const a = user;
     return this.appService.appInfo();
   }
 

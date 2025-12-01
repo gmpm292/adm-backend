@@ -61,6 +61,7 @@ input CreateSaleInput {
 input SaleDetailInput {
   productId: Int!
   quantity: Float!
+  publicistIds: [Int!]
 }
 
 input UpdateSaleInput {
