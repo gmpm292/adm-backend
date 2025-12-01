@@ -657,10 +657,10 @@ export class SaleService extends BaseService<Sale> {
   ): Promise<Sale> {
     const sale = await this.findOne(saleId, cu, scopes, manager);
 
-    // Validar que la venta pueda ser confirmada
-    if (!sale.effectiveDate || new Date(sale.effectiveDate) > new Date()) {
-      throw new BadRequestError('Sale is not finalized yet');
-    }
+    // // Validar que la venta pueda ser confirmada
+    // if (!sale.effectiveDate || new Date(sale.effectiveDate) > new Date()) {
+    //   throw new BadRequestError('Sale is not finalized yet');
+    // }
 
     // Obtener todos los sale details de esta venta
     const saleDetails = await this.saleDetailService.findBySale(
