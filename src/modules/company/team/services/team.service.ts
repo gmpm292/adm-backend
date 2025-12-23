@@ -45,7 +45,7 @@ export class TeamService extends BaseService<Team> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Team> {
-    const { departmentId, teamType } = createTeamInput;
+    const { departmentId, teamType, ...rest } = createTeamInput;
 
     // Get department with its office and business
     const department = departmentId
@@ -57,11 +57,12 @@ export class TeamService extends BaseService<Team> {
     }
 
     const team: DeepPartial<Team> = {
+      ...rest,
       teamType,
       department: department ? { id: departmentId } : undefined,
       office: department?.office ? { id: department.office.id } : undefined,
-      business: department?.office?.business
-        ? { id: department.office.business.id }
+      business: department?.business
+        ? { id: department.business.id }
         : undefined,
     };
 

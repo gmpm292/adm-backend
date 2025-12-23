@@ -20,7 +20,14 @@ import { CustomerFiltersValidator } from '../filters-validator/customer-filters.
 export class CustomerResolver {
   constructor(private readonly customerService: CustomerService) {}
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
+  @Roles(
+    Role.SUPER,
+    Role.PRINCIPAL,
+    Role.ADMIN,
+    Role.MANAGER,
+    Role.SUPERVISOR,
+    Role.AGENT,
+  )
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('createCustomer')
   async create(
@@ -30,7 +37,14 @@ export class CustomerResolver {
     return this.customerService.create(createCustomerInput, user);
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER)
+  @Roles(
+    Role.SUPER,
+    Role.PRINCIPAL,
+    Role.ADMIN,
+    Role.MANAGER,
+    Role.SUPERVISOR,
+    Role.AGENT,
+  )
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Query('customers')
   async findAll(
@@ -41,14 +55,28 @@ export class CustomerResolver {
     return this.customerService.find(options, user);
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER)
+  @Roles(
+    Role.SUPER,
+    Role.PRINCIPAL,
+    Role.ADMIN,
+    Role.MANAGER,
+    Role.SUPERVISOR,
+    Role.AGENT,
+  )
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Query('customer')
   async findOne(@CurrentUser() user: JWTPayload, @Args('id') id: number) {
     return this.customerService.findOne(id, user);
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
+  @Roles(
+    Role.SUPER,
+    Role.PRINCIPAL,
+    Role.ADMIN,
+    Role.MANAGER,
+    Role.SUPERVISOR,
+    Role.AGENT,
+  )
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('updateCustomer')
   async update(
@@ -62,14 +90,28 @@ export class CustomerResolver {
     );
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL)
+  @Roles(
+    Role.SUPER,
+    Role.PRINCIPAL,
+    Role.ADMIN,
+    Role.MANAGER,
+    Role.SUPERVISOR,
+    Role.AGENT,
+  )
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('removeCustomers')
   async remove(@CurrentUser() user: JWTPayload, @Args('ids') ids: number[]) {
     return this.customerService.remove(ids, user);
   }
 
-  @Roles(Role.SUPER)
+  @Roles(
+    Role.SUPER,
+    Role.PRINCIPAL,
+    Role.ADMIN,
+    Role.MANAGER,
+    Role.SUPERVISOR,
+    Role.AGENT,
+  )
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('restoreCustomers')
   async restore(@CurrentUser() user: JWTPayload, @Args('ids') ids: number[]) {

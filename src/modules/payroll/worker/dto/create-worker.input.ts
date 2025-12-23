@@ -8,6 +8,7 @@ import {
   IsEmail,
   IsPhoneNumber,
   IsArray,
+  Min,
 } from 'class-validator';
 import { WorkerType } from '../enums/worker-type.enum';
 import { Role } from '../../../../core/enums/role.enum';
@@ -30,7 +31,7 @@ export class CreateWorkerInput extends CreateSecurityBaseInput {
 
   @IsOptional()
   @IsNumber()
-  @IsPositive()
+  @Min(0, { message: 'El salario base debe ser 0 o un valor positivo' })
   baseSalary?: number;
 
   @IsOptional()

@@ -13,6 +13,8 @@ type Team {
   teamType: TeamTypeEnum
   name: String
   description: String
+  business: Business
+  office: Office
   department: Department
 }
 type TeamsSummary {
