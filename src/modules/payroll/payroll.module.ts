@@ -8,6 +8,7 @@ import { CurrencyModule } from './currency/currency.module';
 import { WorkScheduleModule } from './work-schedule/work-schedule.module';
 import { OfficeModule } from '../company/office/office.module';
 import { UsersModule } from '../users/users.module';
+import { PaymentAccumulatorModule } from './payment_accumulator/payment-accumulator.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { UsersModule } from '../users/users.module';
     forwardRef(() => PayrollPeriodModule),
     forwardRef(() => CurrencyModule),
     forwardRef(() => WorkScheduleModule),
+    forwardRef(() => PaymentAccumulatorModule),
 
     // Módulos externos requeridos
     forwardRef(() => OfficeModule),

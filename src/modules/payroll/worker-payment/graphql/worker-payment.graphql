@@ -23,18 +23,22 @@ type WorkerPayment implements SecurityBaseEntity {
   department: Department
   team: Team
 
+  worker: Worker!
+  sale: Sale # Relación directa a la venta (nullable)
+  paidDate: Date # Day it was paid. If null, it has not been carried out.
   amount: Float!
   currency: String!
   exchangeRate: Float
   paymentMethod: PaymentMethod!
-  paymentType: PaymentType!
+  paymentConcept: PaymentConcept! # Usamos paymentConcept como en la entidad
+  payrollPeriod: PayrollPeriod!
   breakdown: PaymentBreakdown
   notes: String
-  worker: Worker!
-  payrollPeriod: PayrollPeriod!
 }
 
 type PaymentBreakdown {
+  ruleName: String
+  ruleType: String
   baseSalary: Float
   commissions: Float
   bonuses: Float
@@ -46,13 +50,6 @@ enum PaymentMethod {
   BANK_TRANSFER
   CHECK
   MOBILE_PAYMENT
-  OTHER
-}
-
-enum PaymentType {
-  SALARY
-  COMMISSION
-  BONUS
   OTHER
 }
 
@@ -69,16 +66,20 @@ input CreateWorkerPaymentInput {
 
   workerId: Int!
   payrollPeriodId: Int!
+  saleId: Int # Opcional, relación con venta
+  paidDate: Date # Opcional, fecha de pago
   amount: Float!
   currency: String!
   exchangeRate: Float
   paymentMethod: PaymentMethod!
-  paymentType: PaymentType!
+  paymentConcept: PaymentConcept!
   breakdown: PaymentBreakdownInput
   notes: String
 }
 
 input PaymentBreakdownInput {
+  ruleName: String
+  ruleType: String
   baseSalary: Float
   commissions: Float
   bonuses: Float
@@ -94,11 +95,13 @@ input UpdateWorkerPaymentInput {
   id: Int!
   workerId: Int
   payrollPeriodId: Int
+  saleId: Int
+  paidDate: Date
   amount: Float
   currency: String
   exchangeRate: Float
   paymentMethod: PaymentMethod
-  paymentType: PaymentType
+  paymentConcept: PaymentConcept
   breakdown: PaymentBreakdownInput
   notes: String
 }
@@ -108,6 +111,8 @@ extend type Query {
   workerPayment(id: Int!): WorkerPayment
   paymentsByWorker(workerId: Int!): [WorkerPayment]!
   paymentsByPeriod(periodId: Int!): [WorkerPayment]!
+#  paymentsBySale(saleId: Int!): [WorkerPayment]! # Nueva query para pagos por venta
+#  paymentsByStatus(paid: Boolean!): [WorkerPayment]! # Nueva query para pagos realizados/pendientes
 }
 
 extend type Mutation {
@@ -117,6 +122,7 @@ extend type Mutation {
   updateWorkerPayment(
     updateWorkerPaymentInput: UpdateWorkerPaymentInput!
   ): WorkerPayment!
+#  markAsPaid(id: Int!, paidDate: Date!): WorkerPayment! # Nueva mutation para marcar como pagado
   removeWorkerPayments(ids: [Int!]!): [WorkerPayment]!
   restoreWorkerPayments(ids: [Int!]!): Int
 }

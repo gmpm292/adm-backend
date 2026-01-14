@@ -1,0 +1,70 @@
+type PaymentAccumulator {
+  id: Int
+  createdAt: Date
+  updatedAt: Date
+  deletedAt: Date
+  worker: Worker
+  paymentRule: PaymentRule
+  payrollPeriod: PayrollPeriod
+  productCounter: Int
+  salesTotal: Float
+  accumulatedAmount: Float
+  accumulatedCurrency: Float
+  metadata: JSON
+  business: Business
+  office: Office
+  department: Department
+  team: Team
+}
+
+type PaymentAccumulatorsSummary {
+  data: [PaymentAccumulator]!
+  totalCount: Int!
+}
+
+input CreatePaymentAccumulatorInput {
+  workerId: Int!
+  paymentRuleId: Int!
+  payrollPeriodId: Int!
+  productCounter: Int
+  salesTotal: Float
+  accumulatedAmount: Float
+  accumulatedCurrency: Float
+  metadata: JSON
+}
+
+input UpdatePaymentAccumulatorInput {
+  id: Int!
+  workerId: Int
+  paymentRuleId: Int
+  payrollPeriodId: Int
+  productCounter: Int
+  salesTotal: Float
+  accumulatedAmount: Float
+  accumulatedCurrency: Float
+  metadata: JSON
+}
+
+extend type Query {
+  paymentAccumulators(options: ListOptions): PaymentAccumulatorsSummary!
+  paymentAccumulator(id: Int!): PaymentAccumulator
+  paymentAccumulatorsByWorkerAndPeriod(
+    workerId: Int!
+    payrollPeriodId: Int!
+  ): [PaymentAccumulator]!
+}
+
+extend type Mutation {
+  createPaymentAccumulator(
+    createPaymentAccumulatorInput: CreatePaymentAccumulatorInput!
+  ): PaymentAccumulator!
+  updatePaymentAccumulator(
+    updatePaymentAccumulatorInput: UpdatePaymentAccumulatorInput!
+  ): PaymentAccumulator!
+  removePaymentAccumulators(ids: [Int!]!): [PaymentAccumulator]!
+  restorePaymentAccumulators(ids: [Int!]!): Int
+}
+
+extend type Subscription {
+  paymentAccumulatorChanged: Boolean
+}

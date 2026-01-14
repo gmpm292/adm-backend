@@ -4,7 +4,9 @@ import {
   IsString,
   IsOptional,
   IsObject,
+  IsDate,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { PaymentMethod } from '../enums/payment-method.enum';
 import { PaymentConcept } from '../enums/payment-concept.enum';
 import { CreateSecurityBaseInput } from '../../../../core/dtos/create-security-base.input';
@@ -15,6 +17,13 @@ export class CreateWorkerPaymentInput extends CreateSecurityBaseInput {
 
   @IsNumber()
   payrollPeriodId: number;
+
+  @IsOptional()
+  @IsNumber()
+  saleId?: number;
+
+  @IsOptional()
+  paidDate?: Date;
 
   @IsNumber()
   amount: number;
@@ -30,15 +39,25 @@ export class CreateWorkerPaymentInput extends CreateSecurityBaseInput {
   paymentMethod: PaymentMethod;
 
   @IsEnum(PaymentConcept)
-  paymentConcept: PaymentConcept;
+  paymentConcept: PaymentConcept; // Mantenemos paymentConcept como en la entidad
 
   @IsOptional()
   @IsObject()
   breakdown?: {
+    ruleName?: string;
+    ruleType?: string;
     baseSalary?: number;
     commissions?: number;
     bonuses?: number;
     deductions?: number;
+    roleInSale?: 'MAIN_SELLER' | 'PUBLICIST' | 'OTHER';
+    saleId?: number;
+    saleDate?: Date;
+    saleAmount?: number;
+    ruleId?: number;
+    distributeProfits?: boolean;
+    accumulatorId?: number;
+    calculationSummary?: any;
   };
 
   @IsOptional()

@@ -4,6 +4,7 @@ import { Customer } from '../../customer/entities/customer.entity';
 import { SaleDetail } from '../../sale-detail/entities/sale-detail.entity';
 import { PaymentMethod } from '../enums/payment-method.enum';
 import { Worker } from '../../../payroll/worker/entities/worker.entity';
+import { WorkerPayment } from '../../../payroll/worker-payment/entities/worker-payment.entity';
 
 /**
  * Description: Sales transactions recording.
@@ -15,6 +16,9 @@ export class Sale extends SecurityBaseEntity {
 
   @ManyToOne(() => Customer, (customer) => customer.sales, { nullable: true })
   customer?: Customer; // Nullable for anonymous sales
+
+  @OneToMany(() => WorkerPayment, (payment) => payment.sale)
+  generatedPayments?: WorkerPayment[]; // Relación a pagos generados
 
   @Column({ type: 'jsonb', nullable: true })
   payments?: Array<{

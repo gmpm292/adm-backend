@@ -7,6 +7,7 @@ import {
   Length,
   MaxLength,
   MinLength,
+  IsInt,
 } from 'class-validator';
 import { PaymentType } from '../enums/payment-type.enum';
 import { Type } from 'class-transformer';
@@ -40,12 +41,21 @@ export class CreatePaymentRuleInput extends CreateSecurityBaseInput {
   workerType?: WorkerType;
 
   @IsString()
+  @IsOptional()
   otherType?: string;
+
+  @IsOptional()
+  @IsInt()
+  productId?: number;
+
+  @IsOptional()
+  @IsInt()
+  categoryId?: number;
 
   @IsString()
   @MaxLength(3)
   @MinLength(3)
-  paymentCurrency: string; // "CUP", "MLC", "USD"
+  paymentCurrency: string;
 
   @IsEnum(ScopedAccessEnum)
   scope: ScopedAccessEnum;

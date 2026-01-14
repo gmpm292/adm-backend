@@ -1,0 +1,55 @@
+type PaymentProcessingResult {
+  workerId: Int!
+  workerName: String
+  amount: Float!
+  currency: String!
+  paymentConcept: String!
+  status: String!
+  errors: [String!]
+  details: JSON
+}
+
+type PaymentProcessingSummary {
+  data: [PaymentProcessingResult!]!
+  totalCount: Int!
+  successCount: Int!
+  errorCount: Int!
+}
+
+input ProcessPaymentsInput {
+  payrollPeriodId: Int!
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+  workerIds: [Int!]
+  force: Boolean
+}
+
+extend type Query {
+  paymentProcessingStatus(
+    payrollPeriodId: Int!
+    scopes: [ScopedAccessEnum!]
+  ): PaymentProcessingSummary!
+
+  processedPayments(
+    payrollPeriodId: Int!
+    options: ListOptions
+    scopes: [ScopedAccessEnum!]
+  ): PaymentProcessingSummary!
+}
+
+extend type Mutation {
+  processPayments(
+    processPaymentsInput: ProcessPaymentsInput!
+    scopes: [ScopedAccessEnum!]
+  ): PaymentProcessingSummary!
+
+  approvePayments(paymentIds: [Int!]!, scopes: [ScopedAccessEnum!]): Int!
+
+  rejectPayments(
+    paymentIds: [Int!]!
+    reason: String!
+    scopes: [ScopedAccessEnum!]
+  ): Int!
+}

@@ -16,6 +16,7 @@ import { ScopedAccessService } from '../../../scoped-access/services/scoped-acce
 import { WorkerPaymentService } from '../../worker-payment/services/worker-payment.service';
 import { ConditionalOperator } from '../../../../core/graphql/remote-operations/enums/conditional-operation.enum';
 import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
+import { SortDirection } from '../../../../core/graphql/remote-operations/enums/sort-direction.enum';
 
 @Injectable()
 export class PayrollPeriodService extends BaseService<PayrollPeriod> {
@@ -286,5 +287,261 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     if (daysDiff > 31) {
       throw new BadRequestError('Payroll period cannot exceed 31 days');
     }
+  }
+
+  async getCurrentOrCreatePeriod(
+    date: Date,
+    cu?: JWTPayload,
+    scopes?: ScopedAccessEnum[],
+    manager?: EntityManager,
+  ): Promise<PayrollPeriod> {
+    if (!cu?.businessId) {
+      throw new BadRequestError('User must be associated with a business');
+    }
+
+    // Buscar período existente que contenga la fecha
+    const existingPeriod = await this.findPeriodForDate(
+      date,
+      cu,
+      scopes,
+      manager,
+    );
+
+    if (existingPeriod) {
+      return existingPeriod;
+    }
+
+    // Buscar el último período del negocio
+    const lastPeriod = await this.findLastPeriod(cu, scopes, manager);
+
+    // Crear nuevo período
+    return lastPeriod
+      ? this.createPeriodAfter(lastPeriod, cu, scopes, manager)
+      : this.createFirstPeriod(date, cu, scopes, manager);
+  }
+
+  async getNextOrCreatePeriod(
+    currentPeriodId: number,
+    cu?: JWTPayload,
+    scopes?: ScopedAccessEnum[],
+    manager?: EntityManager,
+  ): Promise<PayrollPeriod> {
+    if (!cu?.businessId) {
+      throw new BadRequestError('User must be associated with a business');
+    }
+
+    const currentPeriod = await this.baseFindOne({
+      id: currentPeriodId,
+      cu,
+      scopes,
+      manager,
+    });
+
+    if (!currentPeriod) {
+      throw new NotFoundError('Current period not found');
+    }
+
+    // Buscar si ya existe el período siguiente
+    const existingNextPeriod = await this.findPeriodAfterDate(
+      currentPeriod.endDate,
+      cu,
+      scopes,
+      manager,
+    );
+
+    if (existingNextPeriod) {
+      return existingNextPeriod;
+    }
+
+    // Crear el período siguiente
+    return this.createPeriodAfter(currentPeriod, cu, scopes, manager);
+  }
+
+  async getNextPeriod(
+    currentPeriodId: number,
+    cu?: JWTPayload,
+    scopes?: ScopedAccessEnum[],
+    manager?: EntityManager,
+  ): Promise<PayrollPeriod> {
+    if (!cu?.businessId) {
+      throw new BadRequestError('User must be associated with a business');
+    }
+
+    const currentPeriod = await this.baseFindOne({
+      id: currentPeriodId,
+      cu,
+      scopes,
+      manager,
+    });
+
+    if (!currentPeriod) {
+      throw new NotFoundError('Current period not found');
+    }
+
+    const nextPeriod = await this.findPeriodAfterDate(
+      currentPeriod.endDate,
+      cu,
+      scopes,
+      manager,
+    );
+
+    if (!nextPeriod) {
+      throw new NotFoundError('Next period not found');
+    }
+
+    return nextPeriod;
+  }
+
+  private async findPeriodForDate(
+    date: Date,
+    cu: JWTPayload,
+    scopes: ScopedAccessEnum[] = [],
+    manager?: EntityManager,
+  ): Promise<PayrollPeriod | null> {
+    const dateStr = date.toISOString().split('T')[0];
+
+    const result = await super.baseFind({
+      options: {
+        filters: [
+          {
+            property: 'startDate',
+            operator: ConditionalOperator.LESS_EQUAL_THAN,
+            value: dateStr,
+          },
+          {
+            property: 'endDate',
+            operator: ConditionalOperator.GREATER_EQUAL_THAN,
+            value: dateStr,
+          },
+        ],
+        take: 1,
+      },
+      cu,
+      scopes,
+      manager,
+    });
+
+    return (result.data?.[0] as PayrollPeriod) || null;
+  }
+
+  private async findPeriodAfterDate(
+    date: Date,
+    cu: JWTPayload,
+    scopes: ScopedAccessEnum[] = [],
+    manager?: EntityManager,
+  ): Promise<PayrollPeriod | null> {
+    const nextDay = new Date(date);
+    nextDay.setDate(nextDay.getDate() + 1);
+    const nextDayStr = nextDay.toISOString().split('T')[0];
+
+    const result = await super.baseFind({
+      options: {
+        filters: [
+          {
+            property: 'startDate',
+            operator: ConditionalOperator.GREATER_EQUAL_THAN,
+            value: nextDayStr,
+          },
+        ],
+        sorts: [{ property: 'startDate', direction: SortDirection.ASC }],
+        take: 1,
+      },
+      cu,
+      scopes,
+      manager,
+    });
+
+    return (result.data?.[0] as PayrollPeriod) || null;
+  }
+
+  private async findLastPeriod(
+    cu: JWTPayload,
+    scopes: ScopedAccessEnum[] = [],
+    manager?: EntityManager,
+  ): Promise<PayrollPeriod | null> {
+    const result = await super.baseFind({
+      options: {
+        sorts: [{ property: 'endDate', direction: SortDirection.DESC }],
+        take: 1,
+      },
+      cu,
+      scopes,
+      manager,
+    });
+
+    return (result.data?.[0] as PayrollPeriod) || null;
+  }
+
+  private createFirstPeriod(
+    referenceDate: Date,
+    cu: JWTPayload,
+    scopes: ScopedAccessEnum[] = [],
+    manager?: EntityManager,
+  ): Promise<PayrollPeriod> {
+    // Crear primer período de 7 días terminando en la fecha de referencia
+    const endDate = new Date(referenceDate);
+    const startDate = new Date(endDate);
+    startDate.setDate(startDate.getDate() - 6);
+
+    const name = this.generatePeriodName(startDate, endDate);
+
+    const createInput: CreatePayrollPeriodInput = {
+      startDate,
+      endDate,
+      name,
+      description: `First payroll period from ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}`,
+      businessId: cu.businessId!,
+    };
+
+    return this.create(createInput, cu, scopes, manager);
+  }
+
+  private async createPeriodAfter(
+    previousPeriod: PayrollPeriod,
+    cu: JWTPayload,
+    scopes: ScopedAccessEnum[] = [],
+    manager?: EntityManager,
+  ): Promise<PayrollPeriod> {
+    const daysDiff = Math.ceil(
+      (previousPeriod.endDate.getTime() - previousPeriod.startDate.getTime()) /
+        (1000 * 3600 * 24),
+    );
+
+    const startDate = new Date(previousPeriod.endDate);
+    startDate.setDate(startDate.getDate() + 1);
+
+    const endDate = new Date(startDate);
+
+    if (daysDiff >= 28 && daysDiff <= 31) {
+      // Mensual - siguiente mes
+      endDate.setMonth(endDate.getMonth() + 1);
+      endDate.setDate(endDate.getDate() - 1);
+    } else if (daysDiff >= 14 && daysDiff <= 16) {
+      // Quincenal - 14 días
+      endDate.setDate(endDate.getDate() + 14);
+    } else {
+      // Semanal - 7 días
+      endDate.setDate(endDate.getDate() + 6);
+    }
+
+    const name = this.generatePeriodName(startDate, endDate);
+
+    const createInput: CreatePayrollPeriodInput = {
+      startDate,
+      endDate,
+      name,
+      description: `Payroll period from ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}`,
+      businessId: cu.businessId!,
+    };
+
+    return this.create(createInput, cu, scopes, manager);
+  }
+
+  private generatePeriodName(startDate: Date, endDate: Date): string {
+    const formatDate = (date: Date): string => {
+      return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
+    };
+
+    return `${formatDate(startDate)} / ${formatDate(endDate)}`;
   }
 }

@@ -64,10 +64,13 @@ type PaymentRule implements SecurityBaseEntity {
   description: String
   isActive: Boolean!
   workerType: WorkerType
+  otherType: String
+  product: Product
+  category: Category
 
   paymentCurrency: String!
-  scope: ScopedAccessEnum
-  distributeProfits: Boolean
+  scope: ScopedAccessEnum!
+  distributeProfits: Boolean!
 
   conditions: Conditions
 }
@@ -88,12 +91,14 @@ input PriceRangeConditionInput {
   min: Float!
   max: Float
   currency: String!
-  amount: Float!
+  amount: Float
+  percentage: Float
 }
 
 input SaleQuantityConditionInput {
   minProducts: Int!
-  ratePerProduct: Float!
+  ratePerProduct: Float
+  percentagePerProduct: Float
 }
 
 input FixedAmountConditionInput {
@@ -115,12 +120,15 @@ input CreatePaymentRuleInput {
   description: String
   isActive: Boolean
   workerType: WorkerType
+  otherType: String
+  productId: Int
+  categoryId: Int
 
   paymentCurrency: String!
   scope: ScopedAccessEnum!
   distributeProfits: Boolean!
 
-  conditions: ConditionsInput
+  conditions: ConditionsInput!
 }
 
 input UpdatePaymentRuleInput {
@@ -136,10 +144,12 @@ input UpdatePaymentRuleInput {
   isActive: Boolean
   workerType: WorkerType
   otherType: String
+  productId: Int
+  categoryId: Int
 
-  paymentCurrency: String!
-  scope: ScopedAccessEnum!
-  distributeProfits: Boolean!
+  paymentCurrency: String
+  scope: ScopedAccessEnum
+  distributeProfits: Boolean
 
   conditions: ConditionsInput
 }

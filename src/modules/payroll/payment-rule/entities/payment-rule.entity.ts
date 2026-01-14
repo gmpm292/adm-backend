@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToOne } from 'typeorm';
+import { Entity, Column, ManyToOne, OneToMany } from 'typeorm';
 import { SecurityBaseEntity } from '../../../../core/entities/security-base.entity';
 import { PaymentType } from '../enums/payment-type.enum';
 import { WorkerType } from '../../worker/enums/worker-type.enum';
@@ -6,6 +6,7 @@ import { Conditions } from '../types/conditions.type';
 import { Product } from '../../../inventory/product/entities/product.entity';
 import { Category } from '../../../inventory/category/entities/category.entity';
 import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
+import { PaymentAccumulator } from '../../payment_accumulator/entities/payment_accumulator.entity';
 
 @Entity('py_payment_rules')
 export class PaymentRule extends SecurityBaseEntity {
@@ -48,4 +49,8 @@ export class PaymentRule extends SecurityBaseEntity {
 
   @Column({ type: 'jsonb' })
   conditions: Conditions;
+
+  // Relaciones inversas.
+  @OneToMany(() => PaymentAccumulator, (accumulator) => accumulator.paymentRule)
+  paymentAccumulators?: PaymentAccumulator[];
 }

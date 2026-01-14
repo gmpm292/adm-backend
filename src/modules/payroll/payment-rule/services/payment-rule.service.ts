@@ -20,6 +20,8 @@ import { ConditionsInput } from '../dto/conditions/conditions-input.dto';
 import { ConditionalOperator } from '../../../../core/graphql/remote-operations/enums/conditional-operation.enum';
 import { LogicalOperator } from '../../../../core/graphql/remote-operations/enums/logical-operator.enum';
 import { WorkerType } from '../../worker/enums/worker-type.enum';
+import { ProductService } from '../../../inventory/product/services/product.service';
+import { CategoryService } from '../../../inventory/category/services/category.service';
 
 @Injectable()
 export class PaymentRuleService extends BaseService<PaymentRule> {
@@ -27,6 +29,8 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
     @InjectRepository(PaymentRule)
     private paymentRuleRepository: Repository<PaymentRule>,
     protected scopedAccessService: ScopedAccessService,
+    private readonly productService: ProductService,
+    private readonly categoryService: CategoryService,
   ) {
     super(paymentRuleRepository);
   }
@@ -45,11 +49,30 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
     paymentRule.isActive = createPaymentRuleInput.isActive ?? true;
     paymentRule.workerType = createPaymentRuleInput.workerType;
     paymentRule.otherType = createPaymentRuleInput.otherType;
-
     paymentRule.paymentCurrency = createPaymentRuleInput.paymentCurrency;
     paymentRule.scope = createPaymentRuleInput.scope;
     paymentRule.distributeProfits =
       createPaymentRuleInput.distributeProfits ?? false;
+
+    // Process product if provided
+    if (createPaymentRuleInput.productId) {
+      paymentRule.product = await this.productService.findOne(
+        createPaymentRuleInput.productId,
+        cu,
+        scopes,
+        manager,
+      );
+    }
+
+    // Process category if provided
+    if (createPaymentRuleInput.categoryId) {
+      paymentRule.category = await this.categoryService.findOne(
+        createPaymentRuleInput.categoryId,
+        cu,
+        scopes,
+        manager,
+      );
+    }
 
     // Process conditions based on payment type
     paymentRule.conditions = this.processConditions(
@@ -190,6 +213,34 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
       paymentRule.otherType = updatePaymentRuleInput.otherType;
     }
 
+    // Update product if provided
+    if (updatePaymentRuleInput.productId !== undefined) {
+      if (updatePaymentRuleInput.productId) {
+        paymentRule.product = await this.productService.findOne(
+          updatePaymentRuleInput.productId,
+          cu,
+          scopes,
+          manager,
+        );
+      } else {
+        paymentRule.product = undefined;
+      }
+    }
+
+    // Update category if provided
+    if (updatePaymentRuleInput.categoryId !== undefined) {
+      if (updatePaymentRuleInput.categoryId) {
+        paymentRule.category = await this.categoryService.findOne(
+          updatePaymentRuleInput.categoryId,
+          cu,
+          scopes,
+          manager,
+        );
+      } else {
+        paymentRule.category = undefined;
+      }
+    }
+
     if (updatePaymentRuleInput.paymentCurrency !== undefined) {
       paymentRule.paymentCurrency = updatePaymentRuleInput.paymentCurrency;
     }
@@ -308,36 +359,53 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
       manager,
     );
 
-    // // Agrupar y priorizar reglas
-    // const result: PaymentRule[] = [];
-    // const processedTuples = new Set<string>();
+    return rules.data as Array<PaymentRule>;
+  }
 
-    // // Primera pasada: buscar reglas con producto (prioridad alta)
-    // for (const rule of rules.data as Array<PaymentRule>) {
-    //   const worType =
-    //     rule.workerType !== null
-    //       ? `workerType:${rule.workerType}`
-    //       : `otherType:${rule.otherType}`;
+  /**
+   * Busca reglas de pago por producto o categoría
+   */
+  async findPaymentRulesByProductOrCategory(
+    productId?: number,
+    categoryId?: number,
+    cu?: JWTPayload,
+    scopes?: ScopedAccessEnum[],
+    manager?: EntityManager,
+  ): Promise<PaymentRule[]> {
+    const filters: ListFilter[] = [
+      {
+        property: 'isActive',
+        operator: ConditionalOperator.EQUAL,
+        value: 'true',
+      },
+    ];
 
-    //   if (!processedTuples.has(worType) && rule.product) {
-    //     result.push(rule);
-    //     processedTuples.add(worType);
-    //   }
-    // }
+    if (productId) {
+      filters.push({
+        property: 'product.id',
+        operator: ConditionalOperator.EQUAL,
+        value: String(productId),
+        logicalOperator: LogicalOperator.AND,
+      });
+    }
 
-    // // Segunda pasada: agregar reglas sin producto pero con la misma tupla(workerType, otherType)
-    // for (const rule of rules.data as Array<PaymentRule>) {
-    //   const worType =
-    //     rule.workerType !== null
-    //       ? `workerType:${rule.workerType}`
-    //       : `otherType:${rule.otherType}`;
+    if (categoryId) {
+      filters.push({
+        property: 'category.id',
+        operator: ConditionalOperator.EQUAL,
+        value: String(categoryId),
+        logicalOperator: LogicalOperator.AND,
+      });
+    }
 
-    //   if (!processedTuples.has(worType)) {
-    //     result.push(rule);
-    //     processedTuples.add(worType);
-    //   }
-    // }
-    //return result;
+    const rules = await this.find(
+      {
+        filters,
+      },
+      cu,
+      scopes,
+      manager,
+    );
 
     return rules.data as Array<PaymentRule>;
   }

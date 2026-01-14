@@ -1,6 +1,7 @@
 import { Entity, Column, OneToMany } from 'typeorm';
 import { SecurityBaseEntity } from '../../../../core/entities/security-base.entity';
 import { WorkerPayment } from '../../worker-payment/entities/worker-payment.entity';
+import { PaymentAccumulator } from '../../payment_accumulator/entities/payment_accumulator.entity';
 
 @Entity('py_payroll_periods')
 export class PayrollPeriod extends SecurityBaseEntity {
@@ -21,4 +22,14 @@ export class PayrollPeriod extends SecurityBaseEntity {
 
   @OneToMany(() => WorkerPayment, (payment) => payment.payrollPeriod)
   payments: WorkerPayment[];
+
+  // Relaciones inversas.
+  @OneToMany(
+    () => PaymentAccumulator,
+    (accumulator) => accumulator.payrollPeriod,
+  )
+  paymentAccumulators?: PaymentAccumulator[];
+
+  @OneToMany(() => WorkerPayment, (payment) => payment.payrollPeriod)
+  workerPayments?: WorkerPayment[];
 }
