@@ -4,9 +4,8 @@ import {
   IsString,
   IsOptional,
   IsObject,
-  IsDate,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+
 import { PaymentMethod } from '../enums/payment-method.enum';
 import { PaymentConcept } from '../enums/payment-concept.enum';
 import { CreateSecurityBaseInput } from '../../../../core/dtos/create-security-base.input';
@@ -58,6 +57,9 @@ export class CreateWorkerPaymentInput extends CreateSecurityBaseInput {
     distributeProfits?: boolean;
     accumulatorId?: number;
     calculationSummary?: any;
+    reversed?: boolean;
+    reversalReason?: string;
+    reversalDate?: Date;
   };
 
   @IsOptional()

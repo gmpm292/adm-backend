@@ -16,6 +16,7 @@ type PaymentProcessingSummary {
   errorCount: Int!
 }
 
+# Input para procesamiento batch
 input ProcessPaymentsInput {
   payrollPeriodId: Int!
   businessId: Int
@@ -26,30 +27,66 @@ input ProcessPaymentsInput {
   force: Boolean
 }
 
-extend type Query {
-  paymentProcessingStatus(
-    payrollPeriodId: Int!
-    scopes: [ScopedAccessEnum!]
-  ): PaymentProcessingSummary!
-
-  processedPayments(
-    payrollPeriodId: Int!
-    options: ListOptions
-    scopes: [ScopedAccessEnum!]
-  ): PaymentProcessingSummary!
+# Input para procesamiento en tiempo real de venta
+input ProcessSalePaymentInput {
+  saleId: Int!
 }
 
+# Input para reversión de pagos de venta
+input RollbackSalePaymentsInput {
+  saleId: Int!
+  reason: String!
+  compensateInNextPeriod: Boolean
+  nextPeriodId: Int
+}
+
+# Resultado de procesamiento de venta
+type SalePaymentProcessingResult {
+  success: Boolean!
+  paymentsCreated: Int!
+  totalAmount: Float!
+  saleId: Int!
+  details: [JSON!]!
+}
+
+# Resultado de reversión de venta
+type RollbackSalePaymentsResult {
+  success: Boolean!
+  originalPaymentsReversed: Int!
+  compensationPaymentsCreated: Int!
+  nextPeriodId: Int
+  details: [JSON!]!
+}
+
+# NOTA: extend type Query removido porque está vacío
+# Se agregará cuando tengamos queries implementadas
+
 extend type Mutation {
+  # Procesar pagos batch (FIXED_AMOUNT)
   processPayments(
     processPaymentsInput: ProcessPaymentsInput!
     scopes: [ScopedAccessEnum!]
   ): PaymentProcessingSummary!
 
-  approvePayments(paymentIds: [Int!]!, scopes: [ScopedAccessEnum!]): Int!
-
-  rejectPayments(
-    paymentIds: [Int!]!
-    reason: String!
+  # Procesar pagos de una venta en tiempo real
+  processSalePayment(
+    processSalePaymentInput: ProcessSalePaymentInput!
     scopes: [ScopedAccessEnum!]
-  ): Int!
+  ): SalePaymentProcessingResult!
+
+  # Revertir pagos de una venta (devolución/cancelación)
+  rollbackSalePayments(
+    rollbackSalePaymentsInput: RollbackSalePaymentsInput!
+    scopes: [ScopedAccessEnum!]
+  ): RollbackSalePaymentsResult!
+
+  # TODO: Implementar luego
+  # approvePayments(paymentIds: [Int!]!, scopes: [ScopedAccessEnum!]): Int!
+
+  # TODO: Implementar luego
+  # rejectPayments(
+  #   paymentIds: [Int!]!
+  #   reason: String!
+  #   scopes: [ScopedAccessEnum!]
+  # ): Int!
 }

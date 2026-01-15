@@ -18,6 +18,8 @@ import { PaymentConcept } from '../../worker-payment/enums/payment-concept.enum'
 import { PaymentMethod } from '../../worker-payment/enums/payment-method.enum';
 import { ListFilter } from '../../../../core/graphql/remote-operations';
 import { LogicalOperator } from '../../../../core/graphql/remote-operations/enums/logical-operator.enum';
+import { PeriodBatchCalculationResult } from '../types/payment-calculation.types';
+import { WorkerPayment } from '../../worker-payment/entities/worker-payment.entity';
 
 @Injectable()
 export class PaymentBatchService {
@@ -33,6 +35,9 @@ export class PaymentBatchService {
     private readonly fixedAmountProcessor: FixedAmountProcessor,
   ) {}
 
+  /**
+   * Procesar pagos de un período completo (Batch)
+   */
   /**
    * Procesar pagos de un período completo (Batch)
    */
@@ -180,6 +185,11 @@ export class PaymentBatchService {
         operator: ConditionalOperator.EQUAL,
         value: 'true',
       },
+      // {
+      //   property: 'business.id',
+      //   operator: ConditionalOperator.EQUAL,
+      //   value: String(cu?.businessId),
+      // },
     ];
 
     // Filtro para tipos de pago por periodo
@@ -223,11 +233,13 @@ export class PaymentBatchService {
     let successCount = 0;
     let errorCount = 0;
 
-    // Switch según tipo de regla
+    // 1. CALCULAR PAGOS POR WORKER (el processor maneja TODO)
+    let calculationResult: PeriodBatchCalculationResult;
+
+    // Switch solo para identificar el processor
     switch (rule.paymentType) {
-      // Usar el FixedAmountProcessor para calcular pagos batch
-      case PaymentType.FIXED_AMOUNT: {
-        const calculationResult =
+      case PaymentType.FIXED_AMOUNT:
+        calculationResult =
           await this.fixedAmountProcessor.calculateBatchForPeriod(
             rule,
             input,
@@ -236,185 +248,204 @@ export class PaymentBatchService {
             scopes,
             manager,
           );
+        break;
 
-        // Crear pagos para cada worker
-        for (const workerPayment of calculationResult.workerPayments) {
-          try {
-            // Verificar si ya existe pago para este worker, regla y período
-            if (!input.force) {
-              const existingPayment = await this.workerPaymentService.find(
-                {
-                  filters: [
-                    {
-                      property: 'worker.id',
-                      operator: ConditionalOperator.EQUAL,
-                      value: String(workerPayment.workerId),
-                    },
-                    {
-                      property: 'payrollPeriod.id',
-                      operator: ConditionalOperator.EQUAL,
-                      value: String(payrollPeriod.id),
-                    },
-                    {
-                      property: 'breakdown.ruleId',
-                      operator: ConditionalOperator.EQUAL,
-                      value: String(rule.id),
-                    },
-                    {
-                      property: 'breakdown.ruleType',
-                      operator: ConditionalOperator.EQUAL,
-                      value: rule.paymentType,
-                    },
-                  ],
-                },
-                cu,
-                scopes,
-                manager,
-              );
+      default:
+        console.warn(
+          `[PaymentBatch] Tipo de regla no soportado para batch: ${rule.paymentType}`,
+        );
+        return { results, successCount, errorCount };
+    }
 
-              if (existingPayment.data.length > 0) {
-                // SKIP: Ya existe pago
-                results.push({
-                  workerId: workerPayment.workerId,
-                  workerName: workerPayment.workerName,
-                  amount: workerPayment.amount,
-                  currency: workerPayment.currency,
-                  paymentConcept: PaymentConcept.SALARY,
-                  status: 'SKIPPED',
-                  details: {
-                    existingPaymentId: existingPayment.data[0].id,
-                    ruleId: rule.id,
-                    ruleName: rule.name,
-                    note: 'Pago ya existente, force=false',
-                  },
-                });
-                continue;
-              }
-            }
+    // Si no hay pagos calculados, retornar
+    if (calculationResult.workerPayments.length === 0) {
+      console.log(
+        `[PaymentBatch] No hay pagos calculados para la regla ${rule.name}`,
+      );
+      return { results, successCount, errorCount };
+    }
 
-            // Si force=true y existe pago, eliminarlo primero
-            if (input.force) {
-              const existingPayments = await this.workerPaymentService.find(
-                {
-                  filters: [
-                    {
-                      property: 'worker.id',
-                      operator: ConditionalOperator.EQUAL,
-                      value: String(workerPayment.workerId),
-                    },
-                    {
-                      property: 'payrollPeriod.id',
-                      operator: ConditionalOperator.EQUAL,
-                      value: String(payrollPeriod.id),
-                    },
-                    {
-                      property: 'breakdown.ruleId',
-                      operator: ConditionalOperator.EQUAL,
-                      value: String(rule.id),
-                    },
-                  ],
-                },
-                cu,
-                scopes,
-                manager,
-              );
+    // 2. CREAR PAGOS PARA CADA WORKER (lógica genérica fuera del switch)
+    for (const workerPayment of calculationResult.workerPayments) {
+      if (workerPayment.amount <= 0) continue;
 
-              if (existingPayments.data.length > 0) {
-                await this.workerPaymentService.remove(
-                  existingPayments.data.map((p) => p.id as number),
-                  cu,
-                  scopes,
-                  manager,
-                );
-                console.log(
-                  `[PaymentBatch] Eliminados ${existingPayments.data.length} pagos existentes para worker ${workerPayment.workerId}`,
-                );
-              }
-            }
-
-            // Crear nuevo pago
-            const createdPayment = await this.workerPaymentService.create(
+      try {
+        // Verificar si ya existe pago para este worker, regla y período
+        if (!input.force) {
+          const existingPayment = (
+            await this.workerPaymentService.find(
               {
-                workerId: workerPayment.workerId,
-                payrollPeriodId: payrollPeriod.id as number,
-                amount: workerPayment.amount,
-                currency: workerPayment.currency,
-                paymentConcept: PaymentConcept.SALARY,
-                paymentMethod: PaymentMethod.CASH,
-                breakdown: {
-                  ...workerPayment.calculationDetails,
-                  ruleId: rule.id,
-                  ruleName: rule.name,
-                  ruleType: rule.paymentType,
-                  scope: rule.scope,
-                  workerId: workerPayment.workerId,
-                  workerName: workerPayment.workerName,
-                  payrollPeriodId: payrollPeriod.id,
-                  periodStart: payrollPeriod.startDate,
-                  periodEnd: payrollPeriod.endDate,
-                  batchProcessed: true,
-                  forceApplied: input.force || false,
-                },
-                notes: `Pago batch período ${payrollPeriod.id} - ${rule.name}`,
+                filters: [
+                  {
+                    property: 'worker.id',
+                    operator: ConditionalOperator.EQUAL,
+                    value: String(workerPayment.workerId),
+                  },
+                  {
+                    property: 'payrollPeriod.id',
+                    operator: ConditionalOperator.EQUAL,
+                    value: String(payrollPeriod.id),
+                  },
+                  {
+                    property: 'breakdown.ruleId',
+                    operator: ConditionalOperator.EQUAL,
+                    value: String(rule.id),
+                  },
+                ],
               },
               cu,
               scopes,
               manager,
-            );
+            )
+          ).data as WorkerPayment[];
 
+          if (existingPayment.length > 0) {
+            // SKIP: Ya existe pago
             results.push({
               workerId: workerPayment.workerId,
               workerName: workerPayment.workerName,
               amount: workerPayment.amount,
               currency: workerPayment.currency,
               paymentConcept: PaymentConcept.SALARY,
-              status: 'SUCCESS',
+              status: 'SKIPPED',
               details: {
-                paymentId: createdPayment.id,
+                existingPaymentId: existingPayment[0].id,
                 ruleId: rule.id,
                 ruleName: rule.name,
-                ruleType: rule.paymentType,
-                scope: rule.scope,
+                note: 'Pago ya existente, force=false',
               },
             });
-            successCount++;
-          } catch (paymentError) {
-            console.error(
-              `[PaymentBatch] Error creando pago para worker ${workerPayment.workerId}:`,
-              paymentError,
-            );
-
-            results.push({
-              workerId: workerPayment.workerId,
-              workerName: workerPayment.workerName,
-              amount: 0,
-              currency: workerPayment.currency,
-              paymentConcept: PaymentConcept.SALARY,
-              status: 'ERROR',
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-              errors: [paymentError.message],
-              details: {
-                ruleId: rule.id,
-                ruleName: rule.name,
-                ruleType: rule.paymentType,
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-                error: paymentError.message,
-              },
-            });
-            errorCount++;
+            continue;
           }
         }
-        break;
-      }
 
-      default:
-        console.warn(
-          `[PaymentBatch] Tipo de regla no soportado para batch: ${rule.paymentType}`,
+        // Si force=true y existe pago, eliminarlo primero
+        if (input.force) {
+          const existingPayments = (
+            await this.workerPaymentService.find(
+              {
+                filters: [
+                  {
+                    property: 'worker.id',
+                    operator: ConditionalOperator.EQUAL,
+                    value: String(workerPayment.workerId),
+                  },
+                  {
+                    property: 'payrollPeriod.id',
+                    operator: ConditionalOperator.EQUAL,
+                    value: String(payrollPeriod.id),
+                  },
+                  {
+                    property: 'breakdown.ruleId',
+                    operator: ConditionalOperator.EQUAL,
+                    value: String(rule.id),
+                  },
+                ],
+              },
+              cu,
+              scopes,
+              manager,
+            )
+          ).data as WorkerPayment[];
+
+          if (existingPayments.length > 0) {
+            await this.workerPaymentService.remove(
+              existingPayments.map((p) => p.id as number),
+              cu,
+              scopes,
+              manager,
+            );
+            console.log(
+              `[PaymentBatch] Eliminados ${existingPayments.length} pagos existentes para worker ${workerPayment.workerId}`,
+            );
+          }
+        }
+
+        // Crear nuevo pago
+        const createdPayment = await this.workerPaymentService.create(
+          {
+            workerId: workerPayment.workerId,
+            payrollPeriodId: payrollPeriod.id as number,
+            amount: workerPayment.amount,
+            currency: workerPayment.currency,
+            paymentConcept: PaymentConcept.SALARY,
+            paymentMethod: PaymentMethod.CASH,
+            breakdown: {
+              // Propiedades requeridas por el DTO
+              ruleId: rule.id,
+              ruleName: rule.name,
+              ruleType: rule.paymentType,
+              baseSalary: workerPayment.amount, // Fixed amount = base salary
+
+              // Propiedades opcionales inicializadas
+              commissions: 0,
+              bonuses: 0,
+              deductions: 0,
+
+              // Propiedades de trazabilidad
+              //scope: rule.scope,
+              //workerId: workerPayment.workerId,
+              //workerName: workerPayment.workerName,
+              //payrollPeriodId: payrollPeriod.id,
+              //periodStart: payrollPeriod.startDate,
+              //periodEnd: payrollPeriod.endDate,
+              //batchProcessed: true,
+              //forceApplied: input.force || false,
+
+              // Todos los detalles de cálculo van aquí
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+              calculationSummary: workerPayment.calculationDetails,
+            },
+            notes: `Pago batch período ${payrollPeriod.id} - ${rule.name}`,
+          },
+          cu,
+          scopes,
+          manager,
         );
+
+        results.push({
+          workerId: workerPayment.workerId,
+          workerName: workerPayment.workerName,
+          amount: workerPayment.amount,
+          currency: workerPayment.currency,
+          paymentConcept: PaymentConcept.SALARY,
+          status: 'SUCCESS',
+          details: {
+            paymentId: createdPayment.id,
+            ruleId: rule.id,
+            ruleName: rule.name,
+            ruleType: rule.paymentType,
+            scope: rule.scope,
+          },
+        });
+        successCount++;
+      } catch (paymentError) {
+        console.error(
+          `[PaymentBatch] Error creando pago para worker ${workerPayment.workerId}:`,
+          paymentError,
+        );
+
+        results.push({
+          workerId: workerPayment.workerId,
+          workerName: workerPayment.workerName,
+          amount: 0,
+          currency: workerPayment.currency,
+          paymentConcept: PaymentConcept.SALARY,
+          status: 'ERROR',
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+          errors: [paymentError.message],
+          details: {
+            ruleId: rule.id,
+            ruleName: rule.name,
+            ruleType: rule.paymentType,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+            error: paymentError.message,
+          },
+        });
+        errorCount++;
+      }
     }
 
     return { results, successCount, errorCount };
   }
-
-  // ... (mantener otros métodos existentes)
 }

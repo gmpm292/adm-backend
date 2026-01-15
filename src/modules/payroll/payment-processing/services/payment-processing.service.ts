@@ -6,19 +6,23 @@ import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
 import { PaymentProcessingSummary } from '../types/payment-processing-summary.type';
 import { ProcessPaymentsInput } from '../dto/process-payments.input';
 
-import { RealTimePaymentProcessor } from './real-time-payment.service';
+import { RealTimePaymentService } from './real-time-payment.service';
 import { PaymentBatchService } from './payment-batch.service';
 import { ProcessSalePaymentInput } from '../dto/process-sale-payment.input';
 import { RollbackSalePaymentsInput } from '../dto/rollback-sale-payments.input';
+import { PaymentRollbackService } from './payment-rollback.service';
 
 @Injectable()
 export class PaymentProcessingService {
   constructor(
-    @Inject(RealTimePaymentProcessor)
-    private readonly realTimeProcessor: RealTimePaymentProcessor,
+    @Inject(RealTimePaymentService)
+    private readonly realTimeProcessor: RealTimePaymentService,
 
     @Inject(PaymentBatchService)
     private readonly batchService: PaymentBatchService,
+
+    @Inject(PaymentRollbackService)
+    private readonly rollbackService: PaymentRollbackService,
   ) {}
 
   /**
@@ -178,7 +182,7 @@ export class PaymentProcessingService {
 
   /**
    * REVERTIR PAGOS: Para devoluciones de venta
-   * Crea pagos negativos (descuentos) para el próximo período
+   * Delega toda la lógica al servicio especializado
    */
   async rollbackSalePayments(
     input: RollbackSalePaymentsInput,
@@ -192,209 +196,15 @@ export class PaymentProcessingService {
     nextPeriodId?: number;
     details: any[];
   }> {
-    try {
-      console.log(
-        `[PaymentProcessing] Rolling back payments for sale ${input.saleId}`,
-      );
+    console.log(
+      `[PaymentProcessing] Delegando reversión de venta ${input.saleId} al servicio especializado`,
+    );
 
-      // 1. Buscar todos los pagos de esta venta
-      const reversedPayments = await this.batchService.findPaymentsBySaleId(
-        input.saleId,
-        cu,
-        scopes,
-        manager,
-      );
-
-      // 2. Marcar como reversados (soft delete o flag)
-      await this.batchService.markPaymentsAsReversed(
-        reversedPayments.map((p) => p.id as number),
-        input.reason,
-        cu,
-        scopes,
-        manager,
-      );
-
-      // 3. Si los pagos ya fueron efectuados, crear compensaciones
-      let compensationPayments = 0;
-      let nextPeriodId: number | undefined;
-
-      if (input.compensateInNextPeriod && reversedPayments.length > 0) {
-        const compensationResult =
-          await this.batchService.createCompensationPayments(
-            reversedPayments,
-            input.reason,
-            cu,
-            scopes,
-            manager,
-          );
-
-        compensationPayments = compensationResult.createdCount;
-        nextPeriodId = compensationResult.nextPeriodId;
-      }
-
-      console.log(
-        `[PaymentProcessing] Rollback completed. ` +
-          `Reversed: ${reversedPayments.length}, Compensations: ${compensationPayments}`,
-      );
-
-      return {
-        success: true,
-        originalPaymentsReversed: reversedPayments.length,
-        compensationPaymentsCreated: compensationPayments,
-        nextPeriodId,
-        details: reversedPayments.map((p) => ({
-          paymentId: p.id,
-          workerId: p.worker?.id,
-          amount: p.amount,
-          currency: p.currency,
-          reversed: true,
-        })),
-      };
-    } catch (error) {
-      console.error(
-        `[PaymentProcessing] Rollback failed for sale ${input.saleId}:`,
-        error,
-      );
-
-      return {
-        success: false,
-        originalPaymentsReversed: 0,
-        compensationPaymentsCreated: 0,
-        details: [
-          {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-            error: error.message,
-            timestamp: new Date().toISOString(),
-          },
-        ],
-      };
-    }
+    return this.rollbackService.rollbackSalePayments(
+      input,
+      cu,
+      scopes,
+      manager,
+    );
   }
-
-  // /**
-  //  * OBTENER ESTADO: Verificar pagos de una venta específica
-  //  */
-  // async getSalePaymentStatus(
-  //   saleId: number,
-  //   cu?: JWTPayload,
-  //   scopes?: ScopedAccessEnum[],
-  //   manager?: EntityManager,
-  // ): Promise<{
-  //   hasPayments: boolean;
-  //   paymentsCount: number;
-  //   totalAmount: number;
-  //   payments: Array<{
-  //     id: number;
-  //     workerId: number;
-  //     workerName: string;
-  //     amount: number;
-  //     currency: string;
-  //     ruleName: string;
-  //     ruleType: string;
-  //     createdAt: Date;
-  //   }>;
-  // }> {
-  //   const payments = await this.batchService.findPaymentsBySaleId(
-  //     saleId,
-  //     cu,
-  //     scopes,
-  //     manager,
-  //   );
-
-  //   return {
-  //     hasPayments: payments.length > 0,
-  //     paymentsCount: payments.length,
-  //     totalAmount: payments.reduce((sum, p) => sum + p.amount, 0),
-  //     payments: payments.map((p) => ({
-  //       id: p.id as number,
-  //       workerId: p.worker?.id as number,
-  //       workerName:
-  //         p.worker?.user?.fullName ||
-  //         `${p.worker?.tempFirstName} ${p.worker?.tempLastName}`,
-  //       amount: p.amount,
-  //       currency: p.currency,
-  //       ruleName: p.breakdown?.ruleName || 'Unknown',
-  //       ruleType: p.breakdown?.ruleType || 'Unknown',
-  //       createdAt: p.createdAt!,
-  //     })),
-  //   };
-  // }
-
-  // /**
-  //  * REPROCESAR VENTA: Forzar reprocesamiento de una venta
-  //  * Útil para correcciones o cambios en reglas
-  //  */
-  // async reprocessSale(
-  //   saleId: number,
-  //   force: boolean = false,
-  //   cu?: JWTPayload,
-  //   scopes?: ScopedAccessEnum[],
-  //   manager?: EntityManager,
-  // ): Promise<{
-  //   success: boolean;
-  //   previousPaymentsRemoved: number;
-  //   newPaymentsCreated: number;
-  //   details: any[];
-  // }> {
-  //   try {
-  //     console.log(
-  //       `[PaymentProcessing] Reprocessing sale ${saleId}, force: ${force}`,
-  //     );
-
-  //     // 1. Si force=true, eliminar pagos existentes primero
-  //     let previousPaymentsRemoved = 0;
-  //     if (force) {
-  //       const existingPayments = await this.batchService.findPaymentsBySaleId(
-  //         saleId,
-  //         cu,
-  //         scopes,
-  //         manager,
-  //       );
-
-  //       if (existingPayments.length > 0) {
-  //         await this.batchService.removePayments(
-  //           existingPayments.map((p) => p.id as number),
-  //           'Reprocessing sale with force=true',
-  //           cu,
-  //           scopes,
-  //           manager,
-  //         );
-  //         previousPaymentsRemoved = existingPayments.length;
-  //       }
-  //     }
-
-  //     // 2. Procesar la venta nuevamente
-  //     const processingResult = await this.realTimeProcessor.processSale(
-  //       saleId,
-  //       cu,
-  //       scopes,
-  //       manager,
-  //     );
-
-  //     return {
-  //       success: true,
-  //       previousPaymentsRemoved,
-  //       newPaymentsCreated: processingResult.paymentsCreated,
-  //       details: processingResult.details,
-  //     };
-  //   } catch (error) {
-  //     console.error(
-  //       `[PaymentProcessing] Reprocessing failed for sale ${saleId}:`,
-  //       error,
-  //     );
-
-  //     return {
-  //       success: false,
-  //       previousPaymentsRemoved: 0,
-  //       newPaymentsCreated: 0,
-  //       details: [
-  //         {
-  //           // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-  //           error: error.message,
-  //           timestamp: new Date().toISOString(),
-  //         },
-  //       ],
-  //     };
-  //   }
-  // }
 }

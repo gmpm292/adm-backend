@@ -26,7 +26,7 @@ import { PaymentMethod } from '../../worker-payment/enums/payment-method.enum';
 import { RealTimeCalculationResult } from '../types/real-time-calculation.types';
 
 @Injectable()
-export class RealTimePaymentProcessor {
+export class RealTimePaymentService {
   REAL_TIME_PAYMENT_TYPES = [
     PaymentType.PRICE_RANGE,
     PaymentType.SALE_QUANTITY,

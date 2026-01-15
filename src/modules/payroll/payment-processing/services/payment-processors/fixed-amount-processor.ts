@@ -1,4 +1,3 @@
-// payment-processing/services/payment-processors/fixed-amount-processor.ts
 import { Injectable } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 import { BasePaymentProcessor } from './base-processor';
@@ -16,35 +15,9 @@ import { DepartmentService } from '../../../../company/department/services/depar
 import { TeamService } from '../../../../company/team/services/team.service';
 import { ProcessPaymentsInput } from '../../dto/process-payments.input';
 import { PayrollPeriod } from '../../../payroll-period/entities/payroll-period.entity';
-
-// Interface para resultado de cálculo batch
-export interface BatchWorkerPayment {
-  workerId: number;
-  workerName: string;
-  amount: number;
-  currency: string;
-  calculationDetails: {
-    fixedAmount: number;
-    multiplier: number;
-    unitType: string;
-    scope: string;
-    finalAmount: number;
-    currency: string;
-    payrollPeriodId: number;
-    periodStart: Date;
-    periodEnd: Date;
-    businessId?: number;
-    officeCount?: number;
-    departmentCount?: number;
-    teamCount?: number;
-  };
-}
-
-interface BatchCalculationResult {
-  workerPayments: BatchWorkerPayment[];
-  totalAmount: number;
-  totalWorkers: number;
-}
+import { PeriodBatchCalculationResult } from '../../types/payment-calculation.types';
+import { ListFilter } from '../../../../../core/graphql/remote-operations';
+import { LogicalOperator } from '../../../../../core/graphql/remote-operations/enums/logical-operator.enum';
 
 @Injectable()
 export class FixedAmountProcessor extends BasePaymentProcessor {
@@ -62,7 +35,6 @@ export class FixedAmountProcessor extends BasePaymentProcessor {
 
   /**
    * Calcular pagos batch para un período completo
-   * Este es el método principal para procesamiento FIXED_AMOUNT
    */
   async calculateBatchForPeriod(
     rule: PaymentRule,
@@ -71,7 +43,7 @@ export class FixedAmountProcessor extends BasePaymentProcessor {
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
-  ): Promise<BatchCalculationResult> {
+  ): Promise<PeriodBatchCalculationResult> {
     console.log(
       `[FixedAmountProcessor] Calculando batch para regla ${rule.name}`,
     );
@@ -123,13 +95,13 @@ export class FixedAmountProcessor extends BasePaymentProcessor {
     }
 
     switch (rule.scope) {
-      case 'BUSINESS':
+      case ScopedAccessEnum.BUSINESS:
         multiplier = 1;
         unitType = 'BUSINESS';
         scopeDetails = { businessId };
         break;
 
-      case 'OFFICE': {
+      case ScopedAccessEnum.OFFICE: {
         const officeCount = await this.getUnitCount(
           'office',
           businessId,
@@ -144,7 +116,7 @@ export class FixedAmountProcessor extends BasePaymentProcessor {
         break;
       }
 
-      case 'DEPARTMENT': {
+      case ScopedAccessEnum.DEPARTMENT: {
         const departmentCount = await this.getUnitCount(
           'department',
           businessId,
@@ -159,7 +131,7 @@ export class FixedAmountProcessor extends BasePaymentProcessor {
         break;
       }
 
-      case 'TEAM': {
+      case ScopedAccessEnum.TEAM: {
         const teamCount = await this.getUnitCount(
           'team',
           businessId,
@@ -181,15 +153,14 @@ export class FixedAmountProcessor extends BasePaymentProcessor {
 
     // 4. Calcular monto final por worker
     const finalAmountPerWorker = fixedAmount * multiplier;
-    const workerPayments: BatchWorkerPayment[] = [];
+    const workerPayments: PeriodBatchCalculationResult['workerPayments'] = [];
     let totalAmount = 0;
 
     for (const worker of applicableWorkers) {
-      const workerName = this.getWorkerName(worker);
-
       workerPayments.push({
         workerId: worker.id as number,
-        workerName,
+        workerName:
+          worker.tempFirstName ?? worker.user?.name ?? `Worker ${worker.id}`,
         amount: finalAmountPerWorker,
         currency,
         calculationDetails: {
@@ -215,7 +186,7 @@ export class FixedAmountProcessor extends BasePaymentProcessor {
     );
 
     return {
-      workerPayments,
+      workerPayments, // ← Ahora coincide con PeriodBatchCalculationResult
       totalAmount,
       totalWorkers: workerPayments.length,
     };
@@ -231,7 +202,7 @@ export class FixedAmountProcessor extends BasePaymentProcessor {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Worker[]> {
-    const filters: any[] = [
+    const filters: ListFilter[] = [
       {
         property: 'isActive',
         operator: ConditionalOperator.EQUAL,
@@ -288,11 +259,16 @@ export class FixedAmountProcessor extends BasePaymentProcessor {
 
     // Filtro específico por workerIds si está definido
     if (input.workerIds && input.workerIds.length > 0) {
-      filters.push({
-        property: 'id',
-        operator: ConditionalOperator.IN,
-        value: input.workerIds.join(','),
-      });
+      const workerIdsFilters: ListFilter[] = [];
+      for (const id of input.workerIds) {
+        workerIdsFilters.push({
+          property: 'id',
+          operator: ConditionalOperator.EQUAL,
+          value: String(id),
+          logicalOperator: LogicalOperator.OR,
+        });
+      }
+      filters.push({ filters: workerIdsFilters });
     }
 
     const workersResult = await this.workerService.find(
@@ -345,55 +321,17 @@ export class FixedAmountProcessor extends BasePaymentProcessor {
         service = this.teamService;
         break;
       default:
-        throw new Error(`Tipo de unidad no soportado: ${unitType}`);
+        throw new Error(`Tipo de unidad no soportado: ${String(unitType)}`);
     }
 
-    const result = await service.find(
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+    const { totalCount } = await service.find(
       { filters, take: 0 }, // take: 0 para solo obtener count
       cu,
       scopes,
       manager,
     );
 
-    return result.totalCount;
-  }
-
-  /**
-   * Métodos heredados (mantener para compatibilidad)
-   */
-  // eslint-disable-next-line @typescript-eslint/require-await, @typescript-eslint/no-unused-vars
-  async calculateIncremental(context: any): Promise<any> {
-    throw new Error('Use calculateBatchForPeriod instead');
-  }
-
-  // eslint-disable-next-line @typescript-eslint/require-await, @typescript-eslint/no-unused-vars
-  async calculateBatch(context: any): Promise<any> {
-    throw new Error('Use calculateBatchForPeriod instead');
-  }
-
-  // eslint-disable-next-line @typescript-eslint/require-await, @typescript-eslint/no-unused-vars
-  async realTimeCalculate(
-    rule: any,
-    sale: any,
-    payrollPeriod: any,
-    cu?: any,
-    scopes?: any,
-    manager?: any,
-  ): Promise<any> {
-    return {
-      workerPayments: [],
-      ruleSummary: {
-        ruleId: rule.id as number,
-        ruleName: rule.name,
-        ruleType: rule.paymentType,
-        totalAmount: 0,
-        totalWorkers: 0,
-        distributeProfitsApplied: false,
-        baseCalculation: {
-          amount: 0,
-          currency: rule.paymentCurrency,
-        },
-      },
-    };
+    return totalCount as number;
   }
 }

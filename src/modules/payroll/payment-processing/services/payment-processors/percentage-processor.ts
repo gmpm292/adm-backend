@@ -309,15 +309,4 @@ export class PercentageProcessor extends BasePaymentProcessor {
       },
     };
   }
-
-  // Mantener métodos existentes para compatibilidad
-  // eslint-disable-next-line @typescript-eslint/require-await, @typescript-eslint/no-unused-vars
-  async calculateIncremental(context: any): Promise<any> {
-    throw new Error('Use realTimeCalculate instead');
-  }
-
-  // eslint-disable-next-line @typescript-eslint/require-await, @typescript-eslint/no-unused-vars
-  async calculateBatch(context: any): Promise<any> {
-    throw new Error('Use realTimeCalculate instead');
-  }
 }
