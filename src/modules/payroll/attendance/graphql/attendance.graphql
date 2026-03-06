@@ -17,13 +17,13 @@ type Attendance implements SecurityBaseEntity {
   attendanceDate: Date!
   checkInTime: String
   checkOutTime: String
-  status: AttendanceStatus!
-  hoursWorked: Float!
-  isPaid: Boolean!
+  status: AttendanceStatus
+  hoursWorked: Float
+  isPaid: Boolean
   workSchedule: WorkSchedule
   notes: String
-  isHoliday: Boolean!
-  recordedAt: Date!
+  isHoliday: Boolean
+  recordedAt: Date
 }
 
 type AttendancesSummary {
@@ -32,12 +32,12 @@ type AttendancesSummary {
 }
 
 enum AttendanceStatus {
-  PRESENT
-  ABSENT
-  LATE
-  EARLY_DEPARTURE
-  VACATION
-  SICK_LEAVE
+  present
+  absent
+  late
+  early_departure
+  vacation
+  sick_leave
 }
 
 input CreateAttendanceInput {

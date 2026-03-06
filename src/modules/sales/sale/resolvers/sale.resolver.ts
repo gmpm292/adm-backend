@@ -18,6 +18,7 @@ import { SaleFiltersValidator } from '../filters-validator/sale-filters.validato
 import { MakeSaleInput } from '../dto/make-sale.input';
 import { ValidateSalePaymentsInput } from '../dto/validate-sale-payments.input';
 import { SalePaymentValidationResponse } from '../types/sale-payment-validation.response';
+import { RefundSaleInput } from '../dto/refund-sale.input';
 
 @Resolver('Sale')
 export class SaleResolver {
@@ -134,5 +135,15 @@ export class SaleResolver {
       validateSalePaymentsInput.payments,
       validateSalePaymentsInput.baseCurrency,
     );
+  }
+
+  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER)
+  @UseGuards(AccessTokenAuthGuard, RoleGuard)
+  @Mutation('refundSale')
+  async refundSale(
+    @CurrentUser() user: JWTPayload,
+    @Args('refundSaleInput') refundSaleInput: RefundSaleInput,
+  ) {
+    return this.saleService.refundSale(refundSaleInput, user);
   }
 }

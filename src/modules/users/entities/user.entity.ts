@@ -5,6 +5,7 @@ import {
   Index,
   ManyToOne,
   OneToMany,
+  OneToOne,
   TableInheritance,
 } from 'typeorm';
 
@@ -17,6 +18,7 @@ import { Office } from '../../company/office/entities/co_office.entity';
 import { Department } from '../../company/department/entities/co_department.entity';
 import { Team } from '../../company/team/entities/co_team.entity';
 import { UserRelation } from '../../user-relation/entities/user-relation.entity';
+import { Worker } from '../../payroll/worker/entities/worker.entity';
 
 @Entity('users')
 @TableInheritance({
@@ -115,4 +117,8 @@ export class User extends BaseEntity {
     nullable: true,
   })
   team?: Team;
+
+  // //Relaciones Inversas:
+  // @OneToOne(() => Worker, (worker) => worker.user)
+  // worker?: Worker;
 }

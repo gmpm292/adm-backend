@@ -70,7 +70,7 @@ export class ProductService extends BaseService<Product> {
 
     return super.baseCreate({
       data: product,
-      uniqueFields: ['name'],
+      uniqueFields: [],
       cu,
       scopes,
       manager,

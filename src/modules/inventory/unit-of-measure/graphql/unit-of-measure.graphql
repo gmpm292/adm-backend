@@ -1,0 +1,81 @@
+"""
+Represents a unit of measure (e.g., gram, kilogram, pound, liter).
+Used across the system for consistent measurement units.
+"""
+type UnitOfMeasure implements SecurityBaseEntity {
+  id: Int!
+  createdAt: Date!
+  updatedAt: Date!
+  deletedAt: Date
+
+  createdBy: User
+  updatedBy: User
+  deletedBy: User
+
+  business: Business
+  office: Office
+  department: Department
+  team: Team
+
+  name: String!
+  symbol: String!
+  category: String
+  description: String
+  isActive: Boolean!
+
+  # Relationships
+  materialCosts: [MaterialCost]
+}
+
+type UnitsOfMeasureSummary {
+  data: [UnitOfMeasure]!
+  totalCount: Int!
+}
+
+input CreateUnitOfMeasureInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  name: String!
+  symbol: String!
+  category: String
+  description: String
+  isActive: Boolean
+}
+
+input UpdateUnitOfMeasureInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  id: Int!
+  name: String
+  symbol: String
+  category: String
+  description: String
+  isActive: Boolean
+}
+
+extend type Query {
+  unitOfMeasures(options: ListOptions): UnitsOfMeasureSummary!
+  unitOfMeasure(id: Int!): UnitOfMeasure
+  unitsOfMeasureByCategory(
+    category: String!
+    options: ListOptions
+  ): UnitsOfMeasureSummary!
+}
+
+extend type Mutation {
+  createUnitOfMeasure(
+    createUnitOfMeasureInput: CreateUnitOfMeasureInput!
+  ): UnitOfMeasure!
+  updateUnitOfMeasure(
+    updateUnitOfMeasureInput: UpdateUnitOfMeasureInput!
+  ): UnitOfMeasure!
+  removeUnitsOfMeasure(ids: [Int!]!): [UnitOfMeasure]!
+  restoreUnitsOfMeasure(ids: [Int!]!): Int
+  toggleUnitOfMeasureActive(id: Int!): UnitOfMeasure!
+}

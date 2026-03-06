@@ -1,7 +1,8 @@
 import { IsInt, IsBoolean, IsOptional, IsArray, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
-export class ProcessPaymentsInput {
+export class ProcessPeriodPaymentsInput {
+  @IsOptional()
   @IsInt()
   @Min(1)
   payrollPeriodId: number;

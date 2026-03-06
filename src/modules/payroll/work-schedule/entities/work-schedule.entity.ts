@@ -6,10 +6,10 @@ export class WorkSchedule extends SecurityBaseEntity {
   @Column({ type: 'varchar', length: 100 })
   name: string;
 
-  @Column({ type: 'date' })
+  @Column({ type: 'timestamp without time zone' })
   startDate: Date;
 
-  @Column({ type: 'date' })
+  @Column({ type: 'timestamp without time zone' })
   endDate: Date;
 
   @Column({ type: 'jsonb' })

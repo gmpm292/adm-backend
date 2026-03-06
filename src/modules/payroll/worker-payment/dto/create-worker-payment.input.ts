@@ -19,6 +19,10 @@ export class CreateWorkerPaymentInput extends CreateSecurityBaseInput {
 
   @IsOptional()
   @IsNumber()
+  paymentRuleId?: number;
+
+  @IsOptional()
+  @IsNumber()
   saleId?: number;
 
   @IsOptional()

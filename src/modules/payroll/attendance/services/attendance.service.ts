@@ -18,7 +18,7 @@ import { ConditionalOperator } from '../../../../core/graphql/remote-operations/
 import { WorkerService } from '../../worker/services/worker.service';
 import { WorkScheduleService } from '../../work-schedule/services/work-schedule.service';
 import { WorkSchedule } from '../../work-schedule/entities/work-schedule.entity';
-import { WorkerType } from '../../worker/enums/worker-type.enum';
+import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
 
 interface CheckInInput {
   workerId: number;
@@ -80,8 +80,24 @@ export class AttendanceService extends BaseService<Attendance> {
     }
 
     // Validar que la fecha de asistencia no sea futura
-    if (new Date(createAttendanceInput.attendanceDate) > new Date()) {
-      throw new Error('Attendance date cannot be in the future');
+    const attendanceDate = new Date(createAttendanceInput.attendanceDate);
+    if (attendanceDate > new Date()) {
+      throw new BadRequestError('Attendance date cannot be in the future');
+    }
+
+    // Verificar si ya existe un registro de asistencia para este trabajador en esta fecha
+    const existingAttendance = await this.findDailyAttendanceForWorker(
+      worker.id as number,
+      attendanceDate,
+      cu,
+      scopes,
+      manager,
+    );
+
+    if (existingAttendance) {
+      throw new BadRequestError(
+        `Ya existe un registro de asistencia para el trabajador ${worker.user?.name || worker.tempFirstName} en la fecha ${attendanceDate.toLocaleDateString()}`,
+      );
     }
 
     const attendance: Attendance = {
@@ -110,7 +126,15 @@ export class AttendanceService extends BaseService<Attendance> {
   ): Promise<ListSummary> {
     return await super.baseFind({
       options,
-      relationsToLoad: ['worker'],
+      relationsToLoad: [
+        'worker',
+        'worker.user',
+        'workSchedule',
+        'business',
+        'office',
+        'department',
+        'team',
+      ],
       cu,
       scopes,
       manager,
@@ -125,7 +149,23 @@ export class AttendanceService extends BaseService<Attendance> {
   ): Promise<Attendance> {
     return super.baseFindOne({
       id,
-      relationsToLoad: { worker: true, workSchedule: true },
+      relationsToLoad: {
+        worker: {
+          user: true,
+          business: true,
+          office: true,
+          department: true,
+          team: true,
+        },
+        workSchedule: true,
+        business: { offices: true },
+        office: true,
+        department: true,
+        team: true,
+        createdBy: true,
+        updatedBy: true,
+        deletedBy: true,
+      },
       cu,
       scopes,
       manager,
@@ -139,17 +179,24 @@ export class AttendanceService extends BaseService<Attendance> {
     manager?: EntityManager,
   ): Promise<Attendance[]> {
     const dateString = this.getLocalDateString(date);
+    const startOfDay = `${dateString} 00:00:00`;
+    const endOfDay = `${dateString} 23:59:59.999`;
 
     const result = await super.baseFind({
       options: {
         filters: [
           {
             property: 'attendanceDate',
-            operator: ConditionalOperator.EQUAL,
-            value: dateString,
+            operator: ConditionalOperator.GREATER_EQUAL_THAN,
+            value: startOfDay,
+          },
+          {
+            property: 'attendanceDate',
+            operator: ConditionalOperator.LESS_EQUAL_THAN,
+            value: endOfDay,
           },
         ],
-        take: 0,
+        skip: 0, // Get all records
       },
       relationsToLoad: ['worker', 'workSchedule'],
       cu,
@@ -181,7 +228,7 @@ export class AttendanceService extends BaseService<Attendance> {
 
     // Validar fechas
     if (startDate > endDate) {
-      throw new Error('Start date cannot be after end date');
+      throw new BadRequestError('Start date cannot be after end date');
     }
 
     const result = await super.baseFind({
@@ -203,7 +250,7 @@ export class AttendanceService extends BaseService<Attendance> {
             value: this.getLocalDateString(endDate),
           },
         ],
-        take: 0, // Get all records
+        skip: 0, // Get all records
       },
       relationsToLoad: ['worker', 'workSchedule'],
       cu,
@@ -222,7 +269,7 @@ export class AttendanceService extends BaseService<Attendance> {
   ): Promise<Attendance> {
     // Validaciones
     if (!checkInInput.workerId || checkInInput.workerId <= 0) {
-      throw new Error('Invalid worker ID');
+      throw new BadRequestError('Invalid worker ID');
     }
 
     const today = new Date();
@@ -252,7 +299,7 @@ export class AttendanceService extends BaseService<Attendance> {
     if (existingAttendance) {
       // Si ya existe registro, actualizarlo
       if (existingAttendance.checkInTime) {
-        throw new Error('Already checked in for today');
+        throw new BadRequestError('Already checked in for today');
       }
 
       return super.baseUpdate({
@@ -327,7 +374,7 @@ export class AttendanceService extends BaseService<Attendance> {
   ): Promise<Attendance> {
     // Validaciones
     if (!checkOutInput.workerId || checkOutInput.workerId <= 0) {
-      throw new Error('Invalid worker ID');
+      throw new BadRequestError('Invalid worker ID');
     }
 
     const today = new Date();
@@ -346,11 +393,11 @@ export class AttendanceService extends BaseService<Attendance> {
     }
 
     if (!attendance.checkInTime) {
-      throw new Error('Cannot check out without check-in time');
+      throw new BadRequestError('Cannot check out without check-in time');
     }
 
     if (attendance.checkOutTime) {
-      throw new Error('Already checked out for today');
+      throw new BadRequestError('Already checked out for today');
     }
 
     const checkOutTime = checkOutInput.time || this.getCurrentTimeString();
@@ -390,7 +437,7 @@ export class AttendanceService extends BaseService<Attendance> {
     manager?: EntityManager,
   ): Promise<Attendance[]> {
     if (!ids || ids.length === 0) {
-      throw new Error('No attendance IDs provided');
+      throw new BadRequestError('No attendance IDs provided');
     }
 
     const attendances = await super.baseFindByIds({
@@ -409,7 +456,9 @@ export class AttendanceService extends BaseService<Attendance> {
       (a) => !a.checkOutTime || a.hoursWorked <= 0,
     );
     if (incompleteAttendances.length > 0) {
-      throw new Error('Cannot mark incomplete attendance records as paid');
+      throw new BadRequestError(
+        'Cannot mark incomplete attendance records as paid',
+      );
     }
 
     const updatedAttendances = await Promise.all(
@@ -447,7 +496,7 @@ export class AttendanceService extends BaseService<Attendance> {
     }
 
     if (attendance.isPaid) {
-      throw new Error('Cannot modify paid attendance record');
+      throw new BadRequestError('Cannot modify paid attendance record');
     }
 
     // Validar y actualizar el trabajador si se proporciona
@@ -483,7 +532,7 @@ export class AttendanceService extends BaseService<Attendance> {
       updateAttendanceInput.attendanceDate &&
       new Date(updateAttendanceInput.attendanceDate) > new Date()
     ) {
-      throw new Error('Attendance date cannot be in the future');
+      throw new BadRequestError('Attendance date cannot be in the future');
     }
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -505,7 +554,7 @@ export class AttendanceService extends BaseService<Attendance> {
     manager?: EntityManager,
   ): Promise<Attendance[]> {
     if (!ids || ids.length === 0) {
-      throw new Error('No attendance IDs provided');
+      throw new BadRequestError('No attendance IDs provided');
     }
 
     const attendances = await super.baseFindByIds({
@@ -522,7 +571,7 @@ export class AttendanceService extends BaseService<Attendance> {
     // Check if any attendance is already paid
     const paidAttendances = attendances.filter((a) => a.isPaid);
     if (paidAttendances.length > 0) {
-      throw new Error('Cannot delete paid attendance records');
+      throw new BadRequestError('Cannot delete paid attendance records');
     }
 
     return super.baseDeleteMany({
@@ -541,7 +590,7 @@ export class AttendanceService extends BaseService<Attendance> {
     manager?: EntityManager,
   ): Promise<number> {
     if (!ids || ids.length === 0) {
-      throw new Error('No attendance IDs provided');
+      throw new BadRequestError('No attendance IDs provided');
     }
 
     return super.baseRestoreDeletedMany({
@@ -562,6 +611,8 @@ export class AttendanceService extends BaseService<Attendance> {
     manager?: EntityManager,
   ): Promise<Attendance | null> {
     const dateString = this.getLocalDateString(date);
+    const startOfDay = `${dateString} 00:00:00`;
+    const endOfDay = `${dateString} 23:59:59.999`;
 
     const result = await super.baseFind({
       options: {
@@ -573,8 +624,13 @@ export class AttendanceService extends BaseService<Attendance> {
           },
           {
             property: 'attendanceDate',
-            operator: ConditionalOperator.EQUAL,
-            value: dateString,
+            operator: ConditionalOperator.GREATER_EQUAL_THAN,
+            value: startOfDay,
+          },
+          {
+            property: 'attendanceDate',
+            operator: ConditionalOperator.LESS_EQUAL_THAN,
+            value: endOfDay,
           },
         ],
         take: 1,

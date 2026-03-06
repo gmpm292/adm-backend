@@ -16,6 +16,8 @@ import { ScopedAccessService } from '../../../scoped-access/services/scoped-acce
 import { WorkerService } from '../../worker/services/worker.service';
 import { PayrollPeriodService } from '../../payroll-period/services/payroll-period.service';
 import { CurrencyService } from '../../currency/services/currency.service';
+import { Sale } from '../../../sales/sale/entities/sale.entity';
+import { PaymentRule } from '../../payment-rule/entities/payment-rule.entity';
 
 @Injectable()
 export class WorkerPaymentService extends BaseService<WorkerPayment> {
@@ -38,7 +40,8 @@ export class WorkerPaymentService extends BaseService<WorkerPayment> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<WorkerPayment> {
-    const { workerId, payrollPeriodId, ...rest } = createWorkerPaymentInput;
+    const { workerId, payrollPeriodId, saleId, paymentRuleId, ...rest } =
+      createWorkerPaymentInput;
     const [worker, payrollPeriod] = await Promise.all([
       this.workerService.findOne(workerId, cu, scopes, manager),
       this.payrollPeriodService.findOne(payrollPeriodId, cu, scopes, manager),
@@ -63,6 +66,10 @@ export class WorkerPaymentService extends BaseService<WorkerPayment> {
       ...rest,
       worker,
       payrollPeriod,
+      sale: saleId ? ({ id: saleId } as Sale) : null,
+      paymentRule: paymentRuleId
+        ? ({ id: paymentRuleId } as PaymentRule)
+        : null,
       exchangeRate:
         createWorkerPaymentInput.exchangeRate || currency.exchangeRateToCUP,
     } as WorkerPayment;
@@ -83,7 +90,7 @@ export class WorkerPaymentService extends BaseService<WorkerPayment> {
   ): Promise<ListSummary> {
     return await super.baseFind({
       options,
-      relationsToLoad: ['worker', 'payrollPeriod'],
+      relationsToLoad: ['worker', 'payrollPeriod', 'paymentRule', 'sale'],
       cu,
       scopes,
       manager,
@@ -101,6 +108,12 @@ export class WorkerPaymentService extends BaseService<WorkerPayment> {
       relationsToLoad: {
         worker: true,
         payrollPeriod: true,
+        paymentRule: true,
+        sale: true,
+        business: true,
+        office: true,
+        department: true,
+        team: true,
       },
       cu,
       scopes,
@@ -117,7 +130,7 @@ export class WorkerPaymentService extends BaseService<WorkerPayment> {
     await this.workerService.findOne(workerId, cu, scopes, manager);
     return this.workerPaymentRepository.find({
       where: { worker: { id: workerId } },
-      relations: ['worker', 'payrollPeriod'],
+      relations: ['worker', 'payrollPeriod', 'paymentRule'],
       order: { createdAt: 'DESC' },
     });
   }
@@ -131,7 +144,7 @@ export class WorkerPaymentService extends BaseService<WorkerPayment> {
     await this.payrollPeriodService.findOne(periodId, cu, scopes, manager);
     return this.workerPaymentRepository.find({
       where: { payrollPeriod: { id: periodId } },
-      relations: ['worker', 'payrollPeriod'],
+      relations: ['worker', 'payrollPeriod', 'paymentRule'],
       order: { createdAt: 'DESC' },
     });
   }

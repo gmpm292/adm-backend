@@ -8,6 +8,8 @@ import {
   MaxLength,
   MinLength,
   IsInt,
+  IsArray,
+  ArrayMinSize,
 } from 'class-validator';
 import { PaymentType } from '../enums/payment-type.enum';
 import { Type } from 'class-transformer';
@@ -35,6 +37,12 @@ export class CreatePaymentRuleInput extends CreateSecurityBaseInput {
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(0)
+  @IsInt({ each: true })
+  specificWorkersIds?: number[];
 
   @IsEnum(WorkerType)
   @IsOptional()

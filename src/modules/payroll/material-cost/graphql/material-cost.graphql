@@ -1,0 +1,88 @@
+"""
+Represents the cost price of a material or element per unit of measure.
+Used for calculating raw material costs in products.
+"""
+type MaterialCost implements SecurityBaseEntity {
+  id: Int!
+  createdAt: Date!
+  updatedAt: Date!
+  deletedAt: Date
+
+  createdBy: User
+  updatedBy: User
+  deletedBy: User
+
+  business: Business
+  office: Office
+  department: Department
+  team: Team
+
+  name: String!
+  description: String
+  unitOfMeasure: UnitOfMeasure!
+  costPrice: Float!
+  currency: Currency!
+  isActive: Boolean!
+
+  # Relationships
+  products: [Product]!
+}
+
+type MaterialCostsSummary {
+  data: [MaterialCost]!
+  totalCount: Int!
+}
+
+input CreateMaterialCostInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  name: String!
+  description: String
+  unitOfMeasureId: Int!
+  costPrice: Float!
+  currencyId: Int!
+  isActive: Boolean
+}
+
+input UpdateMaterialCostInput {
+  businessId: Int
+  officeId: Int
+  departmentId: Int
+  teamId: Int
+
+  id: Int!
+  name: String
+  description: String
+  unitOfMeasureId: Int
+  costPrice: Float
+  currencyId: Int
+  isActive: Boolean
+}
+
+extend type Query {
+  materialCosts(options: ListOptions): MaterialCostsSummary!
+  materialCost(id: Int!): MaterialCost
+  materialCostsByUnitOfMeasure(
+    unitOfMeasureId: Int!
+    options: ListOptions
+  ): MaterialCostsSummary!
+  materialCostsByCurrency(
+    currencyId: Int!
+    options: ListOptions
+  ): MaterialCostsSummary!
+}
+
+extend type Mutation {
+  createMaterialCost(
+    createMaterialCostInput: CreateMaterialCostInput!
+  ): MaterialCost!
+  updateMaterialCost(
+    updateMaterialCostInput: UpdateMaterialCostInput!
+  ): MaterialCost!
+  removeMaterialCosts(ids: [Int!]!): [MaterialCost]!
+  restoreMaterialCosts(ids: [Int!]!): Int
+  toggleMaterialCostActive(id: Int!): MaterialCost!
+}

@@ -5,6 +5,7 @@ import { PaymentMethod } from '../enums/payment-method.enum';
 import { PayrollPeriod } from '../../payroll-period/entities/payroll-period.entity';
 import { PaymentConcept } from '../enums/payment-concept.enum';
 import { Sale } from '../../../sales/sale/entities/sale.entity';
+import { PaymentRule } from '../../payment-rule/entities/payment-rule.entity';
 
 @Entity('py_worker_payments')
 export class WorkerPayment extends SecurityBaseEntity {
@@ -12,8 +13,12 @@ export class WorkerPayment extends SecurityBaseEntity {
   worker: Worker;
 
   @ManyToOne(() => Sale, { nullable: true })
-  @JoinColumn({ name: 'sale_id' })
+  @JoinColumn()
   sale?: Sale; // Relación directa a la venta.
+
+  @ManyToOne(() => PaymentRule, { nullable: true })
+  @JoinColumn()
+  paymentRule?: PaymentRule;
 
   @Column({ type: 'timestamp', nullable: true })
   paidDate?: Date; // Day it was paid. If null, it has not been carried out.
@@ -33,11 +38,15 @@ export class WorkerPayment extends SecurityBaseEntity {
   @Column({ type: 'enum', enum: PaymentConcept })
   paymentConcept: PaymentConcept;
 
-  @ManyToOne(() => PayrollPeriod)
+  @ManyToOne(
+    () => PayrollPeriod,
+    (payrollPeriod) => payrollPeriod.workerPayments,
+  )
   payrollPeriod: PayrollPeriod;
 
   @Column({ type: 'jsonb', nullable: true })
   breakdown: {
+    reversed: boolean;
     ruleName: string;
     ruleType: string;
     baseSalary?: number;

@@ -20,6 +20,8 @@ import { Sale } from '../../sale/entities/sale.entity';
 import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
 import { ReserveReleaseReason } from '../../../inventory/product/enums/reserve-release-reason';
 import { Worker } from '../../../payroll/worker/entities/worker.entity';
+import { SaleDetailStatus } from '../enums/sale-detail-status.enum';
+import { SaleStatus } from '../../sale/enums/sale-status.enum';
 
 @Injectable()
 export class SaleDetailService extends BaseService<SaleDetail> {
@@ -92,6 +94,7 @@ export class SaleDetailService extends BaseService<SaleDetail> {
       productPaymentOptions,
       reservationId,
       publicists,
+      saleDetailStatus: SaleDetailStatus.DRAFT,
     };
 
     return super.baseCreate({
@@ -410,7 +413,7 @@ export class SaleDetailService extends BaseService<SaleDetail> {
             id: saleDetail.id as number,
             data: {
               ...saleDetail,
-              isConfirmed: true, // Si quieres agregar este campo a la entidad
+              isConfirmed: true,
             },
             cu,
             scopes,
@@ -419,6 +422,111 @@ export class SaleDetailService extends BaseService<SaleDetail> {
         }
       }),
     );
+  }
+
+  async refundSaleDetails(
+    saleDetailIds: number[],
+    cu?: JWTPayload,
+    scopes?: ScopedAccessEnum[],
+    manager?: EntityManager,
+  ): Promise<{
+    saleId: number;
+    refundedDetails: SaleDetail[];
+    totalRefundAmount: number;
+    currency: string;
+  }> {
+    // Obtener los detalles con sus relaciones
+    const details = await super.baseFindByIds({
+      ids: saleDetailIds,
+      relationsToLoad: {
+        sale: { payments: true },
+        product: true,
+      },
+      cu,
+      scopes,
+      manager,
+    });
+
+    if (details.length === 0) {
+      throw new NotFoundError('No sale details found');
+    }
+
+    // Validar que todos pertenezcan a la misma venta
+    const saleId = details[0].sale.id;
+    const allSameSale = details.every((d) => d.sale.id === saleId);
+    if (!allSameSale) {
+      throw new BadRequestError(
+        'All sale details must belong to the same sale',
+      );
+    }
+
+    const sale = details[0].sale;
+
+    // Validar que la venta esté confirmada
+    if (
+      sale.saleStatus !== SaleStatus.CONFIRMED &&
+      sale.saleStatus !== SaleStatus.PARTIALLY_REFUNDED
+    ) {
+      throw new BadRequestError('Only confirmed sales can be refunded');
+    }
+
+    // Validar que los detalles no estén ya devueltos
+    const alreadyRefunded = details.filter(
+      (d) => d.saleDetailStatus === SaleDetailStatus.REFUNDED,
+    );
+    if (alreadyRefunded.length > 0) {
+      throw new BadRequestError('Some details are already refunded');
+    }
+
+    let totalRefundAmount = 0;
+    let refundCurrency = '';
+
+    // Procesar cada detalle para devolución
+    for (const detail of details) {
+      // Calcular monto a devolver (usando el snapshot o las opciones de pago)
+      let refundAmount = 0;
+      if (detail.productPaymentOptions?.paymentOptions?.length) {
+        // Usar el precio en la moneda base de la venta
+        const baseOption = detail.productPaymentOptions.paymentOptions.find(
+          (opt) => opt.currency === sale.totalAmountCurrency,
+        );
+        refundAmount = baseOption?.total || 0;
+      }
+
+      totalRefundAmount += refundAmount;
+      refundCurrency = sale.totalAmountCurrency || 'CUP';
+
+      // Devolver stock al inventario
+      await this.productService.releaseStock(
+        detail.product.id as number,
+        detail.quantity,
+        ReserveReleaseReason.SALE_REFUND,
+        detail.reservationId,
+        cu,
+        scopes,
+        manager,
+      );
+
+      // Marcar el detalle como devuelto
+      await super.baseUpdate({
+        id: detail.id as number,
+        data: {
+          ...detail,
+          saleDetailStatus: SaleDetailStatus.REFUNDED,
+          isConfirmed: false,
+        },
+        cu,
+        scopes,
+        manager,
+      });
+    }
+
+    return {
+      saleId: sale.id as number,
+      refundedDetails: details,
+      totalRefundAmount,
+      currency: refundCurrency,
+    };
   }
 
   private validateSaleForModification(sale: Sale): void {

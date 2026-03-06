@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import { EntityManager, Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CreatePaymentRuleInput } from '../dto/create-payment-rule.input';
@@ -22,6 +22,7 @@ import { LogicalOperator } from '../../../../core/graphql/remote-operations/enum
 import { WorkerType } from '../../worker/enums/worker-type.enum';
 import { ProductService } from '../../../inventory/product/services/product.service';
 import { CategoryService } from '../../../inventory/category/services/category.service';
+import { WorkerService } from '../../worker/services/worker.service';
 
 @Injectable()
 export class PaymentRuleService extends BaseService<PaymentRule> {
@@ -31,6 +32,8 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
     protected scopedAccessService: ScopedAccessService,
     private readonly productService: ProductService,
     private readonly categoryService: CategoryService,
+    @Inject(forwardRef(() => WorkerService))
+    private readonly workerService: WorkerService,
   ) {
     super(paymentRuleRepository);
   }
@@ -53,6 +56,20 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
     paymentRule.scope = createPaymentRuleInput.scope;
     paymentRule.distributeProfits =
       createPaymentRuleInput.distributeProfits ?? false;
+
+    // Process specific workers if provided
+    if (
+      createPaymentRuleInput.specificWorkersIds &&
+      createPaymentRuleInput.specificWorkersIds.length > 0
+    ) {
+      const workers = await this.workerService.baseFindByIds({
+        ids: createPaymentRuleInput.specificWorkersIds,
+        cu,
+        scopes,
+        manager,
+      });
+      paymentRule.specificWorkers = workers;
+    }
 
     // Process product if provided
     if (createPaymentRuleInput.productId) {
@@ -211,6 +228,20 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
     }
     if (updatePaymentRuleInput.otherType !== undefined) {
       paymentRule.otherType = updatePaymentRuleInput.otherType;
+    }
+
+    // Process specific workers if provided
+    if (
+      updatePaymentRuleInput.specificWorkersIds &&
+      updatePaymentRuleInput.specificWorkersIds.length > 0
+    ) {
+      const workers = await this.workerService.baseFindByIds({
+        ids: updatePaymentRuleInput.specificWorkersIds,
+        cu,
+        scopes,
+        manager,
+      });
+      paymentRule.specificWorkers = workers;
     }
 
     // Update product if provided

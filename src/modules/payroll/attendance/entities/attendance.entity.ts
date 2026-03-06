@@ -7,10 +7,10 @@ import { AttendanceStatus } from '../enums/attendance-status.enum';
 @Entity('py_attendances')
 export class Attendance extends SecurityBaseEntity {
   @ManyToOne(() => Worker, { eager: true })
-  @JoinColumn({ name: 'worker_id' })
+  @JoinColumn()
   worker: Worker;
 
-  @Column({ type: 'date' })
+  @Column({ type: 'timestamp without time zone' })
   attendanceDate: Date;
 
   @Column({ type: 'time', nullable: true, precision: 0 })
@@ -40,7 +40,7 @@ export class Attendance extends SecurityBaseEntity {
   isPaid: boolean;
 
   @ManyToOne(() => WorkSchedule, { nullable: true })
-  @JoinColumn({ name: 'work_schedule_id' })
+  @JoinColumn()
   workSchedule?: WorkSchedule;
 
   @Column({ type: 'text', nullable: true })

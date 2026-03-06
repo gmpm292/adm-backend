@@ -1,3 +1,10 @@
+enum SaleDetailStatus {
+  DRAFT # Borrador, sin efectividad
+  CONFIRMED # Venta efectiva/completada
+  CANCELLED # Cancelada
+  REFUNDED # Devolución
+}
+
 type SaleDetail implements SecurityBaseEntity {
   id: Int!
   createdAt: Date!
@@ -24,6 +31,7 @@ type SaleDetail implements SecurityBaseEntity {
   sale: Sale!
   product: Product!
   publicists: [Worker!]
+  saleDetailStatus: SaleDetailStatus
 }
 
 type SaleDetailsSummary {

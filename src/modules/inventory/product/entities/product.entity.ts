@@ -4,13 +4,14 @@ import { Category } from '../../category/entities/category.entity';
 import { Inventory } from '../../inventory/entities/inventory.entity';
 import { SaleDetail } from '../../../sales/sale-detail/entities/sale-detail.entity';
 import { PaymentRule } from '../../../payroll/payment-rule/entities/payment-rule.entity';
+import { MaterialCost } from '../../../payroll/material-cost/entities/material-cost.entity';
 
 /**
  * Description: Items sold or managed in the system.
  */
 @Entity('in_products')
 export class Product extends SecurityBaseEntity {
-  @ManyToOne(() => Category, (category) => category.id)
+  @ManyToOne(() => Category, (category) => category.products)
   category: Category;
 
   @Column({ type: 'varchar', length: 100 })
@@ -18,6 +19,9 @@ export class Product extends SecurityBaseEntity {
 
   @Column({ type: 'varchar', length: 50 })
   unitOfMeasure: string; // e.g., grams, units
+
+  @ManyToOne(() => MaterialCost, (materialCost) => materialCost.products)
+  materialCost?: MaterialCost;
 
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   costPrice: number;
@@ -34,7 +38,7 @@ export class Product extends SecurityBaseEntity {
   @OneToMany(() => Inventory, (inventory) => inventory.product)
   inventories: Inventory[];
 
-  @OneToMany(() => Inventory, (inventory) => inventory.product)
+  @OneToMany(() => SaleDetail, (saleDetail) => saleDetail.product)
   saleDetails: SaleDetail[];
 
   @Column({ type: 'decimal', precision: 12, scale: 2 })

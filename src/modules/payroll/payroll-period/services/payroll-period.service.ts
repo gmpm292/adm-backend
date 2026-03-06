@@ -60,6 +60,14 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
   ): Promise<ListSummary> {
     return await super.baseFind({
       options,
+      relationsToLoad: [
+        'payments',
+        'payments.worker',
+        'business',
+        'office',
+        'department',
+        'team',
+      ],
       cu,
       scopes,
       manager,
@@ -74,7 +82,13 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
   ): Promise<PayrollPeriod> {
     return super.baseFindOne({
       id,
-      relationsToLoad: { payments: true },
+      relationsToLoad: {
+        payments: { worker: true },
+        business: true,
+        office: true,
+        department: true,
+        team: true,
+      },
       cu,
       scopes,
       manager,
@@ -236,35 +250,35 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
       throw new BadRequestError('Payroll period has not ended yet');
     }
 
-    // 4. Verificar que no haya pagos ya procesados para este período
-    const existingPayments = (
-      await this.workerPaymentService.find(
-        {
-          filters: [
-            {
-              property: 'payrollPeriod.id',
-              operator: ConditionalOperator.EQUAL,
-              value: payrollPeriodId.toString(),
-            },
-            {
-              property: 'paidDate',
-              operator: ConditionalOperator.IS_NULL,
-              value: '',
-            },
-          ],
-          take: 0,
-        },
-        cu,
-        scopes,
-        manager,
-      )
-    ).totalCount;
+    // // 4. Verificar que no haya pagos ya procesados para este período
+    // const existingPayments = (
+    //   await this.workerPaymentService.find(
+    //     {
+    //       filters: [
+    //         {
+    //           property: 'payrollPeriod.id',
+    //           operator: ConditionalOperator.EQUAL,
+    //           value: payrollPeriodId.toString(),
+    //         },
+    //         {
+    //           property: 'paidDate',
+    //           operator: ConditionalOperator.IS_NULL,
+    //           value: '',
+    //         },
+    //       ],
+    //       take: 0,
+    //     },
+    //     cu,
+    //     scopes,
+    //     manager,
+    //   )
+    // ).totalCount;
 
-    if (existingPayments > 0) {
-      throw new BadRequestError(
-        `Payroll period already has ${existingPayments} processed payments.`,
-      );
-    }
+    // if (existingPayments > 0) {
+    //   throw new BadRequestError(
+    //     `Payroll period already has ${existingPayments} processed payments.`,
+    //   );
+    // }
 
     // 6. Verificar integridad de datos del período
     this.validatePeriodIntegrity(payrollPeriod);
@@ -395,39 +409,47 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
   private async findPeriodForDate(
     date: Date,
     cu: JWTPayload,
-    scopes: ScopedAccessEnum[] = [],
+    scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<PayrollPeriod | null> {
     const dateStr = date.toISOString().split('T')[0];
 
-    const result = await super.baseFind({
-      options: {
-        filters: [
-          {
-            property: 'startDate',
-            operator: ConditionalOperator.LESS_EQUAL_THAN,
-            value: dateStr,
-          },
-          {
-            property: 'endDate',
-            operator: ConditionalOperator.GREATER_EQUAL_THAN,
-            value: dateStr,
-          },
-        ],
-        take: 1,
-      },
-      cu,
-      scopes,
-      manager,
-    });
+    let result: ListSummary | null = null;
+    try {
+      result = await super.baseFind({
+        options: {
+          filters: [
+            {
+              property: 'startDate',
+              operator: ConditionalOperator.LESS_EQUAL_THAN,
+              value: dateStr,
+            },
+            {
+              property: 'endDate',
+              operator: ConditionalOperator.GREATER_EQUAL_THAN,
+              value: dateStr,
+            },
+          ],
+          take: 1,
+        },
+        cu,
+        scopes,
+        manager,
+      });
+    } catch (error) {
+      console.error(
+        `Error al buscar periodo de nómina para fecha ${dateStr}:`,
+        error,
+      );
+    }
 
-    return (result.data?.[0] as PayrollPeriod) || null;
+    return (result?.data?.[0] as PayrollPeriod) || null;
   }
 
   private async findPeriodAfterDate(
     date: Date,
     cu: JWTPayload,
-    scopes: ScopedAccessEnum[] = [],
+    scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<PayrollPeriod | null> {
     const nextDay = new Date(date);
@@ -456,7 +478,7 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
 
   private async findLastPeriod(
     cu: JWTPayload,
-    scopes: ScopedAccessEnum[] = [],
+    scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<PayrollPeriod | null> {
     const result = await super.baseFind({
@@ -472,16 +494,55 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     return (result.data?.[0] as PayrollPeriod) || null;
   }
 
+  // private createFirstPeriod(
+  //   referenceDate: Date,
+  //   cu: JWTPayload,
+  //   scopes: ScopedAccessEnum[],
+  //   manager?: EntityManager,
+  // ): Promise<PayrollPeriod> {
+  //   // Crear primer período de 7 días terminando en la fecha de referencia
+  //   const endDate = new Date(referenceDate);
+  //   const startDate = new Date(endDate);
+  //   startDate.setDate(startDate.getDate() - 6);
+
+  //   const name = this.generatePeriodName(startDate, endDate);
+
+  //   const createInput: CreatePayrollPeriodInput = {
+  //     startDate,
+  //     endDate,
+  //     name,
+  //     description: `First payroll period from ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}`,
+  //     businessId: cu.businessId!,
+  //   };
+
+  //   return this.create(createInput, cu, scopes, manager);
+  // }
   private createFirstPeriod(
     referenceDate: Date,
     cu: JWTPayload,
-    scopes: ScopedAccessEnum[] = [],
+    scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<PayrollPeriod> {
-    // Crear primer período de 7 días terminando en la fecha de referencia
+    // Obtener el día de la semana (0=domingo, 1=lunes, ..., 6=sábado)
+    const dayOfWeek = referenceDate.getDay();
+
+    // Calcular días hasta el lunes anterior
+    // Si es domingo (0): -1 (lunes anterior)
+    // Si es lunes (1): 0 (hoy es lunes)
+    // Si es martes (2): -1, etc.
+    const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+
+    // Calcular días hasta el domingo siguiente
+    const daysToSunday = 7 - dayOfWeek;
+
+    // Calcular fechas de inicio y fin (lunes a domingo)
+    const startDate = new Date(referenceDate);
+    startDate.setDate(startDate.getDate() + daysToMonday);
+    startDate.setHours(0, 0, 0, 0); // Inicio del día
+
     const endDate = new Date(referenceDate);
-    const startDate = new Date(endDate);
-    startDate.setDate(startDate.getDate() - 6);
+    endDate.setDate(endDate.getDate() + daysToSunday);
+    endDate.setHours(23, 59, 59, 999); // Fin del día
 
     const name = this.generatePeriodName(startDate, endDate);
 
@@ -499,38 +560,72 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
   private async createPeriodAfter(
     previousPeriod: PayrollPeriod,
     cu: JWTPayload,
-    scopes: ScopedAccessEnum[] = [],
+    scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<PayrollPeriod> {
+    const endDate = new Date(previousPeriod.endDate);
+    const startDate = new Date(previousPeriod.startDate);
+
+    if (isNaN(endDate.getTime()) || isNaN(startDate.getTime())) {
+      throw new Error('Fechas inválidas en el período anterior');
+    }
     const daysDiff = Math.ceil(
-      (previousPeriod.endDate.getTime() - previousPeriod.startDate.getTime()) /
-        (1000 * 3600 * 24),
+      (endDate.getTime() - startDate.getTime()) / (1000 * 3600 * 24),
     );
 
-    const startDate = new Date(previousPeriod.endDate);
-    startDate.setDate(startDate.getDate() + 1);
+    const newStartDate = new Date(endDate);
+    newStartDate.setDate(newStartDate.getDate() + 1);
+    newStartDate.setHours(0, 0, 0, 0); // Inicio del día
 
-    const endDate = new Date(startDate);
+    const newEndDate = new Date(newStartDate);
 
     if (daysDiff >= 28 && daysDiff <= 31) {
       // Mensual - siguiente mes
-      endDate.setMonth(endDate.getMonth() + 1);
-      endDate.setDate(endDate.getDate() - 1);
+      newEndDate.setMonth(newEndDate.getMonth() + 1);
+      newEndDate.setDate(newEndDate.getDate() - 1);
     } else if (daysDiff >= 14 && daysDiff <= 16) {
-      // Quincenal - 14 días
-      endDate.setDate(endDate.getDate() + 14);
+      // Quincenal - calcular según mitad del mes
+      const year = newStartDate.getFullYear();
+      const month = newStartDate.getMonth();
+      const dayOfMonth = newStartDate.getDate();
+
+      // Obtener último día del mes actual
+      const lastDayOfMonth = new Date(year, month + 1, 0).getDate();
+
+      // Calcular mitad del mes (redondeo hacia arriba)
+      const middleDay = Math.ceil(lastDayOfMonth / 2);
+
+      // Determinar si estamos en primera o segunda quincena
+      const isFirstQuincena = dayOfMonth <= middleDay;
+
+      if (isFirstQuincena) {
+        // Primera quincena -> termina en la mitad del mes
+        newEndDate.setDate(middleDay);
+      } else {
+        // Segunda quincena -> termina último día del mes
+        newEndDate.setDate(lastDayOfMonth);
+
+        // Verificar que no hayamos pasado al siguiente mes
+        // (esto pasa si el mes tiene menos de 31 días y estamos después del día 15)
+        if (newEndDate.getMonth() !== month) {
+          newEndDate.setMonth(month);
+          newEndDate.setDate(lastDayOfMonth);
+        }
+      }
     } else {
       // Semanal - 7 días
-      endDate.setDate(endDate.getDate() + 6);
+      newEndDate.setDate(newEndDate.getDate() + 6);
     }
 
-    const name = this.generatePeriodName(startDate, endDate);
+    newEndDate.setHours(23, 59, 59, 999); // Fin del día
+
+    const name = this.generatePeriodName(newStartDate, newEndDate);
 
     const createInput: CreatePayrollPeriodInput = {
-      startDate,
-      endDate,
+      startDate: newStartDate,
+      endDate: newEndDate,
       name,
-      description: `Payroll period from ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}`,
+      description: `Payroll period from ${newStartDate.toLocaleDateString()} to ${newEndDate.toLocaleDateString()}`,
       businessId: cu.businessId!,
     };
 

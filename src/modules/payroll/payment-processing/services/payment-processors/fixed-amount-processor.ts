@@ -13,7 +13,7 @@ import { BusinessService } from '../../../../company/business/services/business.
 import { OfficeService } from '../../../../company/office/services/office.service';
 import { DepartmentService } from '../../../../company/department/services/department.service';
 import { TeamService } from '../../../../company/team/services/team.service';
-import { ProcessPaymentsInput } from '../../dto/process-payments.input';
+import { ProcessPeriodPaymentsInput } from '../../dto/process-payments.input';
 import { PayrollPeriod } from '../../../payroll-period/entities/payroll-period.entity';
 import { PeriodBatchCalculationResult } from '../../types/payment-calculation.types';
 import { ListFilter } from '../../../../../core/graphql/remote-operations';
@@ -38,7 +38,7 @@ export class FixedAmountProcessor extends BasePaymentProcessor {
    */
   async calculateBatchForPeriod(
     rule: PaymentRule,
-    input: ProcessPaymentsInput,
+    input: ProcessPeriodPaymentsInput,
     payrollPeriod: PayrollPeriod,
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
@@ -197,17 +197,12 @@ export class FixedAmountProcessor extends BasePaymentProcessor {
    */
   private async getWorkersForRule(
     rule: PaymentRule,
-    input: ProcessPaymentsInput,
+    input: ProcessPeriodPaymentsInput,
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Worker[]> {
     const filters: ListFilter[] = [
-      {
-        property: 'isActive',
-        operator: ConditionalOperator.EQUAL,
-        value: 'true',
-      },
       {
         property: 'workerType',
         operator: ConditionalOperator.EQUAL,
@@ -225,7 +220,7 @@ export class FixedAmountProcessor extends BasePaymentProcessor {
     }
 
     // Filtros de scope jerárquico
-    if (rule.scope === ScopedAccessEnum.BUSINESS && input.businessId) {
+    if (input.businessId) {
       filters.push({
         property: 'business.id',
         operator: ConditionalOperator.EQUAL,
@@ -233,7 +228,7 @@ export class FixedAmountProcessor extends BasePaymentProcessor {
       });
     }
 
-    if (rule.scope === ScopedAccessEnum.OFFICE && input.officeId) {
+    if (input.officeId) {
       filters.push({
         property: 'office.id',
         operator: ConditionalOperator.EQUAL,
@@ -241,7 +236,7 @@ export class FixedAmountProcessor extends BasePaymentProcessor {
       });
     }
 
-    if (rule.scope === ScopedAccessEnum.DEPARTMENT && input.departmentId) {
+    if (input.departmentId) {
       filters.push({
         property: 'department.id',
         operator: ConditionalOperator.EQUAL,
@@ -249,7 +244,7 @@ export class FixedAmountProcessor extends BasePaymentProcessor {
       });
     }
 
-    if (rule.scope === ScopedAccessEnum.TEAM && input.teamId) {
+    if (input.teamId) {
       filters.push({
         property: 'team.id',
         operator: ConditionalOperator.EQUAL,

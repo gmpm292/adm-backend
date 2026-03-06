@@ -39,7 +39,7 @@ export class TaskSchedulerService implements OnModuleInit {
         description:
           'Crea registros de asistencia para todos los workers activos',
         handlerType: 'GENERATE_DAILY_ATTENDANCES',
-        cronExpression: '0 2 * * *', // cada día a las 2:00 am
+        cronExpression: '*/1 * * * *', // '0 2 * * *' cada día a las 2:00 am
         isActive: true,
       },
       {

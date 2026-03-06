@@ -5,6 +5,7 @@ import { SaleDetail } from '../../sale-detail/entities/sale-detail.entity';
 import { PaymentMethod } from '../enums/payment-method.enum';
 import { Worker } from '../../../payroll/worker/entities/worker.entity';
 import { WorkerPayment } from '../../../payroll/worker-payment/entities/worker-payment.entity';
+import { SaleStatus } from '../enums/sale-status.enum';
 
 /**
  * Description: Sales transactions recording.
@@ -39,6 +40,14 @@ export class Sale extends SecurityBaseEntity {
 
   @Column({ type: 'boolean', default: false })
   isConfirmed?: boolean;
+
+  @Column({
+    type: 'enum',
+    nullable: false,
+    enum: SaleStatus,
+    default: SaleStatus.DRAFT,
+  })
+  saleStatus: SaleStatus;
 
   @Column({ type: 'varchar', length: 50, nullable: true })
   invoiceNumber?: string; //Identificador único de la factura. Ejemplo: "F2025-0001" (Formato común: [Tipo][Año]-[Secuencial]).

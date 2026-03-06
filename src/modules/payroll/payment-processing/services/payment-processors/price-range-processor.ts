@@ -263,11 +263,11 @@ export class PriceRangeProcessor extends BasePaymentProcessor {
           operator: ConditionalOperator.EQUAL,
           value: rule.workerType,
         },
-        {
-          property: 'isActive',
-          operator: ConditionalOperator.EQUAL,
-          value: 'true',
-        },
+        // {
+        //   property: 'isActive',
+        //   operator: ConditionalOperator.EQUAL,
+        //   value: 'true',
+        // },
       ];
 
       if (rule.workerType === WorkerType.OTHER && rule.otherType) {
@@ -326,7 +326,7 @@ export class PriceRangeProcessor extends BasePaymentProcessor {
       const allWorkers = workersResult.data as Worker[];
 
       // Filtrar por asistencia
-      // OPCIÓN 1: UNA SOLA CONSULTA PARA TODAS LAS ASISTENCIAS (EFICIENTE)
+      // UNA SOLA CONSULTA PARA TODAS LAS ASISTENCIAS (EFICIENTE)
       const allAttendances = await this.attendanceService.findDailyAttendance(
         saleDate,
         cu,

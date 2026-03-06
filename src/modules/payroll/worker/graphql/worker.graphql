@@ -32,6 +32,7 @@ type Worker implements SecurityBaseEntity {
   team: Team
 
   workerType: WorkerType!
+  otherType: String
   baseSalary: Float!
   customPaymentSettings: JSON
   user: User

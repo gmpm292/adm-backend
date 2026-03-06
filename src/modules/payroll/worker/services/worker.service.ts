@@ -145,7 +145,7 @@ export class WorkerService extends BaseService<Worker> {
         throw error;
       }
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      throw new Error(`Failed to create worker: ${error.message}`);
+      throw new BadRequestError(`Failed to create worker: ${error.message}`);
     }
   }
 

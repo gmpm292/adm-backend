@@ -27,12 +27,37 @@ import { JWTPayload } from '../../modules/auth/dto/jwt-payload.dto';
 import { Role } from '../enums/role.enum';
 import { ForbiddenError } from '@nestjs/apollo';
 import { ScopedAccessService } from '../../modules/scoped-access/services/scoped-access.service';
+
 export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
+  // Variable privada para controlar el nivel de detalle en errores
+  private readonly showErrorDetails: boolean;
+
   constructor(
     private repository: Repository<Entity>,
     protected loggerInBaseService?: LoggerService,
     protected scopedAccessService?: ScopedAccessService,
-  ) {}
+  ) {
+    // Determinar si mostrar detalles según NODE_ENV
+    const nodeEnv = process.env.NODE_ENV || 'development';
+    this.showErrorDetails = nodeEnv !== 'production';
+  }
+
+  // Método privado para construir mensajes de error
+  private buildErrorMessage(
+    entityName: string,
+    message: string,
+    details?: any,
+  ): string {
+    if (this.showErrorDetails) {
+      return `${entityName} ${message}` + (details ? ` ${details}` : '');
+    }
+    return `${entityName} ${message}`;
+  }
+
+  // Método privado para obtener nombre de entidad
+  private getEntityName(): string {
+    return this.repository.metadata.name;
+  }
 
   public async baseFind(params: {
     options?: ListOptions;
@@ -133,6 +158,8 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
     const repository =
       manager?.getRepository<Entity>(this.repository.target) || this.repository;
 
+    const entityName = this.getEntityName();
+
     const where: FindOptionsWhere<Entity> = { id } as FindOptionsWhere<Entity>;
     if (cu && this.scopedAccessService) {
       const scopeFilters = this.scopedAccessService.forBaseFindOne(
@@ -152,7 +179,14 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
     };
 
     const data = await repository.findOne(findOptions);
-    if (!data) throw new NotFoundError();
+    if (!data) {
+      const details = this.showErrorDetails
+        ? `con ID ${id}` + (cu ? ` para el usuario ${cu.sub}` : '')
+        : '';
+      throw new NotFoundError(
+        this.buildErrorMessage(entityName, 'no encontrado', details),
+      );
+    }
     return data;
   }
 
@@ -176,6 +210,8 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
     const repository =
       manager?.getRepository<Entity>(this.repository.target) || this.repository;
 
+    const entityName = this.getEntityName();
+
     // Start with base filters
     const where: FindOptionsWhere<Entity> = { ...filters };
 
@@ -194,7 +230,14 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
       withDeleted,
     });
 
-    if (!data) throw new NotFoundError();
+    if (!data) {
+      const filterDetails = this.showErrorDetails
+        ? ` con filtros: ${JSON.stringify(where)}`
+        : '';
+      throw new NotFoundError(
+        this.buildErrorMessage(entityName, 'no encontrado', filterDetails),
+      );
+    }
     return data;
   }
 
@@ -217,6 +260,8 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
 
     const repository =
       manager?.getRepository<Entity>(this.repository.target) || this.repository;
+
+    const entityName = this.getEntityName();
 
     // Prepare base where condition
     const where: FindOptionsWhere<Entity> = {
@@ -244,7 +289,12 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
       withDeleted,
     });
 
-    if (!data || data.length === 0) throw new NotFoundError();
+    if (!data || data.length === 0) {
+      const details = this.showErrorDetails ? ` con IDs ${ids.join(', ')}` : '';
+      throw new NotFoundError(
+        this.buildErrorMessage(entityName, 'no encontrado', details),
+      );
+    }
     return data;
   }
 
@@ -264,6 +314,9 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
       scopes,
       isSecurityBaseEntity = true,
     } = params;
+
+    const entityName = this.getEntityName();
+
     if (uniqueFields?.length) {
       for (const field of uniqueFields) {
         if (data[field] ?? null) {
@@ -280,7 +333,12 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
             },
           });
           if (dataInDB.totalCount > 0) {
-            throw new ConflictError(`The value of ${field} already exists`);
+            const details = this.showErrorDetails
+              ? `: ${field}=${data[field]}`
+              : '';
+            throw new ConflictError(
+              this.buildErrorMessage(entityName, 'ya existe', details),
+            );
           }
         }
       }
@@ -318,10 +376,19 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
   }): Promise<Entity> {
     const { id, data, manager, cu, scopes, isSecurityBaseEntity } = params;
 
+    const entityName = this.getEntityName();
+
     // 1. Primero validamos que la entidad exista y el usuario tenga acceso
     const dataInDB = await this.baseFindOne({ id, cu, scopes });
     if (!dataInDB) {
-      throw new NotFoundError();
+      const details = this.showErrorDetails ? ` con ID ${id}` : '';
+      throw new NotFoundError(
+        this.buildErrorMessage(
+          entityName,
+          'no encontrado para actualizar',
+          details,
+        ),
+      );
     }
 
     // 2. Aplicar reglas de seguridad si es necesario
@@ -382,12 +449,25 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
     const repository =
       manager?.getRepository<Entity>(this.repository.target) || this.repository;
 
+    const entityName = this.getEntityName();
+
     const entity = await this.baseFindOne({
       id,
       manager,
       cu,
       scopes,
     });
+
+    if (!entity) {
+      const details = this.showErrorDetails ? ` con ID ${id}` : '';
+      throw new NotFoundError(
+        this.buildErrorMessage(
+          entityName,
+          'no encontrado para eliminar',
+          details,
+        ),
+      );
+    }
 
     return softRemove
       ? repository.softRemove(entity)
@@ -403,6 +483,8 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
     const { ids, manager, cu, scopes } = params;
     const repository =
       manager?.getRepository<Entity>(this.repository.target) || this.repository;
+
+    const entityName = this.getEntityName();
 
     // Use baseFindByIds with withDeleted: true
     const entities = await this.baseFindByIds({
@@ -422,7 +504,16 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
         .filter((id): id is number => id !== undefined);
       return (await repository.restore(validIds)).affected ?? 0;
     }
-    return 0;
+
+    // Si no hay entidades eliminadas para restaurar
+    const details = this.showErrorDetails ? ` con IDs ${ids.join(', ')}` : '';
+    throw new NotFoundError(
+      this.buildErrorMessage(
+        entityName,
+        'no eliminado para restaurar',
+        details,
+      ),
+    );
   }
 
   public getRepository() {

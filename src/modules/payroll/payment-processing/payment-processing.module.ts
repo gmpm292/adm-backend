@@ -5,7 +5,7 @@ import { PercentageProcessor } from './services/payment-processors/percentage-pr
 import { SaleQuantityProcessor } from './services/payment-processors/sale-quantity-processor';
 import { PriceRangeProcessor } from './services/payment-processors/price-range-processor';
 import { RealTimePaymentService } from './services/real-time-payment.service';
-import { PaymentBatchService } from './services/payment-batch.service';
+import { PaymentPeriodService } from './services/payment-period.service';
 import { PaymentProcessingResolver } from './resolvers/payment-processing.resolver';
 import { PaymentRollbackService } from './services/payment-rollback.service';
 import { WorkerModule } from '../worker/worker.module';
@@ -43,7 +43,7 @@ import { TeamModule } from '../../company/team/team.module';
     //services
     PaymentProcessingService,
     RealTimePaymentService,
-    PaymentBatchService,
+    PaymentPeriodService,
     PaymentRollbackService,
 
     //Processors
@@ -58,7 +58,7 @@ import { TeamModule } from '../../company/team/team.module';
   exports: [
     PaymentProcessingService,
     RealTimePaymentService,
-    PaymentBatchService,
+    PaymentPeriodService,
   ],
 })
 export class PaymentProcessingModule {}

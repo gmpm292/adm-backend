@@ -18,8 +18,12 @@ export class TaskHandlerService {
 
   private registerHandlers() {
     this.taskHandlers.set(
-      'GENERATE_DAILY_ATTENDANCES',
+      'GENERATE_WORK_SCHEDULES',
       this.generateWorkSchedules.bind(this),
+    );
+    this.taskHandlers.set(
+      'GENERATE_DAILY_ATTENDANCES',
+      this.generateDailyAttendances.bind(this),
     );
   }
 
@@ -44,5 +48,9 @@ export class TaskHandlerService {
 
   private async generateWorkSchedules() {
     return this.workScheduleGeneratorService.verifyAndCompleteNextYearPlanning();
+  }
+
+  private async generateDailyAttendances() {
+    return this.attendanceGeneratorService.generateDailyAttendancesWithChecks();
   }
 }

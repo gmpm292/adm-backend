@@ -3,7 +3,6 @@ enum PaymentType {
   SALE_QUANTITY
   FIXED_AMOUNT
   PERCENTAGE
-  HYBRID
 }
 
 enum ScopedAccessEnum {
@@ -63,6 +62,7 @@ type PaymentRule implements SecurityBaseEntity {
   name: String!
   description: String
   isActive: Boolean!
+  specificWorkersIds: [Int]
   workerType: WorkerType
   otherType: String
   product: Product
@@ -119,6 +119,7 @@ input CreatePaymentRuleInput {
   name: String!
   description: String
   isActive: Boolean
+  specificWorkersIds: [Int]
   workerType: WorkerType
   otherType: String
   productId: Int
@@ -142,6 +143,7 @@ input UpdatePaymentRuleInput {
   name: String
   description: String
   isActive: Boolean
+  specificWorkersIds: [Int]
   workerType: WorkerType
   otherType: String
   productId: Int
@@ -168,8 +170,4 @@ extend type Mutation {
   ): PaymentRule!
   removePaymentRules(ids: [Int!]!): [PaymentRule!]!
   restorePaymentRules(ids: [Int!]!): Int
-}
-
-extend type Subscription {
-  paymentRuleChanged: Boolean
 }

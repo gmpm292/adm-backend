@@ -19,14 +19,26 @@ import { ResourceScopedAccessService } from './resource-scoped-access.service';
 
 @Injectable()
 export class ScopedAccessService {
+  // Variable para controlar el nivel de detalle en errores
+  private readonly showErrorDetails: boolean;
+
   constructor(
     private readonly resourceScopedAccessService: ResourceScopedAccessService,
-  ) {}
+  ) {
+    // Determinar si mostrar detalles según NODE_ENV
+    const nodeEnv = process.env.NODE_ENV || 'development';
+    this.showErrorDetails = nodeEnv !== 'production';
+  }
+
+  // Método privado para construir mensajes de error con o sin detalles
+  private buildErrorMessage(baseMessage: string, details: string = ''): string {
+    return this.showErrorDetails ? `${baseMessage}${details}` : baseMessage;
+  }
 
   public forBaseFindOne<Entity extends ObjectLiteral>(
     cu: JWTPayload,
     repository: Repository<Entity>,
-    scopes: ScopedAccessEnum[] | undefined,
+    scopes?: ScopedAccessEnum[],
   ): FindOptionsWhere<Entity>[] {
     const filters: FindOptionsWhere<Entity>[] = [];
     const dbScopes: ScopedAccessEnum[] | undefined =
@@ -42,7 +54,10 @@ export class ScopedAccessService {
         (e) => e != ScopedAccessEnum.GENERAL && e != ScopedAccessEnum.PERSONAL,
       );
 
-    // SUPER users or Scopes includes GENERAL, bypass all filters
+    // Obtener nombre de la entidad para mensajes de error
+    const entityName = repository.metadata.name;
+
+    // If SUPER or Scopes includes GENERAL, no filters.
     if (cu.role?.some((r) => r === Role.SUPER)) {
       return [{}]; // Empty filter means no restrictions
     }
@@ -147,8 +162,12 @@ export class ScopedAccessService {
 
     // If no filters and user isn't SUPER, deny access
     if (filters.length === 0) {
+      const details = this.showErrorDetails ? ` on entity '${entityName}'` : '';
       throw new UnauthorizedError(
-        'Access denied: No valid scope filters could be applied',
+        this.buildErrorMessage(
+          'Access denied: No valid scope filters could be applied',
+          details,
+        ),
       );
     }
 
@@ -181,6 +200,9 @@ export class ScopedAccessService {
         (e) => e != ScopedAccessEnum.GENERAL && e != ScopedAccessEnum.PERSONAL,
       );
 
+    // Obtener nombre de la entidad para el mensaje de error
+    const entityName = repository.metadata.name;
+
     // If SUPER or Scopes includes GENERAL, no filters.
     if (cu.role?.some((r) => r === Role.SUPER)) return [];
 
@@ -201,8 +223,12 @@ export class ScopedAccessService {
 
     // If no applicable filters and user is not SUPER, deny access.
     if (filters.length === 0 && !cu.role.some((r) => r === Role.SUPER)) {
+      const details = this.showErrorDetails ? ` on entity '${entityName}'` : '';
       throw new UnauthorizedError(
-        'Access denied: You do not have permissions for this operation.',
+        this.buildErrorMessage(
+          'Access denied: You do not have permissions for this operation',
+          details,
+        ),
       );
     }
 
@@ -406,6 +432,10 @@ export class ScopedAccessService {
         (e) => e != ScopedAccessEnum.GENERAL && e != ScopedAccessEnum.PERSONAL,
       );
 
+    // Obtener información del usuario para mensajes de error
+    const userId = cu.sub;
+    const userRoles = cu.role?.join(', ') || 'no roles';
+
     if (cu) {
       createDto.createdBy = { id: cu.sub };
       createDto.updatedBy = { id: cu.sub };
@@ -417,7 +447,10 @@ export class ScopedAccessService {
       //   !createDto.businessId &&
       //   effectiveScopes.includes(ScopedAccessEnum.BUSINESS)
       // ) {
-      //   throw new BadRequestError('SUPER users must provide businessId');
+      //   const details = this.showErrorDetails ? ` (User: ${userId}, Roles: ${userRoles})` : '';
+      //   throw new BadRequestError(
+      //     this.buildErrorMessage('SUPER users must provide businessId', details)
+      //   );
       // }
       return this.transformIdsToRelations(createDto);
     }
@@ -432,7 +465,10 @@ export class ScopedAccessService {
       //   !createDto.officeId &&
       //   effectiveScopes.includes(ScopedAccessEnum.OFFICE)
       // ) {
-      //   throw new BadRequestError('PRINCIPAL users must provide officeId');
+      //   const details = this.showErrorDetails ? ` (User: ${userId}, Roles: ${userRoles})` : '';
+      //   throw new BadRequestError(
+      //     this.buildErrorMessage('PRINCIPAL users must provide officeId', details)
+      //   );
       // }
       return this.transformIdsToRelations(createDto);
     }
@@ -450,7 +486,15 @@ export class ScopedAccessService {
         !createDto.departmentId &&
         effectiveScopes.includes(ScopedAccessEnum.DEPARTMENT)
       ) {
-        throw new BadRequestError('ADMIN users must provide departmentId');
+        const details = this.showErrorDetails
+          ? ` (User: ${userId}, Roles: ${userRoles})`
+          : '';
+        throw new BadRequestError(
+          this.buildErrorMessage(
+            'ADMIN users must provide departmentId',
+            details,
+          ),
+        );
       }
       return this.transformIdsToRelations(createDto);
     }
@@ -471,7 +515,12 @@ export class ScopedAccessService {
         !createDto.teamId &&
         effectiveScopes.includes(ScopedAccessEnum.TEAM)
       ) {
-        throw new BadRequestError('MANAGER users must provide teamId');
+        const details = this.showErrorDetails
+          ? ` (User: ${userId}, Roles: ${userRoles})`
+          : '';
+        throw new BadRequestError(
+          this.buildErrorMessage('MANAGER users must provide teamId', details),
+        );
       }
       return this.transformIdsToRelations(createDto);
     }
@@ -494,7 +543,15 @@ export class ScopedAccessService {
     }
 
     // USER role (or no matching role) - no hierarchy access by default
-    throw new UnauthorizedError('User role does not have create permissions');
+    const details = this.showErrorDetails
+      ? ` (User: ${userId}, Roles: ${userRoles})`
+      : '';
+    throw new UnauthorizedError(
+      this.buildErrorMessage(
+        'User role does not have create permissions',
+        details,
+      ),
+    );
   }
 
   /**
@@ -554,6 +611,10 @@ export class ScopedAccessService {
         (e) => e != ScopedAccessEnum.GENERAL && e != ScopedAccessEnum.PERSONAL,
       );
 
+    // Obtener información del usuario para mensajes de error
+    const userId = cu.sub;
+    const userRoles = cu.role?.join(', ') || 'no roles';
+
     // Always update the updatedBy field
     updateDto.updatedBy = { id: cu.sub };
 
@@ -568,24 +629,50 @@ export class ScopedAccessService {
       updateDto.business !== undefined
     ) {
       if (!cu.role?.some((r) => r === Role.SUPER)) {
-        throw new UnauthorizedError('Only SUPER users can modify business');
+        const details = this.showErrorDetails
+          ? ` (User: ${userId}, Roles: ${userRoles})`
+          : '';
+        throw new UnauthorizedError(
+          this.buildErrorMessage(
+            'Only SUPER users can modify business',
+            details,
+          ),
+        );
       }
       if (!effectiveScopes.includes(ScopedAccessEnum.BUSINESS)) {
+        const details = this.showErrorDetails
+          ? ` (User: ${userId}, Roles: ${userRoles})`
+          : '';
         throw new UnauthorizedError(
-          'Business scope not allowed for this operation',
+          this.buildErrorMessage(
+            'Business scope not allowed for this operation',
+            details,
+          ),
         );
       }
     }
 
     if (updateDto.officeId !== undefined || updateDto.office !== undefined) {
       if (!cu.role?.some((r) => r === Role.SUPER || r === Role.PRINCIPAL)) {
+        const details = this.showErrorDetails
+          ? ` (User: ${userId}, Roles: ${userRoles})`
+          : '';
         throw new UnauthorizedError(
-          'Only SUPER and PRINCIPAL users can modify office',
+          this.buildErrorMessage(
+            'Only SUPER and PRINCIPAL users can modify office',
+            details,
+          ),
         );
       }
       if (!effectiveScopes.includes(ScopedAccessEnum.OFFICE)) {
+        const details = this.showErrorDetails
+          ? ` (User: ${userId}, Roles: ${userRoles})`
+          : '';
         throw new UnauthorizedError(
-          'Office scope not allowed for this operation',
+          this.buildErrorMessage(
+            'Office scope not allowed for this operation',
+            details,
+          ),
         );
       }
     }
@@ -599,13 +686,25 @@ export class ScopedAccessService {
           (r) => r === Role.SUPER || r === Role.PRINCIPAL || r === Role.ADMIN,
         )
       ) {
+        const details = this.showErrorDetails
+          ? ` (User: ${userId}, Roles: ${userRoles})`
+          : '';
         throw new UnauthorizedError(
-          'Only SUPER, PRINCIPAL and ADMIN users can modify department',
+          this.buildErrorMessage(
+            'Only SUPER, PRINCIPAL and ADMIN users can modify department',
+            details,
+          ),
         );
       }
       if (!effectiveScopes.includes(ScopedAccessEnum.DEPARTMENT)) {
+        const details = this.showErrorDetails
+          ? ` (User: ${userId}, Roles: ${userRoles})`
+          : '';
         throw new UnauthorizedError(
-          'Department scope not allowed for this operation',
+          this.buildErrorMessage(
+            'Department scope not allowed for this operation',
+            details,
+          ),
         );
       }
     }
@@ -620,13 +719,25 @@ export class ScopedAccessService {
             r === Role.MANAGER,
         )
       ) {
+        const details = this.showErrorDetails
+          ? ` (User: ${userId}, Roles: ${userRoles})`
+          : '';
         throw new UnauthorizedError(
-          'Only SUPER, PRINCIPAL, ADMIN and MANAGER users can modify team',
+          this.buildErrorMessage(
+            'Only SUPER, PRINCIPAL, ADMIN and MANAGER users can modify team',
+            details,
+          ),
         );
       }
       if (!effectiveScopes.includes(ScopedAccessEnum.TEAM)) {
+        const details = this.showErrorDetails
+          ? ` (User: ${userId}, Roles: ${userRoles})`
+          : '';
         throw new UnauthorizedError(
-          'Team scope not allowed for this operation',
+          this.buildErrorMessage(
+            'Team scope not allowed for this operation',
+            details,
+          ),
         );
       }
     }

@@ -5,10 +5,10 @@ import { PaymentAccumulator } from '../../payment_accumulator/entities/payment_a
 
 @Entity('py_payroll_periods')
 export class PayrollPeriod extends SecurityBaseEntity {
-  @Column({ type: 'date' })
+  @Column({ type: 'timestamp without time zone' })
   startDate: Date;
 
-  @Column({ type: 'date' })
+  @Column({ type: 'timestamp without time zone' })
   endDate: Date;
 
   @Column({ type: 'boolean', default: false })

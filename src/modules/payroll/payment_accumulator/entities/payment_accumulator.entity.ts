@@ -7,15 +7,15 @@ import { PayrollPeriod } from '../../payroll-period/entities/payroll-period.enti
 @Entity('py_payment_accumulators')
 export class PaymentAccumulator extends SecurityBaseEntity {
   @ManyToOne(() => Worker, { nullable: false })
-  @JoinColumn({ name: 'worker_id' })
+  @JoinColumn()
   worker: Worker;
 
   @ManyToOne(() => PaymentRule, { nullable: false })
-  @JoinColumn({ name: 'payment_rule_id' })
+  @JoinColumn()
   paymentRule: PaymentRule;
 
   @ManyToOne(() => PayrollPeriod, { nullable: false })
-  @JoinColumn({ name: 'payroll_period_id' })
+  @JoinColumn()
   payrollPeriod: PayrollPeriod;
 
   @Column({ type: 'int', default: 0 })

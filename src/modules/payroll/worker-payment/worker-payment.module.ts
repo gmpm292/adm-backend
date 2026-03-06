@@ -1,4 +1,4 @@
-import { forwardRef, Module } from '@nestjs/common';
+import { forwardRef, Global, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WorkerPaymentResolver } from './resolvers/worker-payment.resolver';
 import { WorkerPaymentService } from './services/worker-payment.service';

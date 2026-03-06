@@ -62,14 +62,14 @@ export class CategoryResolver {
     );
   }
 
-  @Roles(Role.SUPER)
+  @Roles(Role.SUPER, Role.PRINCIPAL)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('removeCategories')
   async remove(@CurrentUser() user: JWTPayload, @Args('ids') ids: number[]) {
     return this.categoryService.remove(ids, user);
   }
 
-  @Roles(Role.SUPER)
+  @Roles(Role.SUPER, Role.PRINCIPAL)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('restoreCategories')
   async restore(@CurrentUser() user: JWTPayload, @Args('ids') ids: number[]) {

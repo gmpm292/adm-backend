@@ -4,6 +4,7 @@ import { Sale } from '../../sale/entities/sale.entity';
 import { Product } from '../../../inventory/product/entities/product.entity';
 import { ProductPaymentOptions } from '../../../inventory/product/types/product-payment-options.type';
 import { Worker } from '../../../payroll/worker/entities/worker.entity';
+import { SaleDetailStatus } from '../enums/sale-detail-status.enum';
 
 /**
  * Description: Products sold in a transaction.
@@ -39,6 +40,14 @@ export class SaleDetail extends SecurityBaseEntity {
 
   @Column({ type: 'boolean', default: false })
   isConfirmed?: boolean;
+
+  @Column({
+    type: 'enum',
+    nullable: false,
+    enum: SaleDetailStatus,
+    default: SaleDetailStatus.DRAFT,
+  })
+  saleDetailStatus: SaleDetailStatus;
 
   @ManyToMany(() => Worker, {
     nullable: true,

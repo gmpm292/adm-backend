@@ -24,6 +24,8 @@ import { PaymentAccumulatorService } from '../../payment_accumulator/services/pa
 import { PaymentAccumulator } from '../../payment_accumulator/entities/payment_accumulator.entity';
 import { PaymentMethod } from '../../worker-payment/enums/payment-method.enum';
 import { RealTimeCalculationResult } from '../types/real-time-calculation.types';
+import { WorkerPayment } from '../../worker-payment/entities/worker-payment.entity';
+import { UpdatePaymentAccumulatorInput } from '../../payment_accumulator/dto/update-payment-accumulator.input';
 
 @Injectable()
 export class RealTimePaymentService {
@@ -220,6 +222,77 @@ export class RealTimePaymentService {
       paymentId?: number;
     }>;
   }> {
+    // ===================================================
+    // VALIDACIÓN ANTI-DUPLICIDAD
+    // ===================================================
+
+    // 1. Buscar TODOS los pagos existentes para esta venta + regla
+    const existingPayments = (
+      await this.workerPaymentService.find(
+        {
+          filters: [
+            {
+              property: 'sale.id',
+              operator: ConditionalOperator.EQUAL,
+              value: String(sale.id),
+            },
+            {
+              property: 'paymentRule.id',
+              operator: ConditionalOperator.EQUAL,
+              value: String(rule.id),
+            },
+          ],
+        },
+        cu,
+        scopes,
+        manager,
+      )
+    ).data as WorkerPayment[];
+
+    if (existingPayments.length > 0) {
+      // 2. ¿Es un reprocesamiento intencional?
+      const shouldReprocess = await this.shouldReprocessSale(sale.id, rule.id);
+
+      if (shouldReprocess) {
+        // REPROCESAMIENTO: Eliminar pagos anteriores primero
+        console.log(
+          `[RealTimeProcessor] Reprocesando venta ${sale.id}, regla ${rule.id}. Eliminando ${existingPayments.length} pagos anteriores...`,
+        );
+
+        await this.workerPaymentService.remove(
+          existingPayments.map((i) => i.id as number),
+          cu,
+          scopes,
+          manager,
+        );
+
+        // También ajustar acumuladores (decrementar)
+        for (const payment of existingPayments) {
+          await this.adjustAccumulatorsForReprocessing(
+            payment,
+            rule,
+            payrollPeriod,
+            cu,
+            scopes,
+            manager,
+          );
+        }
+
+        // Continuar con el procesamiento normal (creará nuevos pagos)
+      } else {
+        // DUPLICADO NO INTENCIONAL O NO PERMITIDO: Bloquear
+        throw new Error(
+          `La venta ${sale.id} ya fue procesada para la regla ${rule.name}. ` +
+            `Existen ${existingPayments.length} pagos previos. ` +
+            `Si necesita recalcular, debe reprocesar explícitamente.`,
+        );
+      }
+    }
+
+    // ===================================================
+    // CONTINUAR CON EL PROCESAMIENTO NORMAL
+    // ===================================================
+
     // 1. CALCULAR PAGOS POR WORKER (el processor maneja TODO)
     let calculationResult: RealTimeCalculationResult;
 
@@ -349,6 +422,7 @@ export class RealTimePaymentService {
             workerId: workerPayment.workerId,
             saleId: sale.id,
             payrollPeriodId: payrollPeriod.id as number,
+            paymentRuleId: rule.id,
             amount: workerPayment.amount,
             currency: workerPayment.currency,
             paymentConcept: this.getPaymentConcept(rule.paymentType),
@@ -406,6 +480,97 @@ export class RealTimePaymentService {
         return PaymentConcept.COMMISSION;
       default:
         return PaymentConcept.BONUS;
+    }
+  }
+
+  private async shouldReprocessSale(
+    saleId: number | undefined,
+    ruleId: number | undefined,
+  ): Promise<boolean> {
+    return true;
+  }
+
+  private async adjustAccumulatorsForReprocessing(
+    payment: WorkerPayment,
+    rule: PaymentRule,
+    payrollPeriod: PayrollPeriod,
+    cu?: JWTPayload,
+    scopes?: ScopedAccessEnum[],
+    manager?: EntityManager,
+  ): Promise<void> {
+    try {
+      const accumulator =
+        await this.paymentAccumulatorService.baseFindOneByFilters({
+          filters: {
+            worker: { id: payment.worker.id },
+            paymentRule: { id: rule.id },
+            payrollPeriod: { id: payrollPeriod.id },
+          },
+          cu,
+          scopes,
+          manager,
+        });
+
+      if (accumulator) {
+        // Preparar datos de actualización
+        const updateData: UpdatePaymentAccumulatorInput = {
+          id: accumulator.id as number,
+          accumulatedAmount: Math.max(
+            0,
+            (accumulator.accumulatedAmount || 0) - payment.amount,
+          ),
+        };
+
+        // Decrementar según el tipo de regla
+        switch (rule.paymentType) {
+          case PaymentType.SALE_QUANTITY: {
+            const saleDetails = payment.sale?.details || [];
+            const totalQuantity = saleDetails.reduce<number>((sum, detail) => {
+              return sum + (detail.quantity || 0);
+            }, 0);
+
+            updateData.productCounter = Math.max(
+              0,
+              (accumulator.productCounter || 0) - totalQuantity,
+            );
+            break;
+          }
+
+          case PaymentType.PERCENTAGE: {
+            // ❌ NO restamos salesTotal porque no tenemos la información necesaria
+            // Solo restamos accumulatedAmount (ya se hace arriba)
+
+            // Opcional: Log para tracking
+            console.log(
+              `[RealTimeProcessor] Percentage: omitiendo decremento de salesTotal para worker ${payment.worker.id}`,
+            );
+            break;
+          }
+
+          case PaymentType.PRICE_RANGE:
+            // ✅ Sin declaraciones, no necesita bloque
+            break;
+        }
+
+        await this.paymentAccumulatorService.update(
+          accumulator.id as number,
+          updateData,
+          cu,
+          scopes,
+          manager,
+        );
+
+        console.log(
+          `[RealTimeProcessor] Acumulador ajustado para worker ${payment.worker.id}: nuevo accumulatedAmount = ${updateData.accumulatedAmount}`,
+        );
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    } catch (error) {
+      // Si no existe acumulador, no hay nada que ajustar
+      console.log(
+        `No accumulator found for worker ${payment.worker.id}, skipping adjustment`,
+      );
     }
   }
 }

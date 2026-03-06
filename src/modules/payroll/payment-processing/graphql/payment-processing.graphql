@@ -16,9 +16,8 @@ type PaymentProcessingSummary {
   errorCount: Int!
 }
 
-# Input para procesamiento batch
-input ProcessPaymentsInput {
-  payrollPeriodId: Int!
+input ProcessPeriodPaymentsInput {
+  payrollPeriodId: Int
   businessId: Int
   officeId: Int
   departmentId: Int
@@ -27,12 +26,10 @@ input ProcessPaymentsInput {
   force: Boolean
 }
 
-# Input para procesamiento en tiempo real de venta
 input ProcessSalePaymentInput {
   saleId: Int!
 }
 
-# Input para reversión de pagos de venta
 input RollbackSalePaymentsInput {
   saleId: Int!
   reason: String!
@@ -40,7 +37,6 @@ input RollbackSalePaymentsInput {
   nextPeriodId: Int
 }
 
-# Resultado de procesamiento de venta
 type SalePaymentProcessingResult {
   success: Boolean!
   paymentsCreated: Int!
@@ -49,7 +45,6 @@ type SalePaymentProcessingResult {
   details: [JSON!]!
 }
 
-# Resultado de reversión de venta
 type RollbackSalePaymentsResult {
   success: Boolean!
   originalPaymentsReversed: Int!
@@ -58,35 +53,57 @@ type RollbackSalePaymentsResult {
   details: [JSON!]!
 }
 
-# NOTA: extend type Query removido porque está vacío
-# Se agregará cuando tengamos queries implementadas
+type BatchSalePaymentResult {
+  saleId: Int!
+  success: Boolean!
+  paymentsCreated: Int!
+  totalAmount: Float!
+  error: String
+  details: [JSON!]!
+}
+
+type PeriodSalesProcessingResult {
+  success: Boolean!
+  payrollPeriodId: Int!
+  totalSales: Int!
+  successful: Int!
+  failed: Int!
+  totalPaymentsCreated: Int!
+  totalAmount: Float!
+  results: [BatchSalePaymentResult!]!
+}
+
+type BatchSaleProcessingResult {
+  success: Boolean!
+  totalProcessed: Int!
+  successful: Int!
+  failed: Int!
+  results: [BatchSalePaymentResult!]!
+}
 
 extend type Mutation {
-  # Procesar pagos batch (FIXED_AMOUNT)
-  processPayments(
-    processPaymentsInput: ProcessPaymentsInput!
-    scopes: [ScopedAccessEnum!]
+  processPeriodPayments(
+    processPeriodPaymentsInput: ProcessPeriodPaymentsInput!
   ): PaymentProcessingSummary!
 
-  # Procesar pagos de una venta en tiempo real
   processSalePayment(
     processSalePaymentInput: ProcessSalePaymentInput!
-    scopes: [ScopedAccessEnum!]
   ): SalePaymentProcessingResult!
 
-  # Revertir pagos de una venta (devolución/cancelación)
+  processBatchSalePayments(saleIds: [Int!]!): BatchSaleProcessingResult!
+
+  processPeriodSales(payrollPeriodId: Int!): PeriodSalesProcessingResult!
+
   rollbackSalePayments(
     rollbackSalePaymentsInput: RollbackSalePaymentsInput!
-    scopes: [ScopedAccessEnum!]
   ): RollbackSalePaymentsResult!
 
   # TODO: Implementar luego
-  # approvePayments(paymentIds: [Int!]!, scopes: [ScopedAccessEnum!]): Int!
+  # approvePayments(paymentIds: [Int!]!): Int!
 
   # TODO: Implementar luego
   # rejectPayments(
   #   paymentIds: [Int!]!
   #   reason: String!
-  #   scopes: [ScopedAccessEnum!]
   # ): Int!
 }

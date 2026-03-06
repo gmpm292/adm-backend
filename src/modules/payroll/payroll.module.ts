@@ -10,6 +10,7 @@ import { OfficeModule } from '../company/office/office.module';
 import { UsersModule } from '../users/users.module';
 import { PaymentAccumulatorModule } from './payment_accumulator/payment-accumulator.module';
 import { PaymentProcessingModule } from './payment-processing/payment-processing.module';
+import { MaterialCostModule } from './material-cost/material-cost.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { PaymentProcessingModule } from './payment-processing/payment-processing
     forwardRef(() => WorkScheduleModule),
     forwardRef(() => PaymentAccumulatorModule),
     forwardRef(() => PaymentProcessingModule),
+    forwardRef(() => MaterialCostModule),
 
     // Módulos externos requeridos
     forwardRef(() => OfficeModule),

@@ -58,26 +58,91 @@ export class PaymentRollbackService {
         };
       }
 
+      // 1.1 FILTRAR PAGOS YA REVERTIDOS
+      const activePayments = originalPayments.filter(
+        (p) => !p.breakdown?.reversed,
+      );
+
+      const alreadyReversedCount =
+        originalPayments.length - activePayments.length;
+
+      if (alreadyReversedCount > 0) {
+        console.log(
+          `[PaymentRollback] ${alreadyReversedCount} pagos ya estaban revertidos y serán ignorados`,
+        );
+      }
+
+      if (activePayments.length === 0) {
+        console.log(
+          `[PaymentRollback] No hay pagos activos para revertir en venta ${input.saleId}`,
+        );
+        return {
+          success: true,
+          originalPaymentsReversed: 0,
+          compensationPaymentsCreated: 0,
+          details: originalPayments.map((p) => ({
+            paymentId: p.id,
+            workerId: p.worker?.id,
+            amount: p.amount,
+            status: p.breakdown?.reversed
+              ? 'ALREADY_REVERSED'
+              : 'NO_ACTIVE_PAYMENTS',
+          })),
+        };
+      }
+
       console.log(
-        `[PaymentRollback] Encontrados ${originalPayments.length} pagos para revertir`,
+        `[PaymentRollback] Encontrados ${activePayments.length} pagos activos para revertir`,
       );
 
-      // 2. Marcar como reversados (soft delete o flag)
-      await this.markPaymentsAsReversed(
-        originalPayments,
-        input.reason,
-        cu,
-        scopes,
-        manager,
+      // 2. SEPARAR PAGOS POR ESTADO
+      const paidPayments = activePayments.filter((p) => p.paidDate !== null);
+      const unpaidPayments = activePayments.filter((p) => p.paidDate === null);
+
+      console.log(
+        `[PaymentRollback] Pagos ya efectuados: ${paidPayments.length}, ` +
+          `Pagos no efectuados: ${unpaidPayments.length}`,
       );
 
-      // 3. Si se solicita compensación, crear pagos negativos
+      // 3. ELIMINAR PAGOS NO EFECTUADOS (nunca se pagaron)
+      if (unpaidPayments.length > 0) {
+        console.log(
+          `[PaymentRollback] Eliminando ${unpaidPayments.length} pagos no efectuados`,
+        );
+
+        await this.workerPaymentService.remove(
+          unpaidPayments
+            .map((e) => e.id)
+            .filter((id): id is number => id !== undefined),
+          cu,
+          scopes,
+          manager,
+        );
+      }
+
+      // 4. MARCAR PAGOS EFECTUADOS COMO REVERSADOS
+      if (paidPayments.length > 0) {
+        await this.markPaymentsAsReversed(
+          paidPayments,
+          input.reason,
+          cu,
+          scopes,
+          manager,
+        );
+      }
+
+      // 5. CREAR COMPENSACIONES SOLO PARA PAGOS EFECTUADOS (si se solicita)
       let compensationPayments = 0;
       let nextPeriodId: number | undefined;
+      const compensateInNextPeriod = input.compensateInNextPeriod ?? true;
 
-      if (input.compensateInNextPeriod && originalPayments.length > 0) {
+      if (compensateInNextPeriod && paidPayments.length > 0) {
+        console.log(
+          `[PaymentRollback] Creando compensaciones para ${paidPayments.length} pagos efectuados`,
+        );
+
         const compensationResult = await this.createCompensationPayments(
-          originalPayments,
+          paidPayments, // ✅ Solo pagos efectuados
           input.reason,
           input.nextPeriodId,
           cu,
@@ -91,12 +156,14 @@ export class PaymentRollbackService {
 
       console.log(
         `[PaymentRollback] Reversión completada. ` +
-          `Reversiones: ${originalPayments.length}, Compensaciones: ${compensationPayments}`,
+          `Eliminados: ${unpaidPayments.length}, ` +
+          `Reversiones: ${paidPayments.length}, ` +
+          `Compensaciones: ${compensationPayments}`,
       );
 
       return {
         success: true,
-        originalPaymentsReversed: originalPayments.length,
+        originalPaymentsReversed: paidPayments.length, // Solo los efectuados se consideran "reversados"
         compensationPaymentsCreated: compensationPayments,
         nextPeriodId,
         details: originalPayments.map((p) => ({
@@ -105,8 +172,10 @@ export class PaymentRollbackService {
           amount: p.amount,
           currency: p.currency,
           paymentConcept: p.paymentConcept,
-          reversed: true,
-          compensationCreated: input.compensateInNextPeriod,
+          paidDate: p.paidDate,
+          action: p.paidDate ? 'REVERSED' : 'DELETED',
+          compensationCreated:
+            input.compensateInNextPeriod && p.paidDate !== null,
         })),
       };
     } catch (error) {
@@ -121,8 +190,7 @@ export class PaymentRollbackService {
         compensationPaymentsCreated: 0,
         details: [
           {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-            error: error.message,
+            error: error instanceof Error ? error.message : String(error),
             timestamp: new Date().toISOString(),
           },
         ],
@@ -144,6 +212,11 @@ export class PaymentRollbackService {
     const result = await this.workerPaymentService.find(
       {
         filters: [
+          {
+            property: 'sale.id',
+            operator: ConditionalOperator.EQUAL,
+            value: String(saleId),
+          },
           {
             property: 'sale.id',
             operator: ConditionalOperator.EQUAL,
@@ -232,26 +305,25 @@ export class PaymentRollbackService {
       `[PaymentRollback] Creando compensaciones para ${originalPayments.length} pagos`,
     );
 
-    // Determinar el próximo período
-    const firstPayment = originalPayments[0];
+    // Determinar el período
     let nextPeriodId = specificNextPeriodId;
 
     if (!nextPeriodId) {
-      const nextPeriod = await this.payrollPeriodService.getNextOrCreatePeriod(
-        firstPayment.payrollPeriod.id as number,
-        cu,
-        scopes,
-        manager,
-      );
-
-      if (!nextPeriod) {
+      const currentPeriod =
+        await this.payrollPeriodService.getCurrentOrCreatePeriod(
+          new Date(),
+          cu,
+          scopes,
+          manager,
+        );
+      if (!currentPeriod) {
         console.warn(
-          '[PaymentRollback] No se encontró próximo período para compensación',
+          '[PaymentRollback] No se encontró período para compensación',
         );
         return { createdCount: 0 };
       }
 
-      nextPeriodId = nextPeriod.id as number;
+      nextPeriodId = currentPeriod.id as number;
       console.log(`[PaymentRollback] Período de compensación: ${nextPeriodId}`);
     }
 

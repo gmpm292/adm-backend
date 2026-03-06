@@ -4,6 +4,8 @@ import { WorkerService } from '../../payroll/worker/services/worker.service';
 import { Worker } from '../../payroll/worker/entities/worker.entity';
 import { CreateAttendanceInput } from '../../payroll/attendance/dto/create-attendance.input';
 import { AttendanceStatus } from '../../payroll/attendance/enums/attendance-status.enum';
+import { SystemUtilsService } from '../../../core/services/system-utils.service';
+import { Role } from '../../../core/enums/role.enum';
 
 @Injectable()
 export class AttendanceGeneratorService {
@@ -12,6 +14,7 @@ export class AttendanceGeneratorService {
   constructor(
     private readonly attendanceService: AttendanceService,
     private readonly workerService: WorkerService,
+    private readonly utils: SystemUtilsService,
   ) {}
 
   /**
@@ -78,13 +81,20 @@ export class AttendanceGeneratorService {
    * Versión mejorada que considera días no laborables
    */
   async generateDailyAttendancesWithChecks(): Promise<number> {
+    const systemUser = this.utils.getSystemUser();
+    const cu = {
+      sub: systemUser.id as number,
+      role: systemUser.role as Array<Role>,
+    };
     try {
       const today = new Date();
       const dayOfWeek = today.getDay(); // 0 = Domingo, 6 = Sábado
 
-      // No generar registros los fines de semana (opcional)
-      if (dayOfWeek === 0 || dayOfWeek === 6) {
-        this.logger.log(`Fin de semana - omitiendo generación de registros`);
+      // No generar registros los domingos (opcional)
+      if (dayOfWeek === 0) {
+        this.logger.log(
+          `Fin de semana (Domingo) - omitiendo generación de registros`,
+        );
         return 0;
       }
 
@@ -113,20 +123,25 @@ export class AttendanceGeneratorService {
           await this.attendanceService.findDailyAttendanceForWorker(
             worker.id as number,
             today,
+            cu,
           );
 
         if (!existingAttendance) {
           const attendanceData: CreateAttendanceInput = {
             workerId: worker.id as number,
             attendanceDate: today,
-            status: AttendanceStatus.ABSENT,
+            status: AttendanceStatus.PRESENT,
             hoursWorked: 0,
             isHoliday: this.attendanceService.isHoliday(today),
             //isPaid: false,
             notes: 'Registro automático generado por sistema',
+            businessId: worker.business?.id,
+            officeId: worker.office?.id,
+            departmentId: worker.department?.id,
+            teamId: worker.team?.id,
           };
 
-          await this.attendanceService.create(attendanceData);
+          await this.attendanceService.create(attendanceData, cu);
           createdCount++;
         } else {
           skippedCount++;

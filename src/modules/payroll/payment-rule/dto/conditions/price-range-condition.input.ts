@@ -8,6 +8,7 @@ import {
   MinLength,
   Validate,
   ValidateIf,
+  ValidationArguments,
   ValidatorConstraint,
   ValidatorConstraintInterface,
 } from 'class-validator';
@@ -16,15 +17,17 @@ import {
 export class ExclusiveAmountPercentageConstraint
   implements ValidatorConstraintInterface
 {
-  validate(object: any) {
+  validate(_: any, args: ValidationArguments) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const object = args.object as any;
+
     const hasAmount = object.amount !== undefined && object.amount !== null;
     const hasPercentage =
       object.percentage !== undefined && object.percentage !== null;
 
-    // Solo uno debe estar definido.
+    // ❗ Solo uno debe existir
     return !(hasAmount && hasPercentage);
   }
-
   defaultMessage() {
     return 'Los campos amount y percentage son mutuamente excluyentes. Solo uno debe ser definido.';
   }
@@ -32,12 +35,10 @@ export class ExclusiveAmountPercentageConstraint
 
 export class PriceRangeConditionInput {
   @IsNumber()
-  @IsInt()
   min: number;
 
   @IsOptional()
   @IsNumber()
-  @IsInt()
   max?: number | null;
 
   @IsString()

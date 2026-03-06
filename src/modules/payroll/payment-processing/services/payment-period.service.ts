@@ -4,7 +4,7 @@ import { JWTPayload } from '../../../auth/dto/jwt-payload.dto';
 import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
 import { PaymentProcessingResult } from '../types/payment-processing-result.type';
 import { PaymentProcessingSummary } from '../types/payment-processing-summary.type';
-import { ProcessPaymentsInput } from '../dto/process-payments.input';
+import { ProcessPeriodPaymentsInput } from '../dto/process-payments.input';
 import { PayrollPeriod } from '../../payroll-period/entities/payroll-period.entity';
 import { WorkerService } from '../../worker/services/worker.service';
 import { WorkerPaymentService } from '../../worker-payment/services/worker-payment.service';
@@ -22,7 +22,7 @@ import { PeriodBatchCalculationResult } from '../types/payment-calculation.types
 import { WorkerPayment } from '../../worker-payment/entities/worker-payment.entity';
 
 @Injectable()
-export class PaymentBatchService {
+export class PaymentPeriodService {
   // Tipos de pago que se procesan en batch (al final del período)
   private readonly FOR_PERIOD_PAYMENT_TYPES = [PaymentType.FIXED_AMOUNT];
 
@@ -42,7 +42,7 @@ export class PaymentBatchService {
    * Procesar pagos de un período completo (Batch)
    */
   async processPeriodPayments(
-    input: ProcessPaymentsInput,
+    input: ProcessPeriodPaymentsInput,
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
@@ -53,16 +53,28 @@ export class PaymentBatchService {
 
     try {
       console.log(
-        `[PaymentBatch] Iniciando procesamiento batch para período ${input.payrollPeriodId}`,
+        `[PaymentBatch] Iniciando procesamiento batch para período ${input.payrollPeriodId || 'actual'}`,
       );
 
-      // 1. Validar período
-      const payrollPeriod = await this.payrollPeriodService.validatePeriod(
-        input.payrollPeriodId,
-        cu,
-        scopes,
-        manager,
-      );
+      // 1. Obtener período
+      let payrollPeriod: PayrollPeriod;
+      if (input.payrollPeriodId) {
+        // Validar período
+        payrollPeriod = await this.payrollPeriodService.validatePeriod(
+          input.payrollPeriodId,
+          cu,
+          scopes,
+          manager,
+        );
+      } else {
+        payrollPeriod =
+          await this.payrollPeriodService.getCurrentOrCreatePeriod(
+            new Date(),
+            cu,
+            scopes,
+            manager,
+          );
+      }
 
       // 2. Obtener todas las reglas aplicables para batch
       const applicableRules = await this.getApplicableBatchRules(
@@ -172,7 +184,7 @@ export class PaymentBatchService {
    * Obtener reglas aplicables para procesamiento batch
    */
   private async getApplicableBatchRules(
-    input: ProcessPaymentsInput,
+    input: ProcessPeriodPaymentsInput,
     payrollPeriod: PayrollPeriod,
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
@@ -219,7 +231,7 @@ export class PaymentBatchService {
    */
   private async processRuleForPeriod(
     rule: PaymentRule,
-    input: ProcessPaymentsInput,
+    input: ProcessPeriodPaymentsInput,
     payrollPeriod: PayrollPeriod,
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
@@ -287,7 +299,7 @@ export class PaymentBatchService {
                     value: String(payrollPeriod.id),
                   },
                   {
-                    property: 'breakdown.ruleId',
+                    property: 'paymentRule.id',
                     operator: ConditionalOperator.EQUAL,
                     value: String(rule.id),
                   },
@@ -336,7 +348,7 @@ export class PaymentBatchService {
                     value: String(payrollPeriod.id),
                   },
                   {
-                    property: 'breakdown.ruleId',
+                    property: 'paymentRule.id',
                     operator: ConditionalOperator.EQUAL,
                     value: String(rule.id),
                   },
@@ -366,6 +378,7 @@ export class PaymentBatchService {
           {
             workerId: workerPayment.workerId,
             payrollPeriodId: payrollPeriod.id as number,
+            paymentRuleId: rule.id,
             amount: workerPayment.amount,
             currency: workerPayment.currency,
             paymentConcept: PaymentConcept.SALARY,

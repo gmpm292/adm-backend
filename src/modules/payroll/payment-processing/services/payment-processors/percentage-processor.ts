@@ -113,11 +113,11 @@ export class PercentageProcessor extends BasePaymentProcessor {
           operator: ConditionalOperator.EQUAL,
           value: rule.workerType,
         },
-        {
-          property: 'isActive',
-          operator: ConditionalOperator.EQUAL,
-          value: 'true',
-        },
+        // {
+        //   property: 'isActive',
+        //   operator: ConditionalOperator.EQUAL,
+        //   value: 'true',
+        // },
       ];
 
       if (rule.workerType === WorkerType.OTHER && rule.otherType) {

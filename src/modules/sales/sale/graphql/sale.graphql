@@ -5,6 +5,14 @@ enum PaymentMethod {
   OTHER
 }
 
+enum SaleStatus {
+  DRAFT # Borrador, sin efectividad
+  CONFIRMED # Venta efectiva/completada
+  CANCELLED # Cancelada
+  PARTIALLY_REFUNDED # Devolución parcial
+  FULLY_REFUNDED # Devolución total
+}
+
 type Sale implements SecurityBaseEntity {
   id: Int!
   createdAt: Date!
@@ -29,6 +37,7 @@ type Sale implements SecurityBaseEntity {
   salesUser: User
   customer: Customer
   details: [SaleDetail]
+  saleStatus: SaleStatus
 }
 
 type SalesSummary {
@@ -98,6 +107,11 @@ input ValidateSalePaymentsInput {
   baseCurrency: String
 }
 
+input RefundSaleInput {
+  saleId: Int
+  saleDetailIds: [Int!]
+}
+
 extend type Query {
   sales(options: ListOptions): SalesSummary!
   sale(id: Int!): Sale
@@ -114,6 +128,8 @@ extend type Mutation {
   validateSalePayments(
     validateSalePaymentsInput: ValidateSalePaymentsInput
   ): SalePaymentValidation!
+
+  refundSale(refundSaleInput: RefundSaleInput!): Sale!
 }
 
 extend type Subscription {

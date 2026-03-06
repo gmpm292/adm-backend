@@ -19,7 +19,7 @@ import { SaleDetail } from '../../../sales/sale-detail/entities/sale-detail.enti
 
 @Entity('py_workers')
 export class Worker extends SecurityBaseEntity {
-  @OneToOne(() => User, { nullable: true })
+  @OneToOne(() => User, { nullable: true, eager: true })
   @JoinColumn()
   user?: User;
 

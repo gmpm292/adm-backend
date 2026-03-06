@@ -18,7 +18,7 @@ type PayrollPeriod implements SecurityBaseEntity {
   isClosed: Boolean!
   name: String!
   description: String
-  payments: [WorkerPayment!]!
+  payments: [WorkerPayment!]
 }
 
 type PayrollPeriodsSummary {

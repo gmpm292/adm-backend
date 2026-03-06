@@ -9,7 +9,7 @@ export class RollbackSalePaymentsInput {
   reason: string; // "Devolución de producto", "Venta cancelada", etc.
 
   @IsBoolean()
-  compensateInNextPeriod: boolean = false; // Crear descuentos para próximo período
+  compensateInNextPeriod: boolean = true; // Crear descuentos para próximo período
 
   @IsOptional()
   @IsInt()

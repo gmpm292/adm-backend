@@ -25,6 +25,8 @@ import { Worker } from '../../../payroll/worker/entities/worker.entity';
 import { ConditionalOperator } from '../../../../core/graphql/remote-operations/enums/conditional-operation.enum';
 import { ConflictError } from '../../../../core/errors/appErrors/ConflictError.error';
 import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
+import { SaleStatus } from '../enums/sale-status.enum';
+import { SaleDetailStatus } from '../../sale-detail/enums/sale-detail-status.enum';
 
 @Injectable()
 export class SaleService extends BaseService<Sale> {
@@ -70,6 +72,7 @@ export class SaleService extends BaseService<Sale> {
       ...rest,
       salesWorker,
       customer,
+      saleStatus: SaleStatus.DRAFT,
     } as Sale;
 
     const createdSale = await super.baseCreate({
@@ -130,7 +133,13 @@ export class SaleService extends BaseService<Sale> {
     return super.baseFindOne({
       id,
       relationsToLoad: {
-        salesWorker: true,
+        salesWorker: {
+          user: true,
+          business: true,
+          office: true,
+          department: true,
+          team: true,
+        },
         customer: true,
         details: { product: { category: true }, publicists: true },
       },
@@ -684,11 +693,140 @@ export class SaleService extends BaseService<Sale> {
       id: saleId,
       data: {
         ...sale,
-        isConfirmed: true, // Si tienes este campo
+        saleStatus: SaleStatus.CONFIRMED,
+        isConfirmed: true,
       },
       cu,
       scopes,
       manager,
     });
+  }
+
+  async refundSale(
+    input: {
+      saleId?: number;
+      saleDetailIds?: number[];
+    },
+    cu?: JWTPayload,
+    scopes?: ScopedAccessEnum[],
+    manager?: EntityManager,
+  ): Promise<Sale> {
+    // Validar exclusividad de parámetros
+    if (!input.saleId && !input.saleDetailIds) {
+      throw new BadRequestError(
+        'Either saleId or saleDetailIds must be provided',
+      );
+    }
+
+    if (input.saleId && input.saleDetailIds) {
+      throw new BadRequestError(
+        'Provide either saleId or saleDetailIds, not both',
+      );
+    }
+
+    // Usar transaction para asegurar consistencia
+    const executeRefund = async (txManager: EntityManager) => {
+      let sale: Sale;
+      let refundResult: Awaited<
+        ReturnType<SaleDetailService['refundSaleDetails']>
+      >;
+
+      if (input.saleId) {
+        // Caso 1: Devolución total de la venta
+        sale = await this.findOne(input.saleId, cu, scopes, txManager);
+
+        if (!sale) {
+          throw new NotFoundError('Sale not found');
+        }
+
+        if (sale.saleStatus === SaleStatus.FULLY_REFUNDED) {
+          throw new BadRequestError('Sale is already fully refunded');
+        }
+
+        if (sale.saleStatus !== SaleStatus.CONFIRMED) {
+          throw new BadRequestError('Only confirmed sales can be refunded');
+        }
+
+        // Obtener todos los detalles confirmados de la venta
+        const detailsToRefund =
+          sale.details?.filter(
+            (d) => d.saleDetailStatus !== SaleDetailStatus.REFUNDED,
+          ) || [];
+
+        if (detailsToRefund.length === 0) {
+          throw new BadRequestError('No confirmed details to refund');
+        }
+
+        // Procesar devolución de todos los detalles
+        refundResult = await this.saleDetailService.refundSaleDetails(
+          detailsToRefund.map((d) => d.id as number),
+          cu,
+          scopes,
+          txManager,
+        );
+
+        // Actualizar estado de la venta
+        sale = await super.baseUpdate({
+          id: input.saleId,
+          data: {
+            ...sale,
+            saleStatus: SaleStatus.FULLY_REFUNDED,
+          },
+          cu,
+          scopes,
+          manager: txManager,
+        });
+      } else {
+        // Caso 2: Devolución parcial (por saleDetailIds)
+        refundResult = await this.saleDetailService.refundSaleDetails(
+          input.saleDetailIds!,
+          cu,
+          scopes,
+          txManager,
+        );
+
+        sale = await this.findOne(refundResult.saleId, cu, scopes, txManager);
+
+        // Verificar si después de esta devolución, la venta queda totalmente devuelta
+        const allDetailsRefunded = sale.details?.every(
+          (d) => d.saleDetailStatus === SaleDetailStatus.REFUNDED,
+        );
+
+        const newStatus = allDetailsRefunded
+          ? SaleStatus.FULLY_REFUNDED
+          : SaleStatus.PARTIALLY_REFUNDED;
+
+        // Actualizar estado de la venta
+        sale = await super.baseUpdate({
+          id: refundResult.saleId,
+          data: {
+            ...sale,
+            saleStatus: newStatus,
+          },
+          cu,
+          scopes,
+          manager: txManager,
+        });
+      }
+
+      // TODO: Llamar al servicio de pagos para procesar la devolución del dinero
+      // Ejemplo: await this.paymentService.processRefund({
+      //   saleId: refundResult.saleId,
+      //   amount: refundResult.totalRefundAmount,
+      //   currency: refundResult.currency,
+      //   refundedDetailIds: refundResult.refundedDetails.map(d => d.id),
+      //   reason: 'Customer refund',
+      //   refundMethod: determinar según método de pago original,
+      // }, cu, scopes, txManager);
+
+      return sale;
+    };
+
+    // Ejecutar en transacción si no hay manager
+    if (manager) {
+      return executeRefund(manager);
+    } else {
+      return this.saleRepository.manager.transaction(executeRefund);
+    }
   }
 }
