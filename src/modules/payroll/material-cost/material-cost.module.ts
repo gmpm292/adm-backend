@@ -1,4 +1,4 @@
-import { forwardRef, Module } from '@nestjs/common';
+import { forwardRef, Global, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { MaterialCostResolver } from './resolvers/material-cost.resolver';
 import { MaterialCostService } from './services/material-cost.service';
@@ -8,7 +8,7 @@ import { User } from '../../users/entities/user.entity';
 import { CurrencyModule } from '../currency/currency.module';
 import { ProductModule } from '../../inventory/product/product.module';
 import { UnitOfMeasureModule } from '../../inventory/unit-of-measure/unit-of-measure.module';
-
+@Global()
 @Module({
   imports: [
     TypeOrmModule.forFeature([MaterialCost, User]),

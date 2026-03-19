@@ -17,7 +17,8 @@ type Product implements SecurityBaseEntity {
   team: Team
 
   name: String!
-  unitOfMeasure: String!
+  unitOfMeasure: UnitOfMeasure
+  materialCost: MaterialCost
   costPrice: Float!
   costCurrency: String!
   basePrice: Float!
@@ -44,7 +45,8 @@ input CreateProductInput {
 
   categoryId: Int!
   name: String!
-  unitOfMeasure: String!
+  unitOfMeasureId: Int!
+  materialCostId: Int
   costPrice: Float!
   costCurrency: String!
   basePrice: Float!
@@ -64,7 +66,8 @@ input UpdateProductInput {
   id: Int!
   categoryId: Int
   name: String
-  unitOfMeasure: String
+  unitOfMeasureId: Int!
+  materialCostId: Int
   costPrice: Float
   costCurrency: String
   basePrice: Float

@@ -141,6 +141,7 @@ export class InventoryService extends BaseService<Inventory> {
       options,
       relationsToLoad: [
         'product',
+        'product.category',
         'inventoryMovements',
         'business',
         'office',

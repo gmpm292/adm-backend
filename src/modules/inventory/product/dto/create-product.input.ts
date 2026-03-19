@@ -70,7 +70,7 @@ export class PricingConfigDto {
 }
 
 // export class CreateProductInput extends CreateSecurityBaseInput {
-export class CreateProductInput {
+export class CreateProductInput extends CreateSecurityBaseInput {
   @IsNumber()
   categoryId: number;
 
@@ -78,9 +78,12 @@ export class CreateProductInput {
   @Length(1, 100)
   name: string;
 
-  @IsString()
-  @Length(1, 50)
-  unitOfMeasure: string;
+  @IsNumber()
+  unitOfMeasureId: number;
+
+  @IsNumber()
+  @IsOptional()
+  materialCostId?: number;
 
   @IsNumber()
   costPrice: number;

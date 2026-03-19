@@ -5,6 +5,7 @@ import { Inventory } from '../../inventory/entities/inventory.entity';
 import { SaleDetail } from '../../../sales/sale-detail/entities/sale-detail.entity';
 import { PaymentRule } from '../../../payroll/payment-rule/entities/payment-rule.entity';
 import { MaterialCost } from '../../../payroll/material-cost/entities/material-cost.entity';
+import { UnitOfMeasure } from '../../unit-of-measure/entities/unit-of-measure.entity';
 
 /**
  * Description: Items sold or managed in the system.
@@ -17,8 +18,11 @@ export class Product extends SecurityBaseEntity {
   @Column({ type: 'varchar', length: 100 })
   name: string;
 
-  @Column({ type: 'varchar', length: 50 })
-  unitOfMeasure: string; // e.g., grams, units
+  // @Column({ type: 'varchar', length: 50 })
+  // unitOfMeasure: string; // e.g., grams, units
+
+  @ManyToOne(() => UnitOfMeasure, (unitOfMeasure) => unitOfMeasure.products)
+  unitOfMeasure: UnitOfMeasure;
 
   @ManyToOne(() => MaterialCost, (materialCost) => materialCost.products)
   materialCost?: MaterialCost;

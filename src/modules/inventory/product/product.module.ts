@@ -1,4 +1,4 @@
-import { forwardRef, Module } from '@nestjs/common';
+import { forwardRef, Global, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ProductResolver } from './resolvers/product.resolver';
 import { ProductService } from './services/product.service';
@@ -10,7 +10,9 @@ import { CategoryModule } from '../category/category.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { CurrencyModule } from '../../payroll/currency/currency.module';
 import { InventoryMovementModule } from '../inventory-movement/inventory-movement.module';
-
+import { UnitOfMeasureModule } from '../unit-of-measure/unit-of-measure.module';
+import { MaterialCostModule } from '../../payroll/material-cost/material-cost.module';
+@Global()
 @Module({
   imports: [
     TypeOrmModule.forFeature([Product, Category, Inventory, User]),
@@ -18,6 +20,8 @@ import { InventoryMovementModule } from '../inventory-movement/inventory-movemen
     forwardRef(() => InventoryModule),
     forwardRef(() => InventoryMovementModule),
     forwardRef(() => CurrencyModule),
+    UnitOfMeasureModule,
+    forwardRef(() => MaterialCostModule),
   ],
   providers: [ProductResolver, ProductService],
   exports: [ProductResolver, ProductService],

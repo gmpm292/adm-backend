@@ -15,6 +15,7 @@ import {
 import { Opts } from '../../../../core/graphql/remote-operations/decorators/opts.decorator';
 import { UnitOfMeasureService } from '../services/unit-of-measure.service';
 import { UnitOfMeasureFiltersValidator } from '../filters-validator/unit-of-measure.filters.validator';
+import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
 
 @Resolver('UnitOfMeasure')
 export class UnitOfMeasureResolver {
@@ -31,7 +32,14 @@ export class UnitOfMeasureResolver {
     return this.unitOfMeasureService.create(createUnitOfMeasureInput, user);
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
+  @Roles(
+    Role.SUPER,
+    Role.PRINCIPAL,
+    Role.ADMIN,
+    Role.MANAGER,
+    Role.SUPERVISOR,
+    Role.AGENT,
+  )
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Query('unitOfMeasures')
   async findAll(
@@ -39,10 +47,19 @@ export class UnitOfMeasureResolver {
     @Opts({ arg: 'options', dto: UnitOfMeasureFiltersValidator })
     options?: ListOptions,
   ): Promise<ListSummary> {
-    return this.unitOfMeasureService.find(options, user);
+    return this.unitOfMeasureService.find(options, user, [
+      ScopedAccessEnum.GENERAL,
+    ]);
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
+  @Roles(
+    Role.SUPER,
+    Role.PRINCIPAL,
+    Role.ADMIN,
+    Role.MANAGER,
+    Role.SUPERVISOR,
+    Role.AGENT,
+  )
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Query('unitOfMeasure')
   async findOne(@CurrentUser() user: JWTPayload, @Args('id') id: number) {
@@ -78,7 +95,14 @@ export class UnitOfMeasureResolver {
     return this.unitOfMeasureService.restore(ids, user);
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
+  @Roles(
+    Role.SUPER,
+    Role.PRINCIPAL,
+    Role.ADMIN,
+    Role.MANAGER,
+    Role.SUPERVISOR,
+    Role.AGENT,
+  )
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('toggleUnitOfMeasureActive')
   async toggleActive(@CurrentUser() user: JWTPayload, @Args('id') id: number) {

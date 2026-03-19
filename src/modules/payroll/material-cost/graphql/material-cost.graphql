@@ -19,10 +19,10 @@ type MaterialCost implements SecurityBaseEntity {
 
   name: String!
   description: String
-  unitOfMeasure: UnitOfMeasure!
-  costPrice: Float!
-  currency: Currency!
-  isActive: Boolean!
+  unitOfMeasure: UnitOfMeasure
+  costPrice: Float
+  currency: Currency
+  isActive: Boolean
 
   # Relationships
   products: [Product]!
@@ -43,7 +43,7 @@ input CreateMaterialCostInput {
   description: String
   unitOfMeasureId: Int!
   costPrice: Float!
-  currencyId: Int!
+  currency: String!
   isActive: Boolean
 }
 
@@ -58,7 +58,7 @@ input UpdateMaterialCostInput {
   description: String
   unitOfMeasureId: Int
   costPrice: Float
-  currencyId: Int
+  currency: String
   isActive: Boolean
 }
 

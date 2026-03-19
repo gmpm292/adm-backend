@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import { EntityManager, Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CreateMaterialCostInput } from '../dto/create-material-cost.input';
@@ -25,13 +25,13 @@ import { Currency } from '../../currency/entities/currency.entity';
 import { ConditionalOperator } from '../../../../core/graphql/remote-operations/enums/conditional-operation.enum';
 import { SystemUtilsService } from '../../../../core/services/system-utils.service';
 import { Role } from '../../../../core/enums/role.enum';
-import { Business } from '../../../company/business/entities/co_business.entity';
 
 @Injectable()
 export class MaterialCostService extends BaseService<MaterialCost> {
   constructor(
     @InjectRepository(MaterialCost)
     private materialCostRepository: Repository<MaterialCost>,
+    @Inject(forwardRef(() => ProductService))
     private productService: ProductService,
     private unitOfMeasureService: UnitOfMeasureService,
     private currencyService: CurrencyService,
@@ -47,7 +47,7 @@ export class MaterialCostService extends BaseService<MaterialCost> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<MaterialCost> {
-    const { unitOfMeasureId, currencyId, ...rest } = createMaterialCostInput;
+    const { unitOfMeasureId, currency, ...rest } = createMaterialCostInput;
 
     // Validate that unitOfMeasure exists
     await this.validateUnitOfMeasure(
@@ -56,13 +56,13 @@ export class MaterialCostService extends BaseService<MaterialCost> {
     );
 
     // Validate that currency exists
-    await this.validateCurrency(createMaterialCostInput.currencyId, manager);
+    const curr = await this.validateCurrency(currency, manager);
 
     const materialCost: MaterialCost = {
       ...rest,
       isActive: createMaterialCostInput.isActive ?? true,
       unitOfMeasure: { id: unitOfMeasureId } as UnitOfMeasure,
-      currency: { id: currencyId } as Currency,
+      currency: { id: curr.id } as Currency,
     };
 
     return super.baseCreate({
@@ -143,15 +143,24 @@ export class MaterialCostService extends BaseService<MaterialCost> {
     }
 
     // Validate currency if it's being updated
-    if (updateMaterialCostInput.currencyId) {
-      await this.validateCurrency(updateMaterialCostInput.currencyId, manager);
+    let curr: Currency | undefined = undefined;
+    if (updateMaterialCostInput.currency) {
+      curr = await this.validateCurrency(
+        updateMaterialCostInput.currency,
+        manager,
+      );
     }
 
-    const { ...rest } = updateMaterialCostInput;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { currency, ...rest } = updateMaterialCostInput;
 
     return super.baseUpdate({
       id,
-      data: { ...materialCost, ...rest },
+      data: {
+        ...materialCost,
+        currency: curr ?? materialCost.currency,
+        ...rest,
+      },
       cu,
       scopes,
       manager,
@@ -328,23 +337,25 @@ export class MaterialCostService extends BaseService<MaterialCost> {
   }
 
   private async validateCurrency(
-    currencyId: number,
+    currencyCode: string,
     manager?: EntityManager,
-  ): Promise<void> {
+  ): Promise<Currency> {
     const systemUser = this.utils.getSystemUser();
-    const currency = await this.currencyService.findOne(
-      currencyId,
+    const currency = await this.currencyService.findByCode(
+      currencyCode,
       { sub: systemUser.id as number, role: systemUser.role as Array<Role> },
       [],
       manager,
     );
 
     if (!currency) {
-      throw new NotFoundError(`Currency with ID ${currencyId} not found`);
+      throw new NotFoundError(`Currency with ID ${currencyCode} not found`);
     }
 
     if (!currency.isActive) {
       throw new Error(`Currency "${currency.code}" is not active`);
     }
+
+    return currency;
   }
 }

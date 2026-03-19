@@ -25,6 +25,9 @@ import { ConditionalOperator } from '../../../../core/graphql/remote-operations/
 import { InventoryMovement } from '../../inventory-movement/entities/inventory-movement.entity';
 import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
 import { UpdateInventoryMovementInput } from '../../inventory-movement/dto/update-inventory-movement.input';
+import { UnitOfMeasureService } from '../../unit-of-measure/services/unit-of-measure.service';
+import { MaterialCostService } from '../../../payroll/material-cost/services/material-cost.service';
+import { MaterialCost } from '../../../payroll/material-cost/entities/material-cost.entity';
 
 @Injectable()
 export class ProductService extends BaseService<Product> {
@@ -35,6 +38,9 @@ export class ProductService extends BaseService<Product> {
     private inventoryMovementService: InventoryMovementService,
     @Inject(forwardRef(() => CategoryService))
     private categoryService: CategoryService,
+    private unitOfMeasureService: UnitOfMeasureService,
+    private materialCostService: MaterialCostService,
+
     protected scopedAccessService: ScopedAccessService,
     protected currencyService: CurrencyService,
   ) {
@@ -47,7 +53,8 @@ export class ProductService extends BaseService<Product> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Product> {
-    const { categoryId, ...rest } = createProductInput;
+    const { categoryId, unitOfMeasureId, materialCostId, ...rest } =
+      createProductInput;
 
     const category = await this.categoryService.findOne(
       categoryId,
@@ -59,9 +66,36 @@ export class ProductService extends BaseService<Product> {
       throw new NotFoundError('Category not found');
     }
 
+    // Validar y obtener unidad de medida
+    const unitOfMeasure = await this.unitOfMeasureService.findOne(
+      unitOfMeasureId,
+      cu,
+      scopes,
+      manager,
+    );
+    if (!unitOfMeasure) {
+      throw new NotFoundError('Unit of measure not found');
+    }
+
+    // Validar y obtener material cost (si se proporciona)
+    let materialCost: MaterialCost | undefined = undefined;
+    if (materialCostId) {
+      materialCost = await this.materialCostService.findOne(
+        materialCostId,
+        cu,
+        scopes,
+        manager,
+      );
+      if (!materialCost) {
+        throw new NotFoundError('Material cost not found');
+      }
+    }
+
     const product: Product = {
       ...rest,
       category,
+      unitOfMeasure,
+      materialCost,
       business: category.business,
       office: category.office,
       department: category.department,
@@ -85,7 +119,13 @@ export class ProductService extends BaseService<Product> {
   ): Promise<ListSummary> {
     return await super.baseFind({
       options,
-      relationsToLoad: ['category', 'inventories'],
+      relationsToLoad: [
+        'category',
+        'inventories',
+        'unitOfMeasure',
+        'materialCost',
+        'materialCost.currency',
+      ],
       cu,
       scopes,
       manager,
@@ -103,6 +143,8 @@ export class ProductService extends BaseService<Product> {
       relationsToLoad: {
         category: true,
         inventories: true,
+        unitOfMeasure: true,
+        materialCost: { currency: true, unitOfMeasure: true },
         business: true,
         office: true,
         department: true,
@@ -126,7 +168,7 @@ export class ProductService extends BaseService<Product> {
     await this.categoryService.findOne(categoryId, cu, scopes, manager);
     return this.productRepository.find({
       where: { category: { id: categoryId } },
-      relations: ['category', 'inventories'],
+      relations: ['category', 'inventories', 'unitOfMeasure', 'materialCost'],
     });
   }
 
@@ -157,6 +199,39 @@ export class ProductService extends BaseService<Product> {
       product.office = category.office;
       product.department = category.department;
       product.team = category.team;
+    }
+
+    // Actualizar unidad de medida si se proporciona
+    if (updateProductInput.unitOfMeasureId) {
+      const unitOfMeasure = await this.unitOfMeasureService.findOne(
+        updateProductInput.unitOfMeasureId,
+        cu,
+        scopes,
+        manager,
+      );
+      if (!unitOfMeasure) {
+        throw new NotFoundError('Unit of measure not found');
+      }
+      product.unitOfMeasure = unitOfMeasure;
+    }
+
+    // Actualizar material cost si se proporciona
+    if (updateProductInput.materialCostId !== undefined) {
+      if (updateProductInput.materialCostId === null) {
+        // Si se envía explícitamente null, quitar la relación
+        product.materialCost = undefined;
+      } else {
+        const materialCost = await this.materialCostService.findOne(
+          updateProductInput.materialCostId,
+          cu,
+          scopes,
+          manager,
+        );
+        if (!materialCost) {
+          throw new NotFoundError('Material cost not found');
+        }
+        product.materialCost = materialCost;
+      }
     }
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars

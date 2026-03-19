@@ -12,7 +12,7 @@ import { CreateSecurityBaseInput } from '../../../../core/dtos/create-security-b
 
 /**
  * DTO for creating a new material cost.
- * Example: { name: "Gold", unitOfMeasureId: 1, costPrice: 65.50, currencyId: 1 }
+ * Example: { name: "Gold", unitOfMeasureId: 1, costPrice: 65.50, currency: USD }
  */
 export class CreateMaterialCostInput extends CreateSecurityBaseInput {
   @IsString()
@@ -32,9 +32,8 @@ export class CreateMaterialCostInput extends CreateSecurityBaseInput {
   @Min(0)
   costPrice: number;
 
-  @IsInt()
-  @IsPositive()
-  currencyId: number;
+  @IsString()
+  currency: string;
 
   @IsBoolean()
   @IsOptional()
