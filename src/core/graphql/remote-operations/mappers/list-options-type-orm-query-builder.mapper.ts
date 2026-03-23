@@ -425,7 +425,8 @@ export class ListOptionsTypeOrmQueryBuilderMapper {
           this.createPropertyOfRelation(String(relationAsField));
         if (
           fields.includes(relationAsField) ||
-          fields.includes(parameterName)
+          fields.includes(parameterName) ||
+          fields.some((e) => e.endsWith(relationAsField))
         ) {
           relations.add(relationAsField);
           loadPreviousRelations(propertyWithAlias, relationsToLoad, relations);

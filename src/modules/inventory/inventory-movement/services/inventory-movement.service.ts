@@ -103,7 +103,12 @@ export class InventoryMovementService extends BaseService<InventoryMovement> {
   ): Promise<ListSummary> {
     return await super.baseFind({
       options,
-      relationsToLoad: ['inventory', 'inventory.product', 'user'],
+      relationsToLoad: [
+        'inventory',
+        'inventory.product',
+        'product.category',
+        'user',
+      ],
       cu,
       scopes,
       manager,
@@ -119,7 +124,7 @@ export class InventoryMovementService extends BaseService<InventoryMovement> {
     return super.baseFindOne({
       id,
       relationsToLoad: {
-        inventory: { product: true },
+        inventory: { product: { category: true } },
         user: true,
         business: true,
         office: true,

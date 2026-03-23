@@ -25,7 +25,7 @@ type Product implements SecurityBaseEntity {
   baseCurrency: String!
   attributes: JSON
   warranty: String
-  category: Category!
+  category: Category
   inventories: [Inventory]!
   saleDetails: [SaleDetail]!
   pricingConfig: PricingConfig!

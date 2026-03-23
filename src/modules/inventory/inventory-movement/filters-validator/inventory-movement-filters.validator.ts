@@ -1,4 +1,4 @@
-import { IsString } from 'class-validator';
+import { IsNumberString, IsString } from 'class-validator';
 import { BaseFiltersValidator } from '../../../../core/filters-validator/base-filters.validator';
 
 export class InventoryMovementFiltersValidator extends BaseFiltersValidator {
@@ -10,4 +10,7 @@ export class InventoryMovementFiltersValidator extends BaseFiltersValidator {
 
   @IsString()
   reason: string;
+
+  @IsNumberString()
+  'inventory.currentStock': string;
 }
