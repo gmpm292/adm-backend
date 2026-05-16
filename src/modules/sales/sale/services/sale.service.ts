@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import { EntityManager, Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -16,7 +17,6 @@ import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
 import { ScopedAccessService } from '../../../scoped-access/services/scoped-access.service';
 import { CustomerService } from '../../customer/services/customer.service';
 import { SaleDetailService } from '../../sale-detail/services/sale-detail.service';
-import { ProductService } from '../../../inventory/product/services/product.service';
 import { WorkerService } from '../../../payroll/worker/services/worker.service';
 import { PaymentMethod } from '../enums/payment-method.enum';
 import { SaleDetail } from '../../sale-detail/entities/sale-detail.entity';
@@ -27,6 +27,7 @@ import { ConflictError } from '../../../../core/errors/appErrors/ConflictError.e
 import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
 import { SaleStatus } from '../enums/sale-status.enum';
 import { SaleDetailStatus } from '../../sale-detail/enums/sale-detail-status.enum';
+import { Customer } from '../../customer/entities/customer.entity';
 
 @Injectable()
 export class SaleService extends BaseService<Sale> {
@@ -37,10 +38,6 @@ export class SaleService extends BaseService<Sale> {
     private customerService: CustomerService,
     @Inject(forwardRef(() => SaleDetailService))
     private saleDetailService: SaleDetailService,
-    //@Inject(forwardRef(() => ProductService))
-    // private readonly productService: ProductService,
-    // private readonly inventoryService: InventoryService,
-    // private readonly inventoryMovementService: InventoryMovementService,
     private readonly currencyService: CurrencyService,
 
     protected scopedAccessService: ScopedAccessService,
@@ -54,18 +51,46 @@ export class SaleService extends BaseService<Sale> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Sale> {
-    const { customerId, details, ...rest } = createSaleInput;
+    const {
+      customerId,
+      details,
+      deliveryWorkerId,
+      hasDelivery,
+      deliveryNotes,
+      ...rest
+    } = createSaleInput;
+
     const salesWorkerId = createSaleInput.salesWorkerId ?? cu?.sub;
 
-    const [salesWorker, customer] = await Promise.all([
-      await this.workerService.findOne(salesWorkerId, cu, scopes, manager),
+    // Preparar las promesas para resolver en paralelo
+    const promises: [
+      Promise<Worker>,
+      Promise<Customer | undefined>,
+      Promise<Worker | undefined>?,
+    ] = [
+      this.workerService.findOne(salesWorkerId, cu, scopes, manager),
       customerId
-        ? await this.customerService.findOne(customerId, cu, scopes, manager)
-        : undefined,
-    ]);
+        ? this.customerService.findOne(customerId, cu, scopes, manager)
+        : Promise.resolve(undefined),
+    ];
 
+    // Solo buscar el deliveryWorker si se proporciona un ID
+    if (deliveryWorkerId) {
+      promises.push(
+        this.workerService.findOne(deliveryWorkerId, cu, scopes, manager),
+      );
+    }
+
+    const [salesWorker, customer, deliveryWorker] = await Promise.all(promises);
+
+    // Validaciones
     if (!salesWorker) {
       throw new NotFoundError('Sales Worker not found');
+    }
+
+    // Validar que si se proporciona deliveryWorkerId, el worker exista
+    if (deliveryWorkerId && !deliveryWorker) {
+      throw new NotFoundError('Delivery Worker not found');
     }
 
     const sale: Sale = {
@@ -73,6 +98,10 @@ export class SaleService extends BaseService<Sale> {
       salesWorker,
       customer,
       saleStatus: SaleStatus.DRAFT,
+      // Campos de mensajería
+      hasDelivery: hasDelivery ?? !!deliveryWorker,
+      deliveryWorker: deliveryWorker || undefined,
+      deliveryNotes: deliveryNotes || undefined,
     } as Sale;
 
     const createdSale = await super.baseCreate({
@@ -112,6 +141,7 @@ export class SaleService extends BaseService<Sale> {
       options,
       relationsToLoad: [
         'salesWorker',
+        'deliveryWorker',
         'customer',
         'details',
         'details.publicists',
@@ -140,6 +170,13 @@ export class SaleService extends BaseService<Sale> {
           department: true,
           team: true,
         },
+        deliveryWorker: {
+          user: true,
+          business: true,
+          office: true,
+          department: true,
+          team: true,
+        },
         customer: true,
         details: { product: { category: true }, publicists: true },
       },
@@ -158,7 +195,7 @@ export class SaleService extends BaseService<Sale> {
     await this.customerService.findOne(customerId, cu, scopes, manager);
     return this.saleRepository.find({
       where: { customer: { id: customerId } },
-      relations: ['salesUser', 'customer', 'details'],
+      relations: ['salesUser', 'customer', 'details', 'deliveryWorker'],
       order: { createdAt: 'DESC' },
     });
   }
@@ -175,6 +212,7 @@ export class SaleService extends BaseService<Sale> {
       throw new NotFoundError();
     }
 
+    // Actualizar vendedor si se proporciona
     if (updateSaleInput.salesWorkerId) {
       const salesWorker = await this.workerService.findOne(
         updateSaleInput.salesWorkerId,
@@ -188,6 +226,7 @@ export class SaleService extends BaseService<Sale> {
       sale.salesWorker = salesWorker;
     }
 
+    // Actualizar cliente si se proporciona
     if (updateSaleInput.customerId) {
       const customer = await this.customerService.findOne(
         updateSaleInput.customerId,
@@ -198,8 +237,50 @@ export class SaleService extends BaseService<Sale> {
       sale.customer = customer;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { salesWorkerId: salesUserId, customerId, ...rest } = updateSaleInput;
+    // NUEVO: Actualizar mensajero si se proporciona
+    if (updateSaleInput.deliveryWorkerId !== undefined) {
+      if (updateSaleInput.deliveryWorkerId === null) {
+        // Permite desasignar el mensajero
+        sale.deliveryWorker = undefined;
+      } else {
+        const deliveryWorker = await this.workerService.findOne(
+          updateSaleInput.deliveryWorkerId,
+          cu,
+          scopes,
+          manager,
+        );
+        if (!deliveryWorker) {
+          throw new NotFoundError('Delivery worker not found');
+        }
+        sale.deliveryWorker = deliveryWorker;
+      }
+    }
+
+    // NUEVO: Actualizar flag de mensajería
+    if (updateSaleInput.hasDelivery !== undefined) {
+      sale.hasDelivery = updateSaleInput.hasDelivery;
+    }
+
+    // NUEVO: Actualizar notas de mensajería
+    if (updateSaleInput.deliveryNotes !== undefined) {
+      sale.deliveryNotes = updateSaleInput.deliveryNotes;
+    }
+
+    // Validación de coherencia después de las actualizaciones
+    if (sale.deliveryWorker && !sale.hasDelivery) {
+      // Si hay mensajero asignado, forzar hasDelivery a true
+      sale.hasDelivery = true;
+    }
+
+    const {
+      salesWorkerId,
+      customerId,
+      deliveryWorkerId,
+      hasDelivery,
+      deliveryNotes,
+      ...rest
+    } = updateSaleInput;
+
     return super.baseUpdate({
       id,
       data: { ...sale, ...rest },
@@ -311,16 +392,23 @@ export class SaleService extends BaseService<Sale> {
     if (!sale) throw new NotFoundError('Sale not found');
 
     // 2. Validar que no esté ya finalizada
-    if (sale.effectiveDate) throw new Error('Sale already finalized');
+    if (sale.effectiveDate) throw new BadRequestError('Sale already finalized');
 
     // 3. Validar que la venta tenga detalles
     if (!sale.details || sale.details.length === 0) {
-      throw new Error('Sale has no details');
+      throw new BadRequestError('Sale has no details');
     }
 
     // 4. Validar que se hayan proporcionado pagos
     if (!payments || payments.length === 0) {
-      throw new Error('No payments provided');
+      throw new BadRequestError('No payments provided');
+    }
+
+    // 4. Validar que se haya proporcionado mensajero
+    if (sale.hasDelivery && !sale.deliveryWorker) {
+      throw new BadRequestError(
+        'Sale requires delivery but no delivery worker assigned',
+      );
     }
 
     // 5. Calcular totales requeridos por moneda y validar contra pagos
@@ -330,7 +418,7 @@ export class SaleService extends BaseService<Sale> {
       baseCurrency,
     );
     if (!validationResult.valid) {
-      throw new Error(validationResult.message);
+      throw new BadRequestError(validationResult.message);
     }
 
     // 6. Confirma la venta para que se modifique los marcadores de reserva y pasen a venta confirmada.

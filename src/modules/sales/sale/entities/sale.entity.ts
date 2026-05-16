@@ -54,4 +54,19 @@ export class Sale extends SecurityBaseEntity {
 
   @OneToMany(() => SaleDetail, (detail) => detail.sale)
   details?: SaleDetail[];
+
+  /**
+   * Delivery.
+   */
+  // Flag para indicar si la venta incluye servicio de mensajería
+  @Column({ type: 'boolean', default: false })
+  hasDelivery?: boolean;
+
+  // Relación con el mensajero
+  @ManyToOne(() => Worker, { nullable: true })
+  deliveryWorker?: Worker; // Messenger/Delivery person
+
+  // Notas o detalles de la mensajería
+  @Column({ type: 'text', nullable: true })
+  deliveryNotes?: string; // Detalles adicionales sobre la entrega (instrucciones, observaciones, etc.)
 }

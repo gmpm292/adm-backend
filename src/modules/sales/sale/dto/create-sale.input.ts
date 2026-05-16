@@ -6,6 +6,8 @@ import {
   IsDate,
   IsArray,
   ValidateNested,
+  IsBoolean,
+  IsString,
 } from 'class-validator';
 import { PaymentMethod } from '../enums/payment-method.enum';
 import { CreateSecurityBaseInput } from '../../../../core/dtos/create-security-base.input';
@@ -39,6 +41,19 @@ export class CreateSaleInput extends CreateSecurityBaseInput {
   @ValidateNested({ each: true })
   @Type(() => SaleDetailInput)
   details: SaleDetailInput[];
+
+  // NUEVOS CAMPOS DE MENSAJERÍA
+  @IsOptional()
+  @IsBoolean()
+  hasDelivery?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  deliveryWorkerId?: number;
+
+  @IsOptional()
+  @IsString()
+  deliveryNotes?: string;
 }
 
 export class SaleDetailInput {

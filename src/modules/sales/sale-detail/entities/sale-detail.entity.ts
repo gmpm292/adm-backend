@@ -5,6 +5,7 @@ import { Product } from '../../../inventory/product/entities/product.entity';
 import { ProductPaymentOptions } from '../../../inventory/product/types/product-payment-options.type';
 import { Worker } from '../../../payroll/worker/entities/worker.entity';
 import { SaleDetailStatus } from '../enums/sale-detail-status.enum';
+import { DecimalTransformer } from '../../../../core/utils/decimal-transformer-for-typeorm';
 
 /**
  * Description: Products sold in a transaction.
@@ -17,7 +18,12 @@ export class SaleDetail extends SecurityBaseEntity {
   @ManyToOne(() => Product, (product) => product.saleDetails)
   product: Product;
 
-  @Column({ type: 'decimal', precision: 10, scale: 3 })
+  @Column({
+    type: 'decimal',
+    precision: 10,
+    scale: 3,
+    transformer: new DecimalTransformer(),
+  })
   quantity: number;
 
   // @Column({ type: 'decimal', precision: 12, scale: 2 })

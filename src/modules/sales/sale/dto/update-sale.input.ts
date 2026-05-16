@@ -1,12 +1,13 @@
 import { PartialType } from '@nestjs/mapped-types';
 import { CreateSaleInput } from './create-sale.input';
-import { IsDate, IsNumber } from 'class-validator';
+import { IsDate, IsNumber, IsOptional } from 'class-validator';
 import { PaymentMethod } from '../enums/payment-method.enum';
 
 export class UpdateSaleInput extends PartialType(CreateSaleInput) {
   @IsNumber()
   id: number;
 
+  @IsOptional()
   @IsDate()
   effectiveDate: Date;
 

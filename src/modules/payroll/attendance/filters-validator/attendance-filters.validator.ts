@@ -1,3 +1,7 @@
+import { IsString } from 'class-validator';
 import { BaseFiltersValidator } from '../../../../core/filters-validator/base-filters.validator';
 
-export class AttendanceFiltersValidator extends BaseFiltersValidator {}
+export class AttendanceFiltersValidator extends BaseFiltersValidator {
+  @IsString()
+  attendanceDate: string;
+}

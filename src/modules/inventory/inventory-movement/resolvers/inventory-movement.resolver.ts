@@ -20,7 +20,7 @@ import { InventoryMovementFiltersValidator } from '../filters-validator/inventor
 export class InventoryMovementResolver {
   constructor(private readonly movementService: InventoryMovementService) {}
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER, Role.PRINCIPAL)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('createInventoryMovement')
   async create(
