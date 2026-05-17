@@ -52,6 +52,7 @@ export class UnitOfMeasureService extends BaseService<UnitOfMeasure> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<ListSummary> {
+    scopes = [ScopedAccessEnum.GENERAL];
     return await super.baseFind({
       options,
       relationsToLoad: ['business', 'office', 'department', 'team'],
@@ -67,6 +68,7 @@ export class UnitOfMeasureService extends BaseService<UnitOfMeasure> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<UnitOfMeasure> {
+    scopes = [ScopedAccessEnum.GENERAL];
     return super.baseFindOne({
       id,
       relationsToLoad: {
