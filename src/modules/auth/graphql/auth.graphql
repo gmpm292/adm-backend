@@ -45,6 +45,7 @@ extend type Mutation {
   refresh: RefreshOutput!
   generate2faSecret: String!
   finishConfigure2FA(token2fa: String): Boolean
+  disableOwn2FA(token2fa: String!): Boolean
   reset2FASettings(id: Int): Boolean
   enable2FA(id: Int): Boolean
   disable2FA(id: Int): Boolean

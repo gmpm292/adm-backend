@@ -12,7 +12,6 @@ import { UsersService } from '../../users/services/users.service';
 import { CurrentUser } from '../decorators/current-user.decorator';
 import { LoginOutput } from '../dto/login-output';
 import { JWTPayload } from '../dto/jwt-payload.dto';
-import { AuthParameterKey } from '../enums/auth-parameter-key.enum';
 import { AccessTokenAuthGuard } from '../guards/access-token-auth.guard';
 import { ClassicLocalAuthGuard } from '../guards/classic-local-auth.guard';
 import { AuthService } from '../services/auth.service';
@@ -24,6 +23,8 @@ import { ImpersonalLoginInput } from '../dto/impersonal-login.input';
 import { AccessTokenReason } from '../enums/access-token-reason';
 import { NotProtectByTwoFactorAuth } from '../decorators/two-factor-auth.decorator';
 import { User } from '../../users/entities/user.entity';
+import { AuthParameterKey } from '../enums/auth-parameter-key.enum';
+import { extractJWT } from '../helpers/app-jwt-extractor.helper';
 import { Role } from '../../../core/enums/role.enum';
 
 @Resolver()
@@ -59,9 +60,7 @@ export class AuthResolver {
     this.authService.addAccessTokenToCookies(accessToken, res);
 
     // Save refresh token and add to cookies
-    const refreshToken = this.authService.createRefreshToken(user);
-    await this.usersService.saveRefreshToken(user.id as number, refreshToken);
-    this.authService.addRefreshTokenToCookies(refreshToken, res);
+    const refreshToken = await this.authService.issueRefreshToken(user, res);
 
     return {
       accessToken,
@@ -94,9 +93,7 @@ export class AuthResolver {
     this.authService.addAccessTokenToCookies(accessToken, res);
 
     // Save refresh token and add to cookies
-    const refreshToken = this.authService.createRefreshToken(user);
-    await this.usersService.saveRefreshToken(user.id as number, refreshToken);
-    this.authService.addRefreshTokenToCookies(refreshToken, res);
+    const refreshToken = await this.authService.issueRefreshToken(user, res);
 
     return {
       accessToken,
@@ -115,7 +112,7 @@ export class AuthResolver {
   ): Promise<LoginOutput> {
     const { res } = context;
 
-    this.logout(user, context);
+    await this.logout(user, context);
 
     const newUser = await this.usersService.findOne(input.userId);
     await this.usersService.chekCompanyInfo(newUser);
@@ -156,11 +153,10 @@ export class AuthResolver {
     @Context() context,
   ): Promise<User | Worker> {
     const { res } = context;
-    // Remove access token from cookies
-    res.clearCookie(AuthParameterKey.AccessToken);
+    // Remove access and refresh tokens from cookies
+    this.authService.clearAuthCookies(res);
 
-    // Remove refresh token from cookies and database
-    res.clearCookie(AuthParameterKey.RefreshToken);
+    // Remove refresh token from database
     await this.usersService.saveRefreshToken(payload.sub, null);
     const user = await this.usersService.findOne(payload.sub);
     await this.authService.removeAccessToken(user);
@@ -179,11 +175,12 @@ export class AuthResolver {
   ): Promise<Pick<LoginOutput, 'accessToken'>> {
     const { res, req } = context;
     const refreshPayload = req?.refreshPayload as JWTPayload;
+    const twoFactorAuthPassed = refreshPayload?.twoFactorAuthPassed ?? false;
 
     const accessToken = this.authService.createAccessToken(
       user,
       undefined,
-      refreshPayload?.twoFactorAuthPassed ?? false,
+      twoFactorAuthPassed,
     );
     // Adds access token to list or map of authorized tokens
     await this.authService.saveAccessToken(
@@ -194,6 +191,14 @@ export class AuthResolver {
     );
 
     this.authService.addAccessTokenToCookies(accessToken, res);
+
+    // Rotate the refresh token, so the session lasts while the user is active
+    await this.authService.issueRefreshToken(
+      user,
+      res,
+      twoFactorAuthPassed,
+      extractJWT(req, AuthParameterKey.RefreshToken),
+    );
 
     return { accessToken };
   }
@@ -210,8 +215,6 @@ export class AuthResolver {
       user.sub,
       token2fa,
     );
-
-    this.logout(user, context);
 
     // Generate final JWT after 2FA verification
     const { res } = context;
@@ -233,16 +236,11 @@ export class AuthResolver {
     this.authService.addAccessTokenToCookies(accessToken, res);
 
     // Save refresh token and add to cookies
-    const refreshToken = this.authService.createRefreshToken(
+    const refreshToken = await this.authService.issueRefreshToken(
       userVerified,
-      undefined,
+      res,
       true,
     );
-    await this.usersService.saveRefreshToken(
-      userVerified.id as number,
-      refreshToken,
-    );
-    this.authService.addRefreshTokenToCookies(refreshToken, res);
 
     // Add Log in WorkerLogs
     // this.workerLogsService.create({
@@ -281,8 +279,18 @@ export class AuthResolver {
     return Boolean(userEnabled);
   }
 
-  @Roles(Role.SUPER)
   @UseGuards(AccessTokenAuthGuard)
+  @Mutation('disableOwn2FA')
+  async disableOwn2FA(
+    @CurrentUser() user: JWTPayload,
+    @Args('token2fa') token2fa: string,
+  ) {
+    const userRes = await this.authService.disableOwn2FA(user.sub, token2fa);
+    return Boolean(userRes);
+  }
+
+  @Roles(Role.SUPER)
+  @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('reset2FASettings')
   async reset2FASettings(
     @CurrentUser() user: JWTPayload,
@@ -293,7 +301,7 @@ export class AuthResolver {
   }
 
   @Roles(Role.SUPER)
-  @UseGuards(AccessTokenAuthGuard)
+  @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('enable2FA')
   async enable2FA(@CurrentUser() user: JWTPayload, @Args('id') id: number) {
     const userRes = await this.authService.enable2FA(id);
@@ -301,7 +309,7 @@ export class AuthResolver {
   }
 
   @Roles(Role.SUPER)
-  @UseGuards(AccessTokenAuthGuard)
+  @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('disable2FA')
   async disable2FA(@CurrentUser() user: JWTPayload, @Args('id') id: number) {
     const userRes = await this.authService.disable2FA(id);

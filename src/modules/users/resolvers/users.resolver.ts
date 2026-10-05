@@ -14,6 +14,7 @@ import { RoleGuard } from '../../auth/guards/role.guard';
 import { ConfirmationTokenService } from '../confirmationToken/services/confirmation-token.service';
 import { NoRoles, Roles } from '../../auth/decorators/roles.decorator';
 import { ChangePasswordByEmailInput } from '../dto/change-password-by-email.input';
+import { ChangeOwnPasswordInput } from '../dto/change-own-password.input';
 import { UserAccessLevelService } from '../services/user-access-level.service';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { JWTPayload } from '../../auth/dto/jwt-payload.dto';
@@ -95,7 +96,31 @@ export class UsersResolver {
     return updatedUser;
   }
 
-  //@Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
+  @UseGuards(AccessTokenAuthGuard)
+  @Mutation('changeOwnPassword')
+  public async changeOwnPassword(
+    @CurrentUser() user: JWTPayload,
+    @Args('input') { currentPassword, newPassword }: ChangeOwnPasswordInput,
+  ): Promise<User> {
+    const updatedUser = await this.usersService.changeOwnPassword(
+      user,
+      currentPassword,
+      newPassword,
+    );
+
+    this.mailerService
+      .notifySuccessSettingPassword(updatedUser)
+      .catch((reason) =>
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        this.logger.error('Notification of password change failed', reason),
+      );
+
+    return updatedUser;
+  }
+
+  // Sets another user's password without knowing it: administrators only.
+  // Users change their own with changeOwnPassword.
+  @Roles(Role.SUPER)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('changePasswordByEmail')
   public async changePasswordByEmail(
@@ -198,15 +223,24 @@ export class UsersResolver {
   @Mutation('requestPasswordChange')
   public async requestPasswordChange(
     @Args('input') { email }: RequestPasswordChangeInput,
-  ): Promise<string> {
-    const user = await this.usersService.findByEmail(email);
-    if (!user.enabled) {
-      return 'Successful Request';
+  ): Promise<{ message: string }> {
+    // The answer is always the same, so nobody can find out which emails exist
+    const response = { message: 'Successful Request' };
+
+    let user: User;
+    try {
+      user = await this.usersService.findByEmail(email);
+    } catch {
+      return response;
+    }
+    if (!user.enabled || user.email === 'system@admin.com') {
+      return response;
     }
 
     const confirmationToken =
       await this.confirmationTokenService.createConfirmationToken(
         user.id as number,
+        true,
       );
     user.confirmationToken = confirmationToken.tokenValue;
 
@@ -220,7 +254,7 @@ export class UsersResolver {
       ),
     );
 
-    return 'Successful Request';
+    return response;
   }
 
   @Roles(Role.SUPER)
@@ -229,13 +263,14 @@ export class UsersResolver {
   public async requestPasswordChangeForAnotherUser(
     @Args('input') { email }: RequestPasswordChangeInput,
     @CurrentUser() currentUser: JWTPayload,
-  ): Promise<string> {
+  ): Promise<{ message: string }> {
     const user = await this.usersService.findByEmail(email);
     await this.uals.forRequestPasswordChangeForAnotherUser(currentUser, user);
 
     const confirmationToken =
       await this.confirmationTokenService.createConfirmationToken(
         user.id as number,
+        true,
       );
     user.confirmationToken = confirmationToken.tokenValue;
 
@@ -249,7 +284,7 @@ export class UsersResolver {
       ),
     );
 
-    return 'Successful Request';
+    return { message: 'Successful Request' };
   }
 
   @UsePipes(new ValidationPipe({ transform: true }))

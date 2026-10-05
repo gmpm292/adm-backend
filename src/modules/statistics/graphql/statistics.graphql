@@ -1,0 +1,110 @@
+input StatisticsFilterInput {
+  "First day of the period (YYYY-MM-DD), in the user's calendar"
+  dateFrom: String!
+  "Last day of the period (YYYY-MM-DD), inclusive"
+  dateTo: String!
+  "Currency the amounts are reported in. Defaults to the most used one"
+  currency: String
+  "Minutes east of UTC of the user's clock, to split days as the user sees them"
+  utcOffsetMinutes: Int
+  businessId: Int
+  officeId: Int
+}
+
+type StatisticsPeriod {
+  dateFrom: String!
+  dateTo: String!
+  "Currency the amounts refer to; null when there are no sales yet"
+  currency: String
+  "Currencies with sales, most used first"
+  currencies: [String!]!
+  "day or month"
+  granularity: String!
+}
+
+type StatisticsAmount {
+  currency: String!
+  amount: Float!
+  count: Int!
+}
+
+type StatisticsSeriesPoint {
+  "YYYY-MM-DD for days, YYYY-MM for months"
+  period: String!
+  revenue: Float!
+  salesCount: Int!
+}
+
+type StatisticsRanking {
+  id: Int
+  name: String!
+  detail: String
+  amount: Float!
+  quantity: Float!
+  count: Int!
+}
+
+type StatisticsCount {
+  key: String!
+  count: Int!
+  amount: Float!
+}
+
+type LowStockItem {
+  inventoryId: Int!
+  product: String!
+  location: String
+  currentStock: Int!
+  minStock: Int!
+}
+
+type DashboardStatistics {
+  period: StatisticsPeriod!
+
+  revenue: Float!
+  salesCount: Int!
+  averageTicket: Float!
+  previousRevenue: Float!
+  previousSalesCount: Int!
+  refundedSalesCount: Int!
+  cancelledSalesCount: Int!
+
+  revenueSeries: [StatisticsSeriesPoint!]!
+
+  lowStockCount: Int!
+  lowStock: [LowStockItem!]!
+  draftSalesCount: Int!
+  pendingWorkerPayments: [StatisticsAmount!]!
+
+  payrollPaid: [StatisticsAmount!]!
+  attendance: [StatisticsCount!]!
+
+  activeWorkersCount: Int!
+  productsCount: Int!
+  customersCount: Int!
+}
+
+type SalesStatistics {
+  period: StatisticsPeriod!
+
+  revenue: Float!
+  salesCount: Int!
+  averageTicket: Float!
+  deliveriesCount: Int!
+
+  topProducts: [StatisticsRanking!]!
+  byCategory: [StatisticsRanking!]!
+  bySeller: [StatisticsRanking!]!
+  topCustomers: [StatisticsRanking!]!
+  byPaymentMethod: [StatisticsCount!]!
+  byStatus: [StatisticsCount!]!
+
+  newCustomersCount: Int!
+  returningCustomersCount: Int!
+  anonymousSalesCount: Int!
+}
+
+extend type Query {
+  dashboardStatistics(input: StatisticsFilterInput!): DashboardStatistics!
+  salesStatistics(input: StatisticsFilterInput!): SalesStatistics!
+}

@@ -5,7 +5,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Injectable } from '@nestjs/common';
 import { InjectEntityManager, InjectRepository } from '@nestjs/typeorm';
-import { hash } from 'bcrypt';
+import { compare, hash } from 'bcrypt';
 import { EntityManager, FindOptionsWhere, In, Repository } from 'typeorm';
 
 import { ConfirmationTokenService } from '../confirmationToken/services/confirmation-token.service';
@@ -18,6 +18,7 @@ import { JWTPayload } from '../../auth/dto/jwt-payload.dto';
 import { UpdateUserProfileInput } from '../dto/update-user-profile.input';
 import { UpdateUserRoleInput } from '../dto/update-user-role.input';
 import { User } from '../entities/user.entity';
+import { hashToken } from '../../auth/helpers/token-hash.helper';
 import { BaseService } from '../../../core/services/base.service';
 import { NotFoundError } from '../../../core/errors/appErrors/NotFoundError.error';
 import { UnauthorizedError } from '../../../core/errors/appErrors/UnauthorizedError.error';
@@ -117,6 +118,8 @@ export class UsersService extends BaseService<User> {
       },
       //cu: { sub: 1 as number, role: [Role.SUPER] as Array<Role> }, //TODO Urgente
     });
+    // A recovered password must not leave previous sessions able to refresh
+    await this.saveRefreshToken(user.id as number, null);
 
     // Add Logs in future
 
@@ -192,6 +195,34 @@ export class UsersService extends BaseService<User> {
       ...user,
       ...propertiesToUpdateAndRetrieve,
     };
+  }
+
+  /**
+   * Lets a user change their own password, proving they know the current one
+   *
+   * @param currentUser Access token payload
+   * @param currentPassword Password in use
+   * @param newPassword Password to set
+   */
+  public async changeOwnPassword(
+    currentUser: JWTPayload,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<User> {
+    const user = await this.findOne(currentUser.sub);
+    if (
+      !user.password ||
+      !(await compare(currentPassword ?? '', user.password))
+    ) {
+      throw new BadRequestError('Current password incorrect');
+    }
+
+    await this.usersRepository.update(
+      { id: user.id },
+      { email: user.email, password: await hash(newPassword, 10) },
+    );
+
+    return user;
   }
 
   public async createFirstUser(
@@ -381,8 +412,7 @@ export class UsersService extends BaseService<User> {
   ): Promise<boolean> {
     // if refreshToken is not empty then hash it and save it
     const updateResult = await this.usersRepository.update(id, {
-      //refreshToken: refreshToken ? await hash(refreshToken, 10) : null,
-      refreshToken: refreshToken ? refreshToken : (null as any),
+      refreshToken: refreshToken ? hashToken(refreshToken) : (null as any),
     });
 
     return Boolean(updateResult.affected);
@@ -416,7 +446,6 @@ export class UsersService extends BaseService<User> {
     await this.usersRepository.update(id, {
       email: user.email,
       twoFASecret,
-      isTwoFactorEnabled: true,
       isTwoFactorConfigured: false,
     });
 
@@ -445,9 +474,6 @@ export class UsersService extends BaseService<User> {
     }
     if (!user.twoFASecret) {
       throw new UnauthorizedError(`You don't have a secret code`);
-    }
-    if (!user.isTwoFactorEnabled) {
-      throw new UnauthorizedError('Two-factor authentication not enable');
     }
     if (user.isTwoFactorConfigured) {
       throw new ForbiddenResourceError(
@@ -488,6 +514,7 @@ export class UsersService extends BaseService<User> {
     }
     await this.usersRepository.update(id, {
       email: user.email,
+      twoFASecret: null as any,
       isTwoFactorEnabled: true,
       isTwoFactorConfigured: false,
     });
@@ -547,7 +574,9 @@ export class UsersService extends BaseService<User> {
     }
     await this.usersRepository.update(id, {
       email: user.email,
+      twoFASecret: null as any,
       isTwoFactorEnabled: false,
+      isTwoFactorConfigured: false,
     });
 
     return user;
@@ -655,10 +684,15 @@ export class UsersService extends BaseService<User> {
     const user: User = {
       email: updateUserProfileInput.email ?? savedUser.email,
       name: updateUserProfileInput.name ?? savedUser.name,
-      lastName: updateUserProfileInput.lastName ?? savedUser.lastName,
+      // An empty string clears the last name
+      lastName:
+        updateUserProfileInput.lastName === ''
+          ? null
+          : (updateUserProfileInput.lastName ?? savedUser.lastName),
       mobile: updateUserProfileInput.mobile ?? savedUser.mobile,
     } as unknown as User;
-    user.fullName = `${user.name?.trim() ?? ''} ${user.lastName?.trim() ?? ''}`;
+    user.fullName =
+      `${user.name?.trim() ?? ''} ${user.lastName?.trim() ?? ''}`.trim();
 
     if (
       updateUserProfileInput.email &&

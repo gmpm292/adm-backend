@@ -5,6 +5,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { compare } from 'bcrypt';
+import { randomUUID } from 'crypto';
 import { Response } from 'express';
 
 import { authenticator } from 'otplib';
@@ -13,6 +14,7 @@ import { UsersService } from '../../users/services/users.service';
 
 import { AuthParameterKey } from '../enums/auth-parameter-key.enum';
 import { addBearerPrefix } from '../helpers/bearer-token.helper';
+import { hashToken } from '../helpers/token-hash.helper';
 
 import { JWTPayload } from '../dto/jwt-payload.dto';
 import { AccessTokenReason } from '../enums/access-token-reason';
@@ -30,6 +32,12 @@ import { NotificationTypeEnum } from '../../notification/enums/notification-type
 import { ConfigService, EnvironmentVariables } from '../../../common/config';
 import { LoggerService } from '../../../common/logger';
 import { Role } from '../../../core/enums/role.enum';
+
+/**
+ * Seconds a replaced refresh token keeps being accepted, so requests that
+ * were already on their way (another tab, a retry) are not logged out
+ */
+const REFRESH_TOKEN_GRACE_PERIOD = 30;
 
 @Injectable()
 export class AuthService {
@@ -87,6 +95,26 @@ export class AuthService {
     });
   }
 
+  /**
+   * Remove access and refresh tokens from response cookies. The attributes
+   * must match the ones used to set them, otherwise browsers ignore the
+   * removal on cross-site requests.
+   *
+   * @param res Response to send to client
+   */
+  public clearAuthCookies(res: Response): void {
+    for (const cookieNameKey of [
+      AuthParameterKey.AccessToken,
+      AuthParameterKey.RefreshToken,
+    ]) {
+      res.clearCookie(cookieNameKey, {
+        httpOnly: true,
+        sameSite: 'none',
+        secure: true,
+      });
+    }
+  }
+
   public addRefreshTokenToCookies(jwt: string, res: Response): void {
     return this.addBearerJWTToCookies(
       jwt,
@@ -139,6 +167,7 @@ export class AuthService {
         twoFactorAuthPassed,
       },
       {
+        jwtid: randomUUID(),
         expiresIn,
         secret: this.configService.get(secretKey),
       },
@@ -172,13 +201,54 @@ export class AuthService {
     if (!refreshToken || !user?.refreshToken) {
       throw new UnauthorizedError();
     }
-    //const refreshTokensMatch = await compare(refreshToken, user.refreshToken);
-    const refreshTokensMatch = refreshToken == user.refreshToken;
-    if (!refreshTokensMatch) {
-      throw new UnauthorizedError();
+    const refreshTokenHash = hashToken(refreshToken);
+    if (refreshTokenHash !== user.refreshToken) {
+      const replacedTokenHash = await this.cacheManager.get<string>(
+        `ReplacedRefreshTokenUser${id}`,
+      );
+      if (refreshTokenHash !== replacedTokenHash) {
+        throw new UnauthorizedError();
+      }
     }
 
     return user;
+  }
+
+  /**
+   * Issues a new refresh token for the user, saves it and adds it to cookies.
+   * The token it replaces stays valid for a short grace period.
+   *
+   * @param user User entity
+   * @param res Response to send to client
+   * @param twoFactorAuthPassed Whether the session already passed 2FA
+   * @param replacedToken Refresh token used to ask for this one, if any
+   */
+  public async issueRefreshToken(
+    user: User,
+    res: Response,
+    twoFactorAuthPassed = false,
+    replacedToken?: string,
+  ): Promise<string> {
+    if (replacedToken) {
+      // cache-manager-redis-store only honours the TTL passed as { ttl } (seconds)
+      await this.cacheManager.set(
+        `ReplacedRefreshTokenUser${user.id}`,
+        hashToken(replacedToken),
+        { ttl: REFRESH_TOKEN_GRACE_PERIOD } as any,
+      );
+    } else {
+      await this.cacheManager.del(`ReplacedRefreshTokenUser${user.id}`);
+    }
+
+    const refreshToken = this.createRefreshToken(
+      user,
+      undefined,
+      twoFactorAuthPassed,
+    );
+    await this.usersService.saveRefreshToken(user.id as number, refreshToken);
+    this.addRefreshTokenToCookies(refreshToken, res);
+
+    return refreshToken;
   }
 
   public async validateUserToSingleLogin(id: number, accessToken: string) {
@@ -200,7 +270,7 @@ export class AuthService {
     try {
       user = await this.usersService.findByEmail(email, true);
     } catch (e) {
-      throw new UnauthorizedError('User or pasword incorrect.');
+      throw new UnauthorizedError('User or password incorrect.');
     }
 
     if (!user.enabled || user.deletedAt) {
@@ -208,14 +278,14 @@ export class AuthService {
     }
 
     if (!user.password) {
-      throw new UnauthorizedError('User or pasword incorrect.');
+      throw new UnauthorizedError('User or password incorrect.');
     }
     if (!password || !user?.password) {
-      throw new UnauthorizedError('User or pasword incorrect.');
+      throw new UnauthorizedError('User or password incorrect.');
     }
     const passwordsMatch = await compare(password, user.password);
     if (!passwordsMatch) {
-      throw new UnauthorizedError('User or pasword incorrect.');
+      throw new UnauthorizedError('User or password incorrect.');
     }
 
     return user;
@@ -383,11 +453,11 @@ export class AuthService {
     if (!user.enabled) {
       throw new DisabledUserError();
     }
-    if (!user?.twoFASecret) {
+    if (!user?.twoFASecret || !user.isTwoFactorConfigured) {
       throw new UnauthorizedError(`You don't have a secret code`);
     }
 
-    const is2FAVerified = authenticator.check(token2fa, user.twoFASecret);
+    const is2FAVerified = authenticator.check(token2fa ?? '', user.twoFASecret);
     if (!is2FAVerified) {
       throw new UnauthorizedError('Invalid 2FA code');
     }
@@ -397,10 +467,10 @@ export class AuthService {
   async finishConfigure2FA(id: number, token2fa: string): Promise<User> {
     const user = await this.usersService.findOne(id);
 
-    const is2FAVerified = authenticator.check(
-      token2fa,
-      user.twoFASecret as string,
-    );
+    if (!user.twoFASecret) {
+      throw new UnauthorizedError(`You don't have a secret code`);
+    }
+    const is2FAVerified = authenticator.check(token2fa ?? '', user.twoFASecret);
     if (!is2FAVerified) {
       throw new UnauthorizedError('Invalid 2FA code');
     }
@@ -418,6 +488,14 @@ export class AuthService {
   }
 
   async disable2FA(id: number): Promise<User> {
+    return this.usersService.disable2FA(id);
+  }
+
+  /**
+   * Lets a user turn off their own 2FA, proving they still hold the device
+   */
+  async disableOwn2FA(id: number, token2fa: string): Promise<User> {
+    await this.verify2FACode(id, token2fa);
     return this.usersService.disable2FA(id);
   }
 }

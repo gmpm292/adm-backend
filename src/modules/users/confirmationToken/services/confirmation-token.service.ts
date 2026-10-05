@@ -28,8 +28,16 @@ export class ConfirmationTokenService extends BaseService<ConfirmationToken> {
     super(confirmationTokenRepository);
   }
 
+  /**
+   * Creates a confirmation token for the given user
+   *
+   * @param userId User's ID
+   * @param replaceActive When true, an active token is invalidated instead of
+   * rejecting the request (a user who lost the email can ask for another one)
+   */
   public async createConfirmationToken(
     userId: number,
+    replaceActive = false,
   ): Promise<ConfirmationToken> {
     const user = await this.userRepository.findOne({
       where: { id: userId },
@@ -38,21 +46,26 @@ export class ConfirmationTokenService extends BaseService<ConfirmationToken> {
     if (!user) {
       throw new NotFoundError('User not found');
     }
-    const confirmationTokens = user.confirmationTokens;
-    if (
-      confirmationTokens?.some(
+    const activeTokens =
+      user.confirmationTokens?.filter(
         (ct) => ct.expirationDate > new Date() && !ct.used,
-      )
-    ) {
-      throw new ConfirmationTokenUserError(
-        'This user has active confirmation token',
-      );
+      ) ?? [];
+    if (activeTokens.length > 0) {
+      if (!replaceActive) {
+        throw new ConfirmationTokenUserError(
+          'This user has active confirmation token',
+        );
+      }
+      for (const activeToken of activeTokens) {
+        await this.markTokenAsUsed(activeToken.id as number);
+      }
     }
 
+    // CONFIRMATION_TOKEN_EXPIRE_IN is expressed in seconds, like the JWT ones
     const expireIn =
       Number(
         await this.configService.getAsync('CONFIRMATION_TOKEN_EXPIRE_IN'),
-      ) * 60;
+      ) * 1000;
     const expirationDate = new Date(new Date().getTime() + expireIn);
 
     const newconfirmationToken = {

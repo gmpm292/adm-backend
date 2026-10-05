@@ -85,6 +85,11 @@ input CheckConfirmationTokenInput {
   confirmationToken: String!
 }
 
+input ChangeOwnPasswordInput {
+  currentPassword: String!
+  newPassword: String!
+}
+
 input ChangePasswordByEmailInput {
   email: String
   newPassword: String!
@@ -153,6 +158,7 @@ extend type Query {
 
 extend type Mutation {
   changePassword(changePasswordInput: ChangePasswordInput!): User!
+  changeOwnPassword(input: ChangeOwnPasswordInput!): User!
   changePasswordByEmail(
     changePasswordByEmailInput: ChangePasswordByEmailInput!
   ): User!
