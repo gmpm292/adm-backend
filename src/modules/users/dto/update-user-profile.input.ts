@@ -1,5 +1,29 @@
-import { PartialType } from '@nestjs/mapped-types';
+import {
+  IsEmail,
+  IsOptional,
+  IsPhoneNumber,
+  IsString,
+  MinLength,
+  ValidateIf,
+} from 'class-validator';
 
-import { CreateUserInput } from './create-user.input';
+export class UpdateUserProfileInput {
+  @IsOptional()
+  @IsEmail()
+  email?: string;
 
-export class UpdateUserProfileInput extends PartialType(CreateUserInput) {}
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  name?: string;
+
+  // An empty string clears the last name
+  @ValidateIf((input: UpdateUserProfileInput) => Boolean(input.lastName))
+  @IsString()
+  @MinLength(3)
+  lastName?: string;
+
+  @IsOptional()
+  @IsPhoneNumber()
+  mobile?: string;
+}
