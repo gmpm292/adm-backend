@@ -132,7 +132,37 @@ en la base de datos con SQL directo (`StatisticsService`).
   constructor de consultas usa como alias el último tramo de la relación, y
   dos relaciones `*.user` chocan.
 
+## Empresa (`src/modules/company`)
+
+- Cuatro niveles: empresa → oficina → departamento → equipo. Cada uno hereda
+  de su nivel superior los que quedan por encima (un equipo guarda su
+  departamento, oficina y empresa).
+- **Eliminar** solo funciona con la unidad vacía (sin niveles inferiores ni
+  usuarios): no arrastra nada. **Restaurar** recupera solo la unidad y exige
+  que su nivel superior no esté eliminado.
+- El nombre no se repite dentro del mismo nivel superior, y una unidad no
+  cambia de nivel superior al editarla (su gente quedaría apuntando al
+  anterior). Reglas comunes en `helpers/company-structure.helper.ts`.
+
+## Usuarios (`src/modules/users`)
+
+- Todo lo que administra usuarios es solo para SUPER. Nadie puede eliminarse,
+  desactivarse ni cambiarse el rol a sí mismo, y `system@admin.com` no se
+  lista ni se modifica.
+- Cada rol exige su lugar en la empresa: PRINCIPAL empresa; ADMIN oficina;
+  MANAGER departamento; SUPERVISOR y AGENT equipo. El rol y el lugar se cambian
+  juntos con `updateUserRole`.
+- Una cuenta nace inactiva y se activa al fijar su contraseña. Desactivarla,
+  eliminarla o cambiarle la contraseña cierra sus sesiones.
+
 ## Convenciones y trampas
+
+- Las opciones de listado llegan del cliente y acaban en SQL: el decorador
+  `@Opts` rechaza los operadores que escriben el valor tal cual (`ANY` con
+  campo o valor, `ANY_OPERATOR_AND_VALUE`), las expresiones y las columnas
+  secretas. Esos operadores son solo para los servicios.
+- `baseFindByIds` aplica el alcance del usuario aunque no se le pase uno (como
+  `baseFindOne`): eliminar o restaurar por lote no cruza empresas.
 
 - Los errores de negocio extienden `AppError` (`src/core/errors`) y llegan al
   cliente como `{ message, extensions: { code } }` con el código HTTP como
@@ -155,3 +185,18 @@ en la base de datos con SQL directo (`StatisticsService`).
 - El emisor que muestra la aplicación de autenticación está fijo como
   `GoldenSoft` en `AuthService.generate2FASecret`.
 - Los intentos de código 2FA no tienen límite.
+
+## Dudas para consultar con el cliente
+
+- **Eliminar una oficina con historial**: hoy solo se impide si tiene
+  departamentos o usuarios. ¿Debe impedirse también cuando tiene ventas,
+  productos, inventario, clientes o trabajadores? Si se elimina, ese historial
+  queda apuntando a una oficina que ya no aparece. Lo mismo aplica a empresa,
+  departamento y equipo.
+- **Agentes y supervisores** exigen departamento y equipo además de oficina
+  (`UsersService.checkUserInformation`). ¿Es demasiado para una mipyme con un
+  solo mostrador?
+- **Devolución parcial**: no rebaja el total de la venta, así que las
+  estadísticas la cuentan completa. Corregirlo pide guardar el importe devuelto.
+- **«ID Venta» en el cálculo de nómina** (frontend): es lo único que identifica
+  cada venta en esa tabla; lo correcto sería mostrar el número de factura.

@@ -30,7 +30,7 @@ input CreateTeamInput {
 input UpdateTeamInput {
   id: Int!
   teamType: TeamTypeEnum
-  name: String!
+  name: String
   description: String
   departmentId: Int
 }
