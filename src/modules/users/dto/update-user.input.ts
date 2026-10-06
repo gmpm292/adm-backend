@@ -47,7 +47,7 @@ export class UpdateUserInput extends CreateSecurityBaseInput {
 
   @IsOptional()
   @IsBoolean()
-  enabled?: boolean = false;
+  enabled?: boolean;
 
   @IsOptional()
   @IsEnum(Role, { each: true })

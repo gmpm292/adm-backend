@@ -32,6 +32,7 @@ export const Opts = createParamDecorator(
       args = args.find((e) => e.hasOwnProperty(data.arg));
     }
     if (args && args.hasOwnProperty(data.arg)) {
+      assertSafeListOptions(args[data.arg]);
       await validateFilters(data, args, requestedFields);
 
       // Validate obj ListOptions.
@@ -150,6 +151,62 @@ async function validateWithClass(
     }
   }
   return keysNotAllowed;
+}
+
+// Un campo propio (`name`) o de una relación (`office.id`): nada de expresiones.
+const FIELD_NAME = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$/;
+
+// Estos operadores escriben el valor tal cual en la consulta SQL. Los usan
+// los servicios; de un cliente solo se admite `ANY` para agrupar filtros.
+const RAW_OPERATORS = ['ANY', 'ANY_OPERATOR_AND_VALUE'];
+
+// Columnas que no se filtran ni ordenan desde fuera: permitirían deducirlas.
+const SECRET_FIELDS = [
+  'password',
+  'refreshtoken',
+  'twofasecret',
+  'confirmationtoken',
+  'tokenvalue',
+];
+
+/**
+ * Las opciones de listado llegan del cliente y acaban en la consulta SQL:
+ * aquí se rechaza todo lo que no sea un campo y un valor.
+ */
+function assertSafeListOptions(options: any): void {
+  const assertField = (property: unknown, where: string) => {
+    const name = String(property);
+    const lastPart = name.split('.').pop() as string;
+    if (
+      !FIELD_NAME.test(name) ||
+      SECRET_FIELDS.includes(lastPart.toLowerCase())
+    ) {
+      throw new BadRequestException(`Field not allowed in the ${where}.`);
+    }
+  };
+
+  const assertFilters = (filters: unknown) => {
+    if (!Array.isArray(filters)) return;
+    for (const filter of filters as ListFilter[]) {
+      if (!filter) continue;
+      if (filter.property) assertField(filter.property, 'filters');
+      if (
+        RAW_OPERATORS.includes(String(filter.operator)) &&
+        (filter.property || filter.value)
+      ) {
+        throw new BadRequestException('Operator not allowed in the filters.');
+      }
+      assertFilters(filter.filters);
+    }
+  };
+
+  assertFilters(options?.filters);
+
+  if (Array.isArray(options?.sorts)) {
+    for (const sort of options.sorts) {
+      assertField(sort?.property, 'sorts');
+    }
+  }
 }
 
 function extractPropsAndVals(filts: ListFilter[]) {

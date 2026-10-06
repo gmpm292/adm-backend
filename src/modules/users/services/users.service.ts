@@ -3,7 +3,9 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 import { InjectEntityManager, InjectRepository } from '@nestjs/typeorm';
 import { compare, hash } from 'bcrypt';
 import { EntityManager, FindOptionsWhere, In, Repository } from 'typeorm';
@@ -32,6 +34,8 @@ import {
 import { DisabledUserError } from '../../../core/errors/appErrors/DisabledUserError.error';
 import { ForbiddenResourceError } from '../../../core/errors/appErrors/ForbiddenResourceError';
 import { ConditionalOperator } from '../../../core/graphql/remote-operations/enums/conditional-operation.enum';
+import { SortDirection } from '../../../core/graphql/remote-operations/enums/sort-direction.enum';
+import { ListFilter } from '../../../core/graphql/remote-operations/models/list-filter.interface';
 import { LogicalOperator } from '../../../core/graphql/remote-operations/enums/logical-operator.enum';
 import { ScopedAccessEnum } from '../../../core/enums/scoped-access.enum';
 import { ScopedAccessService } from '../../scoped-access/services/scoped-access.service';
@@ -39,6 +43,8 @@ import { Business } from '../../company/business/entities/co_business.entity';
 import { Office } from '../../company/office/entities/co_office.entity';
 import { Team } from '../../company/team/entities/co_team.entity';
 import { Department } from '../../company/department/entities/co_department.entity';
+
+const SYSTEM_USER_EMAIL = 'system@admin.com';
 
 @Injectable()
 export class UsersService extends BaseService<User> {
@@ -48,6 +54,7 @@ export class UsersService extends BaseService<User> {
     @InjectEntityManager()
     private readonly mannager: EntityManager,
     protected scopedAccessService: ScopedAccessService,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {
     super(usersRepository);
   }
@@ -188,6 +195,10 @@ export class UsersService extends BaseService<User> {
         ...propertiesToUpdateAndRetrieve,
       },
     );
+    // Quien tuviera la sesión abierta con la contraseña anterior queda fuera.
+    if (user.id !== currentUser?.sub) {
+      await this.revokeSessions(user.id as number);
+    }
 
     // Add Logs in future
 
@@ -271,12 +282,12 @@ export class UsersService extends BaseService<User> {
   ): Promise<User> {
     await this.checkUserInformation(createUserInput, cu as JWTPayload);
     const { name, lastName, ...rest } = createUserInput;
-    const fullName = `${name?.trim() ?? ''} ${lastName?.trim() ?? ''}`;
     const user: User = {
-      name,
-      lastName,
-      fullName,
       ...rest,
+      name: name.trim(),
+      lastName: lastName?.trim() || undefined,
+      fullName: this.buildFullName(name, lastName),
+      email: rest.email.trim().toLowerCase(),
     };
 
     await this.validateUniqueFields(user);
@@ -295,18 +306,82 @@ export class UsersService extends BaseService<User> {
       await this.confirmationTokenService.createConfirmationToken(
         createdUser.id as number,
       );
-    createdUser.confirmationToken = confirmationToken.tokenValue;
+    // Con su empresa y oficina cargadas, como el resto de consultas.
+    const savedUser = await this.findOne(createdUser.id as number);
+    savedUser.confirmationToken = confirmationToken.tokenValue;
 
-    // Add Log in future
-
-    return createdUser;
+    return savedUser;
   }
 
+  /** Listado para administrar usuarios; la cuenta del sistema no es de nadie. */
   public async find(options?: ListOptions): Promise<ListSummary> {
+    const sorts = options?.sorts?.length
+      ? options.sorts
+      : [{ property: 'id', direction: SortDirection.DESC }];
+
     return super.baseFind({
-      options,
-      relationsToLoad: ['office', 'department', 'team'],
+      options: {
+        ...(options ?? { skip: 0, take: 10 }),
+        sorts,
+        filters: [
+          ...this.withRoleFilters(options?.filters ?? []),
+          {
+            property: 'email',
+            operator: ConditionalOperator.DISTINCT,
+            value: SYSTEM_USER_EMAIL,
+          },
+        ],
+      },
+      relationsToLoad: ['business', 'office', 'department', 'team'],
     });
+  }
+
+  /**
+   * `role` es una lista: un filtro de texto sobre ella falla en la base de
+   * datos. Se traduce a «tiene alguno de los roles que coinciden».
+   */
+  private withRoleFilters(filters: ListFilter[]): ListFilter[] {
+    return filters.map((filter) => {
+      if (filter.filters?.length) {
+        return { ...filter, filters: this.withRoleFilters(filter.filters) };
+      }
+      if (filter.property !== 'role') return filter;
+
+      const text = String(filter.value ?? '').toUpperCase();
+      const roles = Object.values(Role).filter((role) => role.includes(text));
+      // Solo nombres del enum: el valor se escribe tal cual en la consulta.
+      const list = roles.map((role) => `'${role}'`).join(', ');
+      return {
+        ...filter,
+        operator: ConditionalOperator.ANY_OPERATOR_AND_VALUE,
+        value: `&& ARRAY[${list}]::text[]`,
+      };
+    });
+  }
+
+  /**
+   * Cierra las sesiones abiertas de un usuario: sus tokens de acceso dejan de
+   * valer y su refresh token ya no sirve para pedir otros.
+   */
+  private async revokeSessions(id: number): Promise<void> {
+    await this.usersRepository.update({ id }, { refreshToken: null as any });
+    await this.cacheManager.del(`AccessTokenUser${id}`);
+  }
+
+  private buildFullName(name?: string, lastName?: string | null): string {
+    return [name, lastName]
+      .map((part) => part?.trim())
+      .filter(Boolean)
+      .join(' ');
+  }
+
+  /** La cuenta del sistema la crean las migraciones y no se administra. */
+  private assertNotSystemUser(user: User): void {
+    if (user.email === SYSTEM_USER_EMAIL) {
+      throw new ForbiddenResourceError(
+        'La cuenta del sistema no se puede modificar',
+      );
+    }
   }
 
   public findCustomers(options?: ListOptions): Promise<ListSummary> {
@@ -375,16 +450,25 @@ export class UsersService extends BaseService<User> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<User[]> {
+    if (ids.includes(currentUser.sub)) {
+      throw new BadRequestError('No puedes eliminar tu propia cuenta');
+    }
+
     const users = await this.usersRepository.findBy({
       id: In(ids),
       ...filters,
     });
 
     if (users.length === 0) {
-      throw new NotFoundError();
+      throw new NotFoundError('Usuario no encontrado');
     }
+    users.forEach((user) => this.assertNotSystemUser(user));
 
-    await this.usersRepository.softDelete(ids);
+    // Solo los encontrados: los filtros de acceso pueden excluir alguno.
+    await this.usersRepository.softDelete(users.map((u) => u.id as number));
+    for (const user of users) {
+      await this.revokeSessions(user.id as number);
+    }
 
     // Add Log in future
 
@@ -596,10 +680,19 @@ export class UsersService extends BaseService<User> {
       throw new NotFoundError();
     }
 
+    this.assertNotSystemUser(savedUser);
+    if (id === currentUser.sub && updateUserInput.enabled === false) {
+      throw new BadRequestError('No puedes desactivar tu propia cuenta');
+    }
+
     const user: User = {
-      email: updateUserInput.email ?? savedUser.email,
-      name: updateUserInput.name ?? savedUser.name,
-      lastName: updateUserInput.lastName ?? savedUser.lastName,
+      email: updateUserInput.email?.trim().toLowerCase() ?? savedUser.email,
+      name: updateUserInput.name?.trim() ?? savedUser.name,
+      // `null` o una cadena vacía borran los apellidos.
+      lastName:
+        updateUserInput.lastName === undefined
+          ? savedUser.lastName
+          : updateUserInput.lastName?.trim() || null,
       mobile: updateUserInput.mobile ?? savedUser.mobile,
       enabled: updateUserInput.enabled ?? savedUser.enabled,
       // role: updateUserInput.role ?? savedUser.role,
@@ -622,12 +715,7 @@ export class UsersService extends BaseService<User> {
       //     : savedUser.team,
     } as unknown as User;
 
-    if (name || lastName) {
-      user.name = name || user.name;
-      user.lastName = lastName || user.lastName;
-      user.fullName = `
-      ${user.name?.trim() ?? ''} ${user.lastName?.trim() ?? ''}`;
-    }
+    user.fullName = this.buildFullName(user.name, user.lastName);
 
     // if password has value, it must be hashed
     if (updateUserInput.password) {
@@ -645,6 +733,9 @@ export class UsersService extends BaseService<User> {
     // }
 
     await this.usersRepository.update({ id }, user as any);
+    if (savedUser.enabled && user.enabled === false) {
+      await this.revokeSessions(id);
+    }
 
     // // save historical if role is USER(Customer)
     // if (user.role.some((r) => r == Role.USER)) {
@@ -669,7 +760,7 @@ export class UsersService extends BaseService<User> {
     //   userId: savedUser.id,
     // });
 
-    return { ...savedUser, ...user };
+    return this.findOne(id);
   }
 
   public async updateUserProfile(
@@ -746,12 +837,22 @@ export class UsersService extends BaseService<User> {
     currentUser: JWTPayload,
     filters: FindOptionsWhere<User> = {},
   ): Promise<User | null> {
-    await this.checkUserInformation(updateUserRoleInput, currentUser);
-    const { officeId, departmentId, teamId } = updateUserRoleInput;
     const savedUser = await this.findOne(id, filters);
     if (!savedUser) {
       throw new NotFoundError();
     }
+    this.assertNotSystemUser(savedUser);
+    if (id === currentUser.sub) {
+      throw new BadRequestError('No puedes cambiar tu propio rol');
+    }
+
+    // Sin empresa nueva se conserva la que tenía, salvo que el rol no lleve.
+    const isSuper = updateUserRoleInput.role.includes(Role.SUPER);
+    if (!isSuper && !updateUserRoleInput.businessId) {
+      updateUserRoleInput.businessId = savedUser.business?.id;
+    }
+    await this.checkUserInformation(updateUserRoleInput, currentUser);
+    const { businessId, officeId, departmentId, teamId } = updateUserRoleInput;
 
     if (
       updateUserRoleInput.role.some((r) => r === Role.USER) ||
@@ -763,6 +864,7 @@ export class UsersService extends BaseService<User> {
     const user: User = {
       role: updateUserRoleInput.role ?? savedUser.role,
       email: savedUser.email,
+      business: businessId ? { id: businessId } : null,
       office: officeId
         ? { id: officeId }
         : updateUserRoleInput.role
@@ -791,7 +893,7 @@ export class UsersService extends BaseService<User> {
     //   userId: savedUser.id,
     // });
 
-    return { ...savedUser, ...user };
+    return this.findOne(id);
   }
 
   private async checkUserInformation(
