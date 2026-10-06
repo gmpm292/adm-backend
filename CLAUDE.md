@@ -108,6 +108,30 @@ en la base de datos con SQL directo (`StatisticsService`).
   (`productPaymentOptions`), porque el detalle de venta no guarda el precio
   cobrado.
 
+## Ventas (`src/modules/sales`)
+
+- **Estados** (`saleStatus`): `DRAFT` reserva existencias; `CONFIRMED` está
+  cobrada; `CANCELLED` soltó su reserva; `PARTIALLY_REFUNDED` y
+  `FULLY_REFUNDED` devolvieron productos al inventario. Una venta cobrada no se
+  cancela ni se elimina: se devuelve (`refundSale`).
+- **Vender**: `createSale` crea la venta con sus líneas y, si llegan
+  `payments`, la cobra en la misma transacción. Sin pagos queda en borrador y
+  se cobra con `makeSale`. `saleCatalog` da a la pantalla de venta todo lo de
+  la tienda en una consulta y `quoteSale` el precio de un carrito sin guardarlo.
+- **Precios por moneda** (`sale/helpers/sale-payments.helper.ts`): cada línea
+  guarda su precio en cada moneda (`productPaymentOptions`). Un pago cubre la
+  fracción `importe / precio en su moneda`, así se cobra parte en una moneda y
+  parte en otra. `unitPrice`, `subtotal` y `currency` de una línea, y el total
+  de un borrador, se calculan al leer: no son columnas.
+- **Alcance** (`sale/helpers/sale-scopes.ts`): ventas y clientes son de la
+  tienda (empresa + oficina). Un vendedor sin mando solo ve sus ventas.
+- **Clientes**: teléfono, correo y carné no se repiten dentro de una empresa.
+  Eliminar un cliente conserva sus ventas.
+- **Mensajería**: una venta con `hasDelivery` no se cobra sin mensajero.
+- El listado de ventas carga aparte los usuarios de vendedor y mensajero: el
+  constructor de consultas usa como alias el último tramo de la relación, y
+  dos relaciones `*.user` chocan.
+
 ## Convenciones y trampas
 
 - Los errores de negocio extienden `AppError` (`src/core/errors`) y llegan al

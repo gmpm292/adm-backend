@@ -14,17 +14,32 @@ import {
 } from '../../../../core/graphql/remote-operations';
 import { Opts } from '../../../../core/graphql/remote-operations/decorators/opts.decorator';
 import { SaleService } from '../services/sale.service';
+import { SaleCatalogService } from '../services/sale-catalog.service';
 import { SaleFiltersValidator } from '../filters-validator/sale-filters.validator';
 import { MakeSaleInput } from '../dto/make-sale.input';
 import { ValidateSalePaymentsInput } from '../dto/validate-sale-payments.input';
 import { SalePaymentValidationResponse } from '../types/sale-payment-validation.response';
 import { RefundSaleInput } from '../dto/refund-sale.input';
+import { QuoteSaleInput } from '../dto/quote-sale.input';
+
+// Quien atiende al público: vende, cobra y consulta sus ventas.
+const SELLING_ROLES = [
+  Role.SUPER,
+  Role.PRINCIPAL,
+  Role.ADMIN,
+  Role.MANAGER,
+  Role.SUPERVISOR,
+  Role.AGENT,
+];
 
 @Resolver('Sale')
 export class SaleResolver {
-  constructor(private readonly saleService: SaleService) {}
+  constructor(
+    private readonly saleService: SaleService,
+    private readonly saleCatalogService: SaleCatalogService,
+  ) {}
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER)
+  @Roles(...SELLING_ROLES)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('createSale')
   async create(
@@ -34,7 +49,8 @@ export class SaleResolver {
     return this.saleService.create(createSaleInput, user);
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER, Role.SUPERVISOR)
+  // Un vendedor sin mando solo recibe sus propias ventas (SaleService).
+  @Roles(...SELLING_ROLES)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Query('sales')
   async findAll(
@@ -45,14 +61,14 @@ export class SaleResolver {
     return this.saleService.find(options, user);
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER, Role.SUPERVISOR)
+  @Roles(...SELLING_ROLES)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Query('sale')
   async findOne(@CurrentUser() user: JWTPayload, @Args('id') id: number) {
     return this.saleService.findOne(id, user);
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER)
+  @Roles(...SELLING_ROLES)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Query('salesByCustomer')
   async findByCustomer(
@@ -62,7 +78,29 @@ export class SaleResolver {
     return this.saleService.findByCustomer(customerId, user);
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
+  @Roles(...SELLING_ROLES)
+  @UseGuards(AccessTokenAuthGuard, RoleGuard)
+  @Query('saleCatalog')
+  async saleCatalog(
+    @CurrentUser() user: JWTPayload,
+    @Args('officeId') officeId?: number,
+  ) {
+    return this.saleCatalogService.getCatalog(user, officeId);
+  }
+
+  @Roles(...SELLING_ROLES)
+  @UseGuards(AccessTokenAuthGuard, RoleGuard)
+  @Query('quoteSale')
+  async quoteSale(
+    @CurrentUser() user: JWTPayload,
+    @Args('quoteSaleInput') quoteSaleInput: QuoteSaleInput,
+  ) {
+    return this.saleService.quote(quoteSaleInput, user);
+  }
+
+  // Los datos generales de un borrador (cliente, mensajería) los completa
+  // quien lo atiende; el servicio impide tocar una venta ya cobrada.
+  @Roles(...SELLING_ROLES)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('updateSale')
   async update(
@@ -86,14 +124,7 @@ export class SaleResolver {
     return this.saleService.restore(ids, user);
   }
 
-  @Roles(
-    Role.SUPER,
-    Role.PRINCIPAL,
-    Role.ADMIN,
-    Role.MANAGER,
-    Role.SUPERVISOR,
-    Role.AGENT,
-  )
+  @Roles(...SELLING_ROLES)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('makeSale')
   async makeSale(
@@ -109,14 +140,14 @@ export class SaleResolver {
     );
   }
 
-  @Roles(
-    Role.SUPER,
-    Role.PRINCIPAL,
-    Role.ADMIN,
-    Role.MANAGER,
-    Role.SUPERVISOR,
-    Role.AGENT,
-  )
+  @Roles(...SELLING_ROLES)
+  @UseGuards(AccessTokenAuthGuard, RoleGuard)
+  @Mutation('cancelSale')
+  async cancelSale(@CurrentUser() user: JWTPayload, @Args('id') id: number) {
+    return this.saleService.cancelSale(id, user);
+  }
+
+  @Roles(...SELLING_ROLES)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('validateSalePayments')
   async validateSalePayments(

@@ -186,7 +186,9 @@ export class InventoryService extends BaseService<Inventory> {
     manager?: EntityManager,
   ): Promise<Inventory[]> {
     await this.productService.findOne(productId, cu, scopes, manager);
-    return this.inventoryRepository.find({
+    const repository =
+      manager?.getRepository(Inventory) ?? this.inventoryRepository;
+    return repository.find({
       where: { product: { id: productId } },
       relations: ['product', 'inventoryMovements'],
     });
@@ -205,31 +207,25 @@ export class InventoryService extends BaseService<Inventory> {
       throw new NotFoundError();
     }
 
-    const newStock = inventory.currentStock + adjustment;
-    if (newStock < 0) {
+    // El stock se suma en la propia sentencia: leerlo y escribirlo por
+    // separado pierde unidades cuando dos ventas tocan el mismo producto.
+    const repository =
+      manager?.getRepository(Inventory) ?? this.inventoryRepository;
+    const result = await repository
+      .createQueryBuilder()
+      .update(Inventory)
+      .set({ currentStock: () => '"currentStock" + :adjustment' })
+      .where('id = :id AND "currentStock" + :adjustment >= 0', {
+        id,
+        adjustment,
+      })
+      .execute();
+
+    if (!result.affected) {
       throw new ConflictError('Cannot adjust inventory below zero');
     }
-    // // Create movement record
-    // await this.movementService.create(
-    //   {
-    //     inventoryId: inventory.id as number,
-    //     userId: cu?.sub as number,
-    //     type: adjustment > 0 ? 'IN' : 'OUT',
-    //     quantity: Math.abs(adjustment),
-    //     reason,
-    //   },
-    //   cu,
-    //   scopes,
-    //   manager,
-    // );
 
-    return super.baseUpdate({
-      id,
-      data: { ...inventory, currentStock: newStock },
-      cu,
-      scopes,
-      manager,
-    });
+    return { ...inventory, currentStock: inventory.currentStock + adjustment };
   }
 
   async update(

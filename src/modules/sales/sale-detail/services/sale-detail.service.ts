@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import { EntityManager, Repository, In } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -22,6 +21,9 @@ import { ReserveReleaseReason } from '../../../inventory/product/enums/reserve-r
 import { Worker } from '../../../payroll/worker/entities/worker.entity';
 import { SaleDetailStatus } from '../enums/sale-detail-status.enum';
 import { SaleStatus } from '../../sale/enums/sale-status.enum';
+import { SALE_SCOPES, STOCK_SCOPES } from '../../sale/helpers/sale-scopes';
+import { lineAmounts } from '../../sale/helpers/sale-payments.helper';
+import { SortDirection } from '../../../../core/graphql/remote-operations/enums/sort-direction.enum';
 
 @Injectable()
 export class SaleDetailService extends BaseService<SaleDetail> {
@@ -39,62 +41,86 @@ export class SaleDetailService extends BaseService<SaleDetail> {
     super(saleDetailRepository);
   }
 
+  private scopesFor(cu?: JWTPayload, scopes?: ScopedAccessEnum[]) {
+    return scopes ?? this.scopedAccessService.scopesOrDefault(cu, SALE_SCOPES);
+  }
+
   async create(
     createSaleDetailInput: CreateSaleDetailInput,
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<SaleDetail> {
-    const { saleId, productId, quantity, publicistIds, ...rest } =
-      createSaleDetailInput;
+    if (!manager) {
+      return this.saleDetailRepository.manager.transaction((txManager) =>
+        this.create(createSaleDetailInput, cu, scopes, txManager),
+      );
+    }
+    scopes = this.scopesFor(cu, scopes);
 
-    // Obtener la venta y producto
-    const [sale, product] = await Promise.all([
-      this.saleService.findOne(saleId, cu, scopes, manager),
-      this.productService.findOne(productId, cu, scopes, manager),
-    ]);
+    const { saleId, productId, quantity, publicistIds } = createSaleDetailInput;
 
-    // Validar si la venta permite modificaciones
+    // La venta valida que el usuario puede verla; el producto y su stock son
+    // de la misma empresa.
+    const sale = await this.saleService.findOne(saleId, cu, scopes, manager);
     this.validateSaleForModification(sale);
 
-    // Validar stock disponible y hacer reserva.
+    if (sale.details?.some((detail) => detail.product?.id === productId)) {
+      throw new BadRequestError(
+        'El producto ya está en la venta: cambia su cantidad',
+      );
+    }
+
+    const product = await this.productService.findOne(
+      productId,
+      cu,
+      STOCK_SCOPES,
+      manager,
+    );
+
+    // Primero el precio: valida las reglas de cantidad antes de reservar.
+    const productPaymentOptions =
+      await this.productService.calculatePaymentOptions(
+        productId,
+        quantity,
+        undefined,
+        undefined,
+        undefined,
+        manager,
+      );
+    if (productPaymentOptions.paymentOptions.length === 0) {
+      throw new BadRequestError(
+        `"${product.name}" no tiene precio en ninguna moneda activa`,
+      );
+    }
+
     const reservationId = await this.productService.validateAndReserveStock(
       productId,
       quantity,
       ReserveReleaseReason.SALE_RESERVATION,
       String(saleId),
       cu,
-      scopes,
+      STOCK_SCOPES,
       manager,
     );
 
-    const productPaymentOptions =
-      await this.productService.calculatePaymentOptions(
-        product.id as number,
-        quantity,
-      );
-
-    // Obtener publicistas si se proporcionaron IDs
-    let publicists: Worker[] = [];
-    if (publicistIds && publicistIds.length > 0) {
-      publicists = await this.findPublicistsByIds(
-        publicistIds,
-        cu,
-        scopes,
-        manager,
-      );
-    }
+    const publicists = publicistIds?.length
+      ? await this.findPublicistsByIds(publicistIds, manager)
+      : [];
 
     const saleDetail: SaleDetail = {
-      ...rest,
-      sale,
+      sale: { id: sale.id } as Sale,
       product,
       quantity,
-      productSnapshot: { ...product },
+      productSnapshot: this.snapshotOf(product),
       productPaymentOptions,
       reservationId,
       publicists,
       saleDetailStatus: SaleDetailStatus.DRAFT,
+      business: sale.business,
+      office: sale.office,
+      department: sale.department,
+      team: sale.team,
     };
 
     return super.baseCreate({
@@ -111,13 +137,57 @@ export class SaleDetailService extends BaseService<SaleDetail> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<ListSummary> {
-    return await super.baseFind({
-      options,
+    // Sin orden pedido, las más recientes primero: la paginación necesita uno.
+    const sorts = options?.sorts?.length
+      ? options.sorts
+      : [{ property: 'id', direction: SortDirection.DESC }];
+
+    const summary = await super.baseFind({
+      options: { ...(options ?? { skip: 0, take: 10 }), sorts },
       relationsToLoad: ['sale', 'product', 'publicists'],
       cu,
-      scopes,
+      scopes: this.scopesFor(cu, scopes),
       manager,
     });
+    const details = summary.data as SaleDetail[];
+    await this.loadPublicistUsers(details, manager);
+    details.forEach((d) => this.withAmounts(d));
+    return summary;
+  }
+
+  /** Completa los publicistas con su usuario, en una sola consulta. */
+  private async loadPublicistUsers(
+    details: SaleDetail[],
+    manager?: EntityManager,
+  ): Promise<void> {
+    const ids = [
+      ...new Set(
+        details.flatMap((d) => (d.publicists ?? []).map((p) => p.id as number)),
+      ),
+    ];
+    if (ids.length === 0) return;
+
+    const repository = manager?.getRepository(Worker) ?? this.workerRepository;
+    const workers = await repository.find({
+      where: { id: In(ids) },
+      relations: { user: true },
+      withDeleted: true,
+    });
+    const byId = new Map(workers.map((worker) => [worker.id, worker]));
+    for (const detail of details) {
+      detail.publicists = detail.publicists?.map((p) => byId.get(p.id) ?? p);
+    }
+  }
+
+  /** Precio de la línea en la moneda de su venta (no se guarda). */
+  private withAmounts(detail: SaleDetail): SaleDetail {
+    return Object.assign(
+      detail,
+      lineAmounts(
+        detail.productPaymentOptions,
+        detail.sale?.totalAmountCurrency,
+      ),
+    );
   }
 
   async findOne(
@@ -126,7 +196,7 @@ export class SaleDetailService extends BaseService<SaleDetail> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<SaleDetail> {
-    return super.baseFindOne({
+    const detail = await super.baseFindOne({
       id,
       relationsToLoad: {
         sale: true,
@@ -134,9 +204,10 @@ export class SaleDetailService extends BaseService<SaleDetail> {
         publicists: true,
       },
       cu,
-      scopes,
+      scopes: this.scopesFor(cu, scopes),
       manager,
     });
+    return this.withAmounts(detail);
   }
 
   async findBySale(
@@ -146,10 +217,14 @@ export class SaleDetailService extends BaseService<SaleDetail> {
     manager?: EntityManager,
   ): Promise<SaleDetail[]> {
     await this.saleService.findOne(saleId, cu, scopes, manager);
-    return this.saleDetailRepository.find({
+    const repository =
+      manager?.getRepository(SaleDetail) ?? this.saleDetailRepository;
+    const details = await repository.find({
       where: { sale: { id: saleId } },
       relations: ['sale', 'product', 'publicists', 'publicists.user'],
+      order: { id: 'ASC' },
     });
+    return details.map((detail) => this.withAmounts(detail));
   }
 
   async update(
@@ -159,6 +234,13 @@ export class SaleDetailService extends BaseService<SaleDetail> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<SaleDetail> {
+    if (!manager) {
+      return this.saleDetailRepository.manager.transaction((txManager) =>
+        this.update(id, updateSaleDetailInput, cu, scopes, txManager),
+      );
+    }
+    scopes = this.scopesFor(cu, scopes);
+
     const saleDetail = await super.baseFindOne({
       id,
       relationsToLoad: { sale: true, product: true, publicists: true },
@@ -167,128 +249,99 @@ export class SaleDetailService extends BaseService<SaleDetail> {
       manager,
     });
 
-    if (!saleDetail) {
-      throw new NotFoundError('Sale detail not found');
+    // Comprueba además que el usuario puede trabajar con esa venta.
+    const sale = await this.saleService.findOne(
+      saleDetail.sale.id as number,
+      cu,
+      scopes,
+      manager,
+    );
+    this.validateSaleForModification(sale);
+
+    const { saleId, productId, publicistIds } = updateSaleDetailInput;
+    if (saleId && saleId !== sale.id) {
+      throw new BadRequestError('Una línea no puede moverse a otra venta');
     }
 
-    this.validateSaleForModification(saleDetail.sale);
+    const quantity = updateSaleDetailInput.quantity ?? saleDetail.quantity;
+    const currentProductId = saleDetail.product.id as number;
+    const productChanged = !!productId && productId !== currentProductId;
+    const quantityChanged = quantity !== saleDetail.quantity;
+    const updateData: Partial<SaleDetail> = {};
 
-    // Preparar datos para actualización
-    const {
-      saleId,
-      productId,
-      quantity,
-      publicistIds,
-      id: saleDetailId,
-    } = updateSaleDetailInput;
-    const updateData: Partial<SaleDetail> = { id: saleDetailId };
-
-    // Actualizar relación con Sale si es necesario
-    if (saleId && saleId !== saleDetail.sale.id) {
-      const sale = await this.saleService.findOne(saleId, cu, scopes, manager);
-      if (!sale) {
-        throw new NotFoundError('Sale not found');
-      }
-      updateData.sale = sale;
-      this.validateSaleForModification(sale);
-    }
-
-    // Manejar cambio de producto
-    if (productId && productId !== saleDetail.product.id) {
-      const product = await this.productService.findOne(
-        productId,
-        cu,
-        scopes,
-        manager,
-      );
-      if (!product) {
-        throw new NotFoundError('Product not found');
-      }
-
-      // Liberar stock del producto anterior
-      await this.productService.releaseStock(
-        saleDetail.product.id as number,
-        saleDetail.quantity,
-        ReserveReleaseReason.SALE_CANCELLATION,
-        saleDetail.reservationId,
-        cu,
-        scopes,
-        manager,
-      );
-
-      // Reservar stock del nuevo producto
-      const reservationId = await this.productService.validateAndReserveStock(
-        productId,
-        quantity ?? saleDetail.quantity,
-        ReserveReleaseReason.SALE_RESERVATION,
-        String(saleId),
-        cu,
-        scopes,
-        manager,
-      );
-
-      updateData.product = product;
-      updateData.productSnapshot = { ...product };
-      updateData.reservationId = reservationId;
-    }
-
-    // Manejar cambio de cantidad
-    if (quantity !== undefined && quantity !== saleDetail.quantity) {
-      // Ajustar stock según la diferencia
-      const quantityDifference = quantity - saleDetail.quantity;
-      if (quantityDifference > 0) {
-        // Necesitamos más stock
-        await this.productService.validateAndReserveStock(
-          saleDetail.product.id as number,
-          quantityDifference,
-          ReserveReleaseReason.SALE_RESERVATION,
-          String(saleId),
-          cu,
-          scopes,
-          manager,
-          saleDetail.reservationId,
-        );
-      } else if (quantityDifference < 0) {
-        // Liberar stock sobrante
-        await this.productService.releaseStock(
-          saleDetail.product.id as number,
-          Math.abs(quantityDifference),
-          ReserveReleaseReason.DELIVERY_CANCELLATION,
-          saleDetail.reservationId,
-          cu,
-          scopes,
-          manager,
-        );
-      }
-    }
-
-    // Manejar cambio de publicistas
-    if (publicistIds !== undefined) {
-      if (publicistIds.length === 0) {
-        // Si se envía un array vacío, eliminar todos los publicistas
-        updateData.publicists = [];
-      } else {
-        // Obtener los nuevos publicistas
-        const publicists = await this.findPublicistsByIds(
-          publicistIds,
-          cu,
-          scopes,
-          manager,
-        );
-        updateData.publicists = publicists;
-      }
-    }
-
-    // Recalcular opciones de pago si cambió producto o cantidad
-    if (productId || quantity !== undefined) {
-      const finalProductId = productId ?? saleDetail.product.id;
-      const finalQuantity = quantity ?? saleDetail.quantity;
+    if (productChanged || quantityChanged) {
+      const finalProductId = productChanged ? productId : currentProductId;
 
       updateData.productPaymentOptions =
         await this.productService.calculatePaymentOptions(
-          finalProductId as number,
-          finalQuantity,
+          finalProductId,
+          quantity,
+          undefined,
+          undefined,
+          undefined,
+          manager,
         );
+      updateData.quantity = quantity;
+
+      if (productChanged) {
+        const product = await this.productService.findOne(
+          finalProductId,
+          cu,
+          STOCK_SCOPES,
+          manager,
+        );
+
+        // Se suelta toda la reserva anterior y se abre una nueva.
+        await this.productService.releaseStock(
+          currentProductId,
+          saleDetail.quantity,
+          ReserveReleaseReason.SALE_CANCELLATION,
+          saleDetail.reservationId,
+          cu,
+          STOCK_SCOPES,
+          manager,
+        );
+        updateData.reservationId =
+          await this.productService.validateAndReserveStock(
+            finalProductId,
+            quantity,
+            ReserveReleaseReason.SALE_RESERVATION,
+            String(sale.id),
+            cu,
+            STOCK_SCOPES,
+            manager,
+          );
+        updateData.product = product;
+        updateData.productSnapshot = this.snapshotOf(product);
+      } else if (quantity > saleDetail.quantity) {
+        await this.productService.validateAndReserveStock(
+          currentProductId,
+          quantity - saleDetail.quantity,
+          ReserveReleaseReason.SALE_RESERVATION,
+          String(sale.id),
+          cu,
+          STOCK_SCOPES,
+          manager,
+          saleDetail.reservationId,
+        );
+      } else {
+        await this.productService.releaseStock(
+          currentProductId,
+          saleDetail.quantity - quantity,
+          ReserveReleaseReason.SALE_CANCELLATION,
+          saleDetail.reservationId,
+          cu,
+          STOCK_SCOPES,
+          manager,
+        );
+      }
+    }
+
+    // Un arreglo vacío quita todos los publicistas.
+    if (publicistIds !== undefined) {
+      updateData.publicists = publicistIds.length
+        ? await this.findPublicistsByIds(publicistIds, manager)
+        : [];
     }
 
     return super.baseUpdate({
@@ -306,46 +359,49 @@ export class SaleDetailService extends BaseService<SaleDetail> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<SaleDetail[]> {
+    if (!manager) {
+      return this.saleDetailRepository.manager.transaction((txManager) =>
+        this.remove(ids, cu, scopes, txManager),
+      );
+    }
+    scopes = this.scopesFor(cu, scopes);
+
     const details = await super.baseFindByIds({
       ids,
-      relationsToLoad: { sale: true, product: true, publicists: true },
+      relationsToLoad: { sale: true, product: true },
       cu,
       scopes,
       manager,
     });
 
-    // Liberar stock de todos los detalles eliminados
-    await Promise.all(
-      details.map((detail) =>
-        this.productService.releaseStock(
+    for (const saleId of new Set(details.map((d) => d.sale.id as number))) {
+      await this.saleService.findOne(saleId, cu, scopes, manager);
+    }
+
+    for (const detail of details) {
+      // Solo una línea en borrador tiene stock reservado que soltar.
+      if (detail.saleDetailStatus === SaleDetailStatus.DRAFT) {
+        await this.productService.releaseStock(
           detail.product.id as number,
           detail.quantity,
           ReserveReleaseReason.SALE_CANCELLATION,
           detail.reservationId,
           cu,
-          scopes,
+          STOCK_SCOPES,
           manager,
-        ),
-      ),
-    );
+        );
+      } else if (
+        detail.saleDetailStatus === SaleDetailStatus.CONFIRMED &&
+        detail.sale.saleStatus !== SaleStatus.CANCELLED
+      ) {
+        throw new BadRequestError(
+          'No se puede eliminar una línea ya vendida: hay que devolverla',
+        );
+      }
+    }
 
     return super.baseDeleteMany({
-      ids,
-      cu,
-      scopes,
-      manager,
-      softRemove: true,
-    });
-  }
-
-  async remove2(
-    ids: number[],
-    cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
-    manager?: EntityManager,
-  ): Promise<SaleDetail[]> {
-    return super.baseDeleteMany({
-      ids,
+      ids: details.map((d) => d.id as number),
       cu,
       scopes,
       manager,
@@ -362,66 +418,65 @@ export class SaleDetailService extends BaseService<SaleDetail> {
     return super.baseRestoreDeletedMany({
       ids,
       cu,
-      scopes,
+      scopes: this.scopesFor(cu, scopes),
       manager,
     });
   }
 
+  /** Las reservas de las líneas pasan a ser salidas por venta. */
   public async confirmSaleDetails(
-    saleDetailIds: number[],
+    saleDetails: SaleDetail[],
     cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<void> {
-    if (saleDetailIds.length === 0) return;
+    const repository =
+      manager?.getRepository(SaleDetail) ?? this.saleDetailRepository;
 
-    // Obtener todos los sale details con sus reservas
-    const saleDetails = await super.baseFindByIds({
-      ids: saleDetailIds,
-      relationsToLoad: { sale: true, product: true },
-      cu,
-      scopes,
-      manager,
-    });
+    for (const saleDetail of saleDetails) {
+      if (saleDetail.saleDetailStatus !== SaleDetailStatus.DRAFT) continue;
 
-    if (saleDetails.length === 0) {
-      throw new NotFoundError('No sale details found');
-    }
-
-    // Validar que la venta esté en estado apropiado para confirmar
-    const sale = saleDetails[0].sale;
-    if (sale.effectiveDate) {
-      throw new BadRequestError(
-        'Cannot confirm sale details for a sale that is finalized',
+      await this.productService.confirmSale(
+        saleDetail.reservationId,
+        String(saleDetail.sale?.id ?? ''),
+        cu,
+        STOCK_SCOPES,
+        manager,
       );
+      await repository.update(saleDetail.id as number, {
+        isConfirmed: true,
+        saleDetailStatus: SaleDetailStatus.CONFIRMED,
+        ...(cu && { updatedBy: { id: cu.sub } }),
+      });
     }
+  }
 
-    // Confirmar cada sale detail (marcar reservas como vendidas)
-    await Promise.all(
-      saleDetails.map(async (saleDetail) => {
-        if (saleDetail.reservationId) {
-          await this.productService.confirmSale(
-            saleDetail.reservationId,
-            String(saleDetail.sale.id), // Usar el ID de la venta como referencia
-            cu,
-            scopes,
-            manager,
-          );
+  /** Suelta el stock reservado de las líneas en borrador y las cancela. */
+  public async cancelSaleDetails(
+    saleDetails: SaleDetail[],
+    cu?: JWTPayload,
+    manager?: EntityManager,
+  ): Promise<void> {
+    const repository =
+      manager?.getRepository(SaleDetail) ?? this.saleDetailRepository;
 
-          // Opcional: actualizar el sale detail para marcar como confirmado
-          await super.baseUpdate({
-            id: saleDetail.id as number,
-            data: {
-              ...saleDetail,
-              isConfirmed: true,
-            },
-            cu,
-            scopes,
-            manager,
-          });
-        }
-      }),
-    );
+    for (const saleDetail of saleDetails) {
+      if (saleDetail.saleDetailStatus !== SaleDetailStatus.DRAFT) continue;
+
+      await this.productService.releaseStock(
+        saleDetail.product.id as number,
+        saleDetail.quantity,
+        ReserveReleaseReason.SALE_CANCELLATION,
+        saleDetail.reservationId,
+        cu,
+        STOCK_SCOPES,
+        manager,
+      );
+      await repository.update(saleDetail.id as number, {
+        isConfirmed: false,
+        saleDetailStatus: SaleDetailStatus.CANCELLED,
+        ...(cu && { updatedBy: { id: cu.sub } }),
+      });
+    }
   }
 
   async refundSaleDetails(
@@ -435,11 +490,13 @@ export class SaleDetailService extends BaseService<SaleDetail> {
     totalRefundAmount: number;
     currency: string;
   }> {
+    scopes = this.scopesFor(cu, scopes);
+
     // Obtener los detalles con sus relaciones
     const details = await super.baseFindByIds({
       ids: saleDetailIds,
       relationsToLoad: {
-        sale: { payments: true },
+        sale: true,
         product: true,
       },
       cu,
@@ -447,8 +504,8 @@ export class SaleDetailService extends BaseService<SaleDetail> {
       manager,
     });
 
-    if (details.length === 0) {
-      throw new NotFoundError('No sale details found');
+    if (details.length !== new Set(saleDetailIds).size) {
+      throw new NotFoundError('Alguna de las líneas a devolver no existe');
     }
 
     // Validar que todos pertenezcan a la misma venta
@@ -456,7 +513,7 @@ export class SaleDetailService extends BaseService<SaleDetail> {
     const allSameSale = details.every((d) => d.sale.id === saleId);
     if (!allSameSale) {
       throw new BadRequestError(
-        'All sale details must belong to the same sale',
+        'Las líneas a devolver deben ser de la misma venta',
       );
     }
 
@@ -467,34 +524,27 @@ export class SaleDetailService extends BaseService<SaleDetail> {
       sale.saleStatus !== SaleStatus.CONFIRMED &&
       sale.saleStatus !== SaleStatus.PARTIALLY_REFUNDED
     ) {
-      throw new BadRequestError('Only confirmed sales can be refunded');
+      throw new BadRequestError('Solo se puede devolver una venta cobrada');
     }
 
-    // Validar que los detalles no estén ya devueltos
-    const alreadyRefunded = details.filter(
-      (d) => d.saleDetailStatus === SaleDetailStatus.REFUNDED,
-    );
-    if (alreadyRefunded.length > 0) {
-      throw new BadRequestError('Some details are already refunded');
+    if (
+      details.some((d) => d.saleDetailStatus !== SaleDetailStatus.CONFIRMED)
+    ) {
+      throw new BadRequestError(
+        'Alguna de las líneas ya fue devuelta o no llegó a venderse',
+      );
     }
 
+    const refundCurrency = sale.totalAmountCurrency || 'CUP';
+    const repository =
+      manager?.getRepository(SaleDetail) ?? this.saleDetailRepository;
     let totalRefundAmount = 0;
-    let refundCurrency = '';
 
-    // Procesar cada detalle para devolución
     for (const detail of details) {
-      // Calcular monto a devolver (usando el snapshot o las opciones de pago)
-      let refundAmount = 0;
-      if (detail.productPaymentOptions?.paymentOptions?.length) {
-        // Usar el precio en la moneda base de la venta
-        const baseOption = detail.productPaymentOptions.paymentOptions.find(
-          (opt) => opt.currency === sale.totalAmountCurrency,
-        );
-        refundAmount = baseOption?.total || 0;
-      }
-
-      totalRefundAmount += refundAmount;
-      refundCurrency = sale.totalAmountCurrency || 'CUP';
+      totalRefundAmount +=
+        detail.productPaymentOptions?.paymentOptions?.find(
+          (opt) => opt.currency === refundCurrency,
+        )?.total || 0;
 
       // Devolver stock al inventario
       await this.productService.releaseStock(
@@ -503,22 +553,15 @@ export class SaleDetailService extends BaseService<SaleDetail> {
         ReserveReleaseReason.SALE_REFUND,
         detail.reservationId,
         cu,
-        scopes,
+        STOCK_SCOPES,
         manager,
       );
 
-      // Marcar el detalle como devuelto
-      await super.baseUpdate({
-        id: detail.id as number,
-        data: {
-          ...detail,
-          saleDetailStatus: SaleDetailStatus.REFUNDED,
-          isConfirmed: false,
-        },
-        cu,
-        scopes,
-        manager,
+      await repository.update(detail.id as number, {
+        saleDetailStatus: SaleDetailStatus.REFUNDED,
+        ...(cu && { updatedBy: { id: cu.sub } }),
       });
+      detail.saleDetailStatus = SaleDetailStatus.REFUNDED;
     }
 
     return {
@@ -530,29 +573,54 @@ export class SaleDetailService extends BaseService<SaleDetail> {
   }
 
   private validateSaleForModification(sale: Sale): void {
-    // Validar si la venta ya fue finalizada (tiene effectiveDate y es una fecha pasada)
-    if (sale.effectiveDate && new Date(sale.effectiveDate) <= new Date()) {
+    if (sale.saleStatus !== SaleStatus.DRAFT) {
       throw new BadRequestError(
-        'Cannot modify a sale that has already been finalized',
+        'La venta ya no está en borrador y sus productos no pueden cambiarse',
       );
     }
   }
 
+  /** Datos del producto tal como estaban al venderlo. */
+  private snapshotOf(product: SaleDetail['product']): Record<string, unknown> {
+    return {
+      id: product.id,
+      name: product.name,
+      basePrice: product.basePrice,
+      baseCurrency: product.baseCurrency,
+      costPrice: product.costPrice,
+      costCurrency: product.costCurrency,
+      pricingConfig: product.pricingConfig,
+      saleRules: product.saleRules,
+      warranty: product.warranty,
+      attributes: product.attributes,
+      category: product.category
+        ? { id: product.category.id, name: product.category.name }
+        : undefined,
+      unitOfMeasure: product.unitOfMeasure
+        ? {
+            id: product.unitOfMeasure.id,
+            name: product.unitOfMeasure.name,
+            symbol: product.unitOfMeasure.symbol,
+          }
+        : undefined,
+    };
+  }
+
   private async findPublicistsByIds(
     publicistIds: number[],
-    cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Worker[]> {
-    const publicists = await this.workerRepository.find({
-      where: { id: In(publicistIds) },
-    });
+    const ids = [...new Set(publicistIds)];
+    const repository = manager?.getRepository(Worker) ?? this.workerRepository;
+    const publicists = await repository.find({ where: { id: In(ids) } });
 
     // Validar que se encontraron todos los publicistas solicitados
-    if (publicists.length !== publicistIds.length) {
+    if (publicists.length !== ids.length) {
       const foundIds = publicists.map((p) => p.id);
-      const missingIds = publicistIds.filter((id) => !foundIds.includes(id));
-      throw new NotFoundError(`Publicists not found: ${missingIds.join(', ')}`);
+      const missingIds = ids.filter((id) => !foundIds.includes(id));
+      throw new NotFoundError(
+        `Publicistas no encontrados: ${missingIds.join(', ')}`,
+      );
     }
 
     return publicists;

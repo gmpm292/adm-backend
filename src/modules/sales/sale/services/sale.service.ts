@@ -1,9 +1,9 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
-import { EntityManager, Repository } from 'typeorm';
+import { DeepPartial, EntityManager, In, Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CreateSaleInput } from '../dto/create-sale.input';
 import { UpdateSaleInput } from '../dto/update-sale.input';
+import { QuoteSaleInput } from '../dto/quote-sale.input';
 import { BaseService } from '../../../../core/services/base.service';
 import { Sale } from '../entities/sale.entity';
 import {
@@ -17,92 +17,141 @@ import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
 import { ScopedAccessService } from '../../../scoped-access/services/scoped-access.service';
 import { CustomerService } from '../../customer/services/customer.service';
 import { SaleDetailService } from '../../sale-detail/services/sale-detail.service';
-import { WorkerService } from '../../../payroll/worker/services/worker.service';
 import { PaymentMethod } from '../enums/payment-method.enum';
 import { SaleDetail } from '../../sale-detail/entities/sale-detail.entity';
-import { CurrencyService } from '../../../payroll/currency/services/currency.service';
 import { Worker } from '../../../payroll/worker/entities/worker.entity';
 import { ConditionalOperator } from '../../../../core/graphql/remote-operations/enums/conditional-operation.enum';
+import { SortDirection } from '../../../../core/graphql/remote-operations/enums/sort-direction.enum';
 import { ConflictError } from '../../../../core/errors/appErrors/ConflictError.error';
 import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
 import { SaleStatus } from '../enums/sale-status.enum';
 import { SaleDetailStatus } from '../../sale-detail/enums/sale-detail-status.enum';
-import { Customer } from '../../customer/entities/customer.entity';
+import { ProductService } from '../../../inventory/product/services/product.service';
+import {
+  SALE_SCOPES,
+  STOCK_SCOPES,
+  canManageSales,
+  isSellerOnly,
+} from '../helpers/sale-scopes';
+import {
+  SalePaymentEvaluation,
+  defaultSaleCurrency,
+  errorText,
+  evaluatePayments,
+  lineAmounts,
+  totalsByCurrency,
+} from '../helpers/sale-payments.helper';
+
+type SalePayment = {
+  amount: number;
+  currency: string;
+  paymentMethod: PaymentMethod;
+};
+
+export type SaleQuote = SalePaymentEvaluation & {
+  lines: Array<{
+    productId: number;
+    quantity: number;
+    available: number;
+    prices: Array<{ currency: string; unitPrice: number; total: number }>;
+    error?: string;
+  }>;
+};
+
+const WORKER_RELATIONS = {
+  user: true,
+  business: true,
+  office: true,
+  department: true,
+  team: true,
+};
 
 @Injectable()
 export class SaleService extends BaseService<Sale> {
   constructor(
     @InjectRepository(Sale)
     private saleRepository: Repository<Sale>,
-    private workerService: WorkerService,
+    @InjectRepository(Worker)
+    private workerRepository: Repository<Worker>,
     private customerService: CustomerService,
     @Inject(forwardRef(() => SaleDetailService))
     private saleDetailService: SaleDetailService,
-    private readonly currencyService: CurrencyService,
+    private productService: ProductService,
 
     protected scopedAccessService: ScopedAccessService,
   ) {
     super(saleRepository);
   }
 
+  private scopesFor(cu?: JWTPayload, scopes?: ScopedAccessEnum[]) {
+    return scopes ?? this.scopedAccessService.scopesOrDefault(cu, SALE_SCOPES);
+  }
+
+  /**
+   * Crea la venta con sus líneas (reservando stock) y, si llegan pagos, la
+   * cobra. Todo en una transacción: si algo falla no queda ni la venta ni la
+   * reserva.
+   */
   async create(
     createSaleInput: CreateSaleInput,
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Sale> {
+    if (!manager) {
+      return this.saleRepository.manager.transaction((txManager) =>
+        this.create(createSaleInput, cu, scopes, txManager),
+      );
+    }
+    scopes = this.scopesFor(cu, scopes);
+
     const {
       customerId,
       details,
       deliveryWorkerId,
       hasDelivery,
       deliveryNotes,
-      ...rest
+      salesWorkerId,
+      payments,
+      baseCurrency,
+      customDate,
+      businessId,
+      officeId,
+      departmentId,
+      teamId,
+      invoiceNumber,
     } = createSaleInput;
 
-    const salesWorkerId = createSaleInput.salesWorkerId ?? cu?.sub;
-
-    // Preparar las promesas para resolver en paralelo
-    const promises: [
-      Promise<Worker>,
-      Promise<Customer | undefined>,
-      Promise<Worker | undefined>?,
-    ] = [
-      this.workerService.findOne(salesWorkerId, cu, scopes, manager),
-      customerId
-        ? this.customerService.findOne(customerId, cu, scopes, manager)
-        : Promise.resolve(undefined),
-    ];
-
-    // Solo buscar el deliveryWorker si se proporciona un ID
-    if (deliveryWorkerId) {
-      promises.push(
-        this.workerService.findOne(deliveryWorkerId, cu, scopes, manager),
-      );
+    if (!details?.length) {
+      throw new BadRequestError('Agrega al menos un producto a la venta');
     }
 
-    const [salesWorker, customer, deliveryWorker] = await Promise.all(promises);
+    const salesWorker = await this.resolveSalesWorker(
+      salesWorkerId,
+      cu,
+      manager,
+    );
+    const customer = customerId
+      ? await this.customerService.findOne(customerId, cu, scopes, manager)
+      : undefined;
+    const deliveryWorker = deliveryWorkerId
+      ? await this.findWorker(deliveryWorkerId, cu, manager, 'Mensajero')
+      : undefined;
 
-    // Validaciones
-    if (!salesWorker) {
-      throw new NotFoundError('Sales Worker not found');
-    }
-
-    // Validar que si se proporciona deliveryWorkerId, el worker exista
-    if (deliveryWorkerId && !deliveryWorker) {
-      throw new NotFoundError('Delivery Worker not found');
-    }
-
-    const sale: Sale = {
-      ...rest,
+    // Quien no tiene tienda en su sesión vende en la del vendedor.
+    const sale = {
+      businessId: businessId ?? salesWorker.business?.id,
+      officeId: officeId ?? salesWorker.office?.id,
+      departmentId: departmentId ?? undefined,
+      teamId: teamId ?? undefined,
+      invoiceNumber: invoiceNumber || undefined,
       salesWorker,
       customer,
       saleStatus: SaleStatus.DRAFT,
-      // Campos de mensajería
       hasDelivery: hasDelivery ?? !!deliveryWorker,
-      deliveryWorker: deliveryWorker || undefined,
+      deliveryWorker,
       deliveryNotes: deliveryNotes || undefined,
-    } as Sale;
+    } as unknown as DeepPartial<Sale>;
 
     const createdSale = await super.baseCreate({
       data: sale,
@@ -110,25 +159,32 @@ export class SaleService extends BaseService<Sale> {
       scopes,
       manager,
     });
+    const saleId = createdSale.id as number;
 
-    // Create sale details
-    await Promise.all(
-      details.map((detail) =>
-        this.saleDetailService.create(
-          {
-            saleId: createdSale.id as number,
-            productId: detail.productId,
-            quantity: detail.quantity,
-            publicistIds: detail.publicistIds,
-          },
-          cu,
-          scopes,
-          manager,
-        ),
-      ),
-    );
+    // Un producto repetido se vende en una sola línea. Una a una: comparten
+    // stock y transacción.
+    for (const detail of this.mergeDetails(details)) {
+      await this.saleDetailService.create(
+        { saleId, ...detail },
+        cu,
+        scopes,
+        manager,
+      );
+    }
 
-    return this.findOne(createdSale.id as number, cu, scopes, manager);
+    if (payments?.length) {
+      await this.finalize(
+        saleId,
+        payments,
+        baseCurrency,
+        customDate,
+        cu,
+        scopes,
+        manager,
+      );
+    }
+
+    return this.findOne(saleId, cu, scopes, manager);
   }
 
   async find(
@@ -137,8 +193,34 @@ export class SaleService extends BaseService<Sale> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<ListSummary> {
-    return await super.baseFind({
-      options,
+    const filters: ListFilter[] = [...(options?.filters ?? [])];
+
+    if (isSellerOnly(cu)) {
+      const ownWorker = await this.findOwnWorker(cu, manager);
+      filters.push(
+        ownWorker
+          ? {
+              property: 'salesWorker.id',
+              operator: ConditionalOperator.EQUAL,
+              value: String(ownWorker.id),
+            }
+          : {
+              property: 'createdById',
+              operator: ConditionalOperator.EQUAL,
+              value: String(cu?.sub),
+            },
+      );
+    }
+
+    // Sin orden pedido, las más recientes primero: la paginación necesita uno.
+    const sorts = options?.sorts?.length
+      ? options.sorts
+      : [{ property: 'id', direction: SortDirection.DESC }];
+
+    const summary = await super.baseFind({
+      options: { ...(options ?? { skip: 0, take: 10 }), filters, sorts },
+      // Los usuarios de vendedor y mensajero se cargan aparte: dos uniones
+      // a la misma tabla chocarían en el alias.
       relationsToLoad: [
         'salesWorker',
         'deliveryWorker',
@@ -149,9 +231,76 @@ export class SaleService extends BaseService<Sale> {
         'product.category',
       ],
       cu,
-      scopes,
+      scopes: this.scopesFor(cu, scopes),
       manager,
     });
+    const sales = summary.data as Sale[];
+    await this.loadWorkerUsers(sales, manager);
+    sales.forEach((sale) => this.withAmounts(sale));
+    return summary;
+  }
+
+  /** Completa vendedor y mensajero con su usuario, en una sola consulta. */
+  private async loadWorkerUsers(
+    sales: Sale[],
+    manager?: EntityManager,
+  ): Promise<void> {
+    const ids = [
+      ...new Set(
+        sales
+          .flatMap((sale) => [sale.salesWorker?.id, sale.deliveryWorker?.id])
+          .filter((id): id is number => !!id),
+      ),
+    ];
+    if (ids.length === 0) return;
+
+    const repository = manager?.getRepository(Worker) ?? this.workerRepository;
+    const workers = await repository.find({
+      where: { id: In(ids) },
+      relations: { user: true },
+      withDeleted: true,
+    });
+    const byId = new Map(workers.map((worker) => [worker.id, worker]));
+
+    for (const sale of sales) {
+      if (sale.salesWorker) {
+        sale.salesWorker = byId.get(sale.salesWorker.id) ?? sale.salesWorker;
+      }
+      if (sale.deliveryWorker) {
+        sale.deliveryWorker =
+          byId.get(sale.deliveryWorker.id) ?? sale.deliveryWorker;
+      }
+    }
+  }
+
+  /**
+   * Importes que no se guardan: el precio de cada línea en la moneda de la
+   * venta y, en un borrador, el total que tendría si se cobrara ahora.
+   */
+  private withAmounts(sale: Sale): Sale {
+    const details = sale.details ?? [];
+    let currency = sale.totalAmountCurrency;
+
+    if (sale.totalAmount == null && sale.saleStatus === SaleStatus.DRAFT) {
+      const lines = details
+        .filter((d) => d.saleDetailStatus === SaleDetailStatus.DRAFT)
+        .map((d) => d.productPaymentOptions);
+      const totals = totalsByCurrency(lines);
+      currency = defaultSaleCurrency(lines, totals);
+      const total = totals.find((t) => t.currency === currency)?.total;
+      if (total !== undefined) {
+        sale.totalAmount = total;
+        sale.totalAmountCurrency = currency;
+      }
+    }
+
+    for (const detail of details) {
+      Object.assign(
+        detail,
+        lineAmounts(detail.productPaymentOptions, currency),
+      );
+    }
+    return sale;
   }
 
   async findOne(
@@ -160,30 +309,34 @@ export class SaleService extends BaseService<Sale> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Sale> {
-    return super.baseFindOne({
+    const sale = await super.baseFindOne({
       id,
       relationsToLoad: {
-        salesWorker: {
-          user: true,
-          business: true,
-          office: true,
-          department: true,
-          team: true,
-        },
-        deliveryWorker: {
-          user: true,
-          business: true,
-          office: true,
-          department: true,
-          team: true,
-        },
+        salesWorker: WORKER_RELATIONS,
+        deliveryWorker: WORKER_RELATIONS,
         customer: true,
         details: { product: { category: true }, publicists: true },
+        business: true,
+        office: true,
+        department: true,
+        team: true,
+        createdBy: true,
       },
       cu,
-      scopes,
+      scopes: this.scopesFor(cu, scopes),
       manager,
     });
+
+    if (
+      isSellerOnly(cu) &&
+      sale.salesWorker?.user?.id !== cu?.sub &&
+      sale.createdBy?.id !== cu?.sub
+    ) {
+      throw new NotFoundError('Venta no encontrada');
+    }
+
+    sale.details?.sort((a, b) => (a.id as number) - (b.id as number));
+    return this.withAmounts(sale);
   }
 
   async findByCustomer(
@@ -193,11 +346,18 @@ export class SaleService extends BaseService<Sale> {
     manager?: EntityManager,
   ): Promise<Sale[]> {
     await this.customerService.findOne(customerId, cu, scopes, manager);
-    return this.saleRepository.find({
+    const repository = manager?.getRepository(Sale) ?? this.saleRepository;
+    const sales = await repository.find({
       where: { customer: { id: customerId } },
-      relations: ['salesUser', 'customer', 'details', 'deliveryWorker'],
+      relations: {
+        salesWorker: { user: true },
+        customer: true,
+        details: { product: true },
+        deliveryWorker: { user: true },
+      },
       order: { createdAt: 'DESC' },
     });
+    return sales.map((sale) => this.withAmounts(sale));
   }
 
   async update(
@@ -207,87 +367,63 @@ export class SaleService extends BaseService<Sale> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Sale> {
-    const sale = await super.baseFindOne({ id, cu, scopes, manager });
-    if (!sale) {
-      throw new NotFoundError();
-    }
+    scopes = this.scopesFor(cu, scopes);
+    const sale = await this.findOne(id, cu, scopes, manager);
+    const isDraft = sale.saleStatus === SaleStatus.DRAFT;
+    const data: DeepPartial<Sale> = {};
 
-    // Actualizar vendedor si se proporciona
-    if (updateSaleInput.salesWorkerId) {
-      const salesWorker = await this.workerService.findOne(
-        updateSaleInput.salesWorkerId,
+    const { salesWorkerId, customerId, deliveryWorkerId } = updateSaleInput;
+
+    if (salesWorkerId && salesWorkerId !== sale.salesWorker?.id) {
+      this.assertDraft(isDraft, 'el vendedor');
+      data.salesWorker = await this.resolveSalesWorker(
+        salesWorkerId,
         cu,
-        scopes,
         manager,
       );
-      if (!salesWorker) {
-        throw new NotFoundError('Sales user not found');
-      }
-      sale.salesWorker = salesWorker;
     }
 
-    // Actualizar cliente si se proporciona
-    if (updateSaleInput.customerId) {
-      const customer = await this.customerService.findOne(
-        updateSaleInput.customerId,
-        cu,
-        scopes,
-        manager,
-      );
-      sale.customer = customer;
+    // `null` deja la venta sin cliente.
+    if (
+      customerId !== undefined &&
+      customerId !== (sale.customer?.id ?? null)
+    ) {
+      this.assertDraft(isDraft, 'el cliente');
+      data.customer = customerId
+        ? await this.customerService.findOne(customerId, cu, scopes, manager)
+        : (null as unknown as undefined);
     }
 
-    // NUEVO: Actualizar mensajero si se proporciona
-    if (updateSaleInput.deliveryWorkerId !== undefined) {
-      if (updateSaleInput.deliveryWorkerId === null) {
-        // Permite desasignar el mensajero
-        sale.deliveryWorker = undefined;
-      } else {
-        const deliveryWorker = await this.workerService.findOne(
-          updateSaleInput.deliveryWorkerId,
-          cu,
-          scopes,
-          manager,
-        );
-        if (!deliveryWorker) {
-          throw new NotFoundError('Delivery worker not found');
-        }
-        sale.deliveryWorker = deliveryWorker;
-      }
+    // `null` desasigna al mensajero.
+    if (deliveryWorkerId !== undefined) {
+      data.deliveryWorker = deliveryWorkerId
+        ? await this.findWorker(deliveryWorkerId, cu, manager, 'Mensajero')
+        : (null as unknown as undefined);
     }
 
-    // NUEVO: Actualizar flag de mensajería
     if (updateSaleInput.hasDelivery !== undefined) {
-      sale.hasDelivery = updateSaleInput.hasDelivery;
+      data.hasDelivery = updateSaleInput.hasDelivery;
     }
-
-    // NUEVO: Actualizar notas de mensajería
     if (updateSaleInput.deliveryNotes !== undefined) {
-      sale.deliveryNotes = updateSaleInput.deliveryNotes;
+      data.deliveryNotes =
+        updateSaleInput.deliveryNotes || (null as unknown as undefined);
+    }
+    if (updateSaleInput.invoiceNumber) {
+      data.invoiceNumber = updateSaleInput.invoiceNumber;
     }
 
-    // Validación de coherencia después de las actualizaciones
-    if (sale.deliveryWorker && !sale.hasDelivery) {
-      // Si hay mensajero asignado, forzar hasDelivery a true
-      sale.hasDelivery = true;
+    // Con mensajero asignado la venta lleva mensajería.
+    const deliveryWorker =
+      data.deliveryWorker !== undefined
+        ? data.deliveryWorker
+        : sale.deliveryWorker;
+    if (deliveryWorker) data.hasDelivery = true;
+
+    if (Object.keys(data).length > 0) {
+      await super.baseUpdate({ id, data, cu, scopes, manager });
     }
 
-    const {
-      salesWorkerId,
-      customerId,
-      deliveryWorkerId,
-      hasDelivery,
-      deliveryNotes,
-      ...rest
-    } = updateSaleInput;
-
-    return super.baseUpdate({
-      id,
-      data: { ...sale, ...rest },
-      cu,
-      scopes,
-      manager,
-    });
+    return this.findOne(id, cu, scopes, manager);
   }
 
   async remove(
@@ -296,30 +432,54 @@ export class SaleService extends BaseService<Sale> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Sale[]> {
+    if (!manager) {
+      return this.saleRepository.manager.transaction((txManager) =>
+        this.remove(ids, cu, scopes, txManager),
+      );
+    }
+    scopes = this.scopesFor(cu, scopes);
+
     const sales = await super.baseFindByIds({
       ids,
-      relationsToLoad: { details: true },
+      relationsToLoad: { details: { product: true } },
       cu,
       scopes,
       manager,
     });
 
-    if (sales.length === 0) {
-      throw new NotFoundError('No sales found.');
-    }
+    for (const sale of sales) {
+      if (
+        sale.saleStatus === SaleStatus.CONFIRMED ||
+        sale.saleStatus === SaleStatus.PARTIALLY_REFUNDED
+      ) {
+        throw new BadRequestError(
+          `La venta #${sale.id} está cobrada: devuélvela antes de eliminarla`,
+        );
+      }
 
-    await Promise.all(
-      sales.map((sale) =>
-        sale.details?.length
-          ? this.saleDetailService.remove(
-              sale.details.map((d) => d.id) as number[],
-              cu,
-              scopes,
-              manager,
-            )
-          : Promise.resolve(),
-      ),
-    );
+      // Un borrador todavía tiene stock reservado.
+      await this.saleDetailService.cancelSaleDetails(
+        sale.details ?? [],
+        cu,
+        manager,
+      );
+      if (sale.details?.length) {
+        await this.saleDetailService.baseDeleteMany({
+          ids: sale.details.map((d) => d.id) as number[],
+          cu,
+          scopes,
+          manager,
+          softRemove: true,
+        });
+      }
+
+      // Sin reserva ya no es un borrador que pueda cobrarse.
+      if (sale.saleStatus === SaleStatus.DRAFT) {
+        await manager.getRepository(Sale).update(sale.id as number, {
+          saleStatus: SaleStatus.CANCELLED,
+        });
+      }
+    }
 
     return super.baseDeleteMany({
       ids: sales.map((s) => s.id) as Array<number>,
@@ -337,6 +497,7 @@ export class SaleService extends BaseService<Sale> {
     manager?: EntityManager,
   ): Promise<number> {
     if (ids.length === 0) return 0;
+    scopes = this.scopesFor(cu, scopes);
 
     const sales = await super.baseFindByIds({
       ids,
@@ -350,20 +511,14 @@ export class SaleService extends BaseService<Sale> {
     const deletedSales = sales.filter((s) => s.deletedAt);
     if (deletedSales.length === 0) return 0;
 
-    await Promise.all(
-      deletedSales.map((sale) =>
-        sale.details?.length
-          ? this.saleDetailService.restore(
-              sale.details
-                .filter((d) => d.deletedAt)
-                .map((d) => d.id) as number[],
-              cu,
-              scopes,
-              manager,
-            )
-          : Promise.resolve(),
-      ),
-    );
+    for (const sale of deletedSales) {
+      const detailIds = (sale.details ?? [])
+        .filter((d) => d.deletedAt)
+        .map((d) => d.id) as number[];
+      if (detailIds.length) {
+        await this.saleDetailService.restore(detailIds, cu, scopes, manager);
+      }
+    }
 
     return super.baseRestoreDeletedMany({
       ids: deletedSales.map((s) => s.id) as Array<number>,
@@ -373,259 +528,225 @@ export class SaleService extends BaseService<Sale> {
     });
   }
 
+  /** Cobra una venta en borrador. */
   async makeSale(
     saleId: number,
-    payments: Array<{
-      amount: number;
-      currency: string;
-      paymentMethod: PaymentMethod;
-      //paymentDetails?: Record<string, unknown>;
-    }>,
-    baseCurrency: string = 'CUP',
+    payments: SalePayment[],
+    baseCurrency?: string,
     customDate?: Date,
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Sale> {
-    // 1. Obtener la venta con detalles
-    const sale = await this.findOne(saleId, cu, scopes, manager);
-    if (!sale) throw new NotFoundError('Sale not found');
-
-    // 2. Validar que no esté ya finalizada
-    if (sale.effectiveDate) throw new BadRequestError('Sale already finalized');
-
-    // 3. Validar que la venta tenga detalles
-    if (!sale.details || sale.details.length === 0) {
-      throw new BadRequestError('Sale has no details');
-    }
-
-    // 4. Validar que se hayan proporcionado pagos
-    if (!payments || payments.length === 0) {
-      throw new BadRequestError('No payments provided');
-    }
-
-    // 4. Validar que se haya proporcionado mensajero
-    if (sale.hasDelivery && !sale.deliveryWorker) {
-      throw new BadRequestError(
-        'Sale requires delivery but no delivery worker assigned',
+    if (!manager) {
+      return this.saleRepository.manager.transaction((txManager) =>
+        this.makeSale(
+          saleId,
+          payments,
+          baseCurrency,
+          customDate,
+          cu,
+          scopes,
+          txManager,
+        ),
       );
     }
+    scopes = this.scopesFor(cu, scopes);
 
-    // 5. Calcular totales requeridos por moneda y validar contra pagos
-    const validationResult = await this.validateSalePayments(
-      sale.details,
+    await this.finalize(
+      saleId,
       payments,
       baseCurrency,
-    );
-    if (!validationResult.valid) {
-      throw new BadRequestError(validationResult.message);
-    }
-
-    // 6. Confirma la venta para que se modifique los marcadores de reserva y pasen a venta confirmada.
-    await this.confirmSale(sale.id || 0, cu, scopes, manager);
-
-    // 7. Actualizar la venta como finalizada
-    const finalizedSale = await this.update(
-      saleId,
-      {
-        id: saleId,
-        payments,
-        totalAmount: validationResult.totalInBaseCurrency,
-        totalAmountCurrency: baseCurrency,
-        effectiveDate: customDate || new Date(),
-      },
+      customDate,
       cu,
       scopes,
       manager,
     );
-
-    return finalizedSale;
+    return this.findOne(saleId, cu, scopes, manager);
   }
 
-  async validateSalePayments(
-    details: SaleDetail[],
-    payments: Array<{ amount: number; currency: string }>,
-    baseCurrency: string = 'CUP',
-  ): Promise<{
-    valid: boolean;
-    message?: string;
-    totalInBaseCurrency: number;
-  }> {
-    // 1. Agrupar opciones de pago por moneda
-    const currencyOptions = new Map<
-      string,
-      {
-        minTotal: number; // Suma de mínimos requeridos (precio más bajo por producto)
-        maxTotal: number; // Suma de máximos posibles (precio más alto por producto)
-        accepted: boolean; // Si todos los productos aceptan esta moneda
-      }
-    >();
+  private async finalize(
+    saleId: number,
+    payments: SalePayment[],
+    baseCurrency: string | undefined,
+    customDate: Date | undefined,
+    cu: JWTPayload | undefined,
+    scopes: ScopedAccessEnum[] | undefined,
+    manager: EntityManager,
+  ): Promise<void> {
+    const sale = await this.findOne(saleId, cu, scopes, manager);
 
-    // 2. Procesar cada detalle para calcular totales por moneda
-    for (const detail of details) {
-      if (!detail.productPaymentOptions?.paymentOptions?.length) {
-        return {
-          valid: false,
-          message: `Product ${detail.product.id} has no payment options`,
-          totalInBaseCurrency: 0,
-        };
-      }
-
-      // Agrupar opciones por moneda para este producto
-      const productCurrencyOptions = new Map<
-        string,
-        {
-          min: number;
-          max: number;
-        }
-      >();
-
-      for (const option of detail.productPaymentOptions.paymentOptions) {
-        if (!productCurrencyOptions.has(option.currency)) {
-          productCurrencyOptions.set(option.currency, {
-            min: option.total,
-            max: option.total,
-          });
-        } else {
-          const current = productCurrencyOptions.get(option.currency) as {
-            min: number;
-            max: number;
-          };
-          // Tomar el precio más bajo para el mínimo
-          if (option.total < current.min) current.min = option.total;
-          // Tomar el precio más alto para el máximo
-          if (option.total > current.max) current.max = option.total;
-        }
-      }
-
-      // Consolidar con los totales globales
-      for (const [currency, { min, max }] of productCurrencyOptions) {
-        const globalOption = currencyOptions.get(currency) || {
-          minTotal: 0,
-          maxTotal: 0,
-          accepted: true,
-        };
-
-        globalOption.minTotal += min;
-        globalOption.maxTotal += max;
-
-        // Si algún producto no acepta esta moneda, marcarla como no aceptada globalmente
-        currencyOptions.set(currency, globalOption);
-      }
+    if (sale.saleStatus !== SaleStatus.DRAFT) {
+      throw new BadRequestError('La venta ya fue cobrada o cancelada');
     }
 
-    // 3. Validar que los pagos cubran al menos una combinación válida
-    const paymentByCurrency = new Map<string, number>();
-    for (const payment of payments) {
-      const current = paymentByCurrency.get(payment.currency) || 0;
-      paymentByCurrency.set(payment.currency, current + payment.amount);
+    const details = (sale.details ?? []).filter(
+      (d) => d.saleDetailStatus === SaleDetailStatus.DRAFT,
+    );
+    if (details.length === 0) {
+      throw new BadRequestError('La venta no tiene productos');
     }
 
-    // 4. Encontrar una combinación de monedas que satisfaga los pagos
-    let bestCombination: {
-      currencies: string[];
-      totalInBaseCurrency: number;
-    } | null = null;
-    let bestDifference = Infinity;
-
-    // Generar todas las combinaciones posibles de monedas aceptadas
-    const acceptedCurrencies = Array.from(currencyOptions.keys());
-    const currencyCombinations =
-      this.generateCurrencyCombinations(acceptedCurrencies);
-
-    for (const combination of currencyCombinations) {
-      // Verificar que los pagos cubran esta combinación
-      let isValid = true;
-      let totalInBase = 0;
-
-      for (const currency of combination) {
-        const paid = paymentByCurrency.get(currency) || 0;
-        const requiredMin = currencyOptions.get(currency)?.minTotal as number;
-
-        if (paid < requiredMin) {
-          isValid = false;
-          break;
-        }
-
-        // Convertir a moneda base
-        if (currency === baseCurrency) {
-          totalInBase += paid;
-        } else {
-          const rate = await this.currencyService.getExchangeRate(
-            currency,
-            baseCurrency,
-          );
-          if (!rate) {
-            isValid = false;
-            break;
-          }
-          totalInBase += paid * rate;
-        }
-      }
-
-      // Si es válida, verificar si es la mejor opción (más cercana al total)
-      if (isValid) {
-        const totalMax = combination.reduce((sum, currency) => {
-          return sum + (currencyOptions.get(currency)?.maxTotal as number);
-        }, 0);
-
-        const difference = Math.abs(totalInBase - totalMax);
-        if (difference < bestDifference) {
-          bestDifference = difference;
-          bestCombination = {
-            currencies: combination,
-            totalInBaseCurrency: totalInBase,
-          };
-        }
-      }
+    if (!payments || payments.length === 0) {
+      throw new BadRequestError('Indica al menos un pago');
     }
 
-    if (!bestCombination) {
-      return {
-        valid: false,
-        message: 'Payments do not cover any valid currency combination',
-        totalInBaseCurrency: 0,
-      };
+    if (sale.hasDelivery && !sale.deliveryWorker) {
+      throw new BadRequestError(
+        'La venta lleva mensajería: asigna un mensajero antes de cobrarla',
+      );
     }
 
-    // 5. Verificar que no haya pagos en monedas no utilizadas
-    const unusedPayments = payments.filter(
-      (p) => !bestCombination.currencies.includes(p.currency),
+    const evaluation = this.validateSalePayments(
+      details,
+      payments,
+      baseCurrency,
+    );
+    if (!evaluation.valid) {
+      throw new BadRequestError(evaluation.message);
+    }
+
+    await this.saleDetailService.confirmSaleDetails(
+      details.map((detail) => ({ ...detail, sale })),
+      cu,
+      manager,
     );
 
-    if (unusedPayments.length > 0) {
-      return {
-        valid: false,
-        message: `Payments include unused currencies: ${unusedPayments.map((p) => p.currency).join(', ')}`,
-        totalInBaseCurrency: 0,
+    // Solo quien administra puede fechar la venta en otro día.
+    const effectiveDate =
+      customDate && canManageSales(cu) ? new Date(customDate) : new Date();
+
+    await manager.getRepository(Sale).update(saleId, {
+      payments,
+      totalAmount: evaluation.totalInBaseCurrency,
+      totalAmountCurrency: evaluation.currency,
+      effectiveDate,
+      saleStatus: SaleStatus.CONFIRMED,
+      isConfirmed: true,
+      invoiceNumber:
+        sale.invoiceNumber ||
+        (await this.nextInvoiceNumber(sale, effectiveDate, manager)),
+      ...(cu && { updatedBy: { id: cu.sub } }),
+    });
+  }
+
+  /** Lo cobrado frente al precio de las líneas. */
+  validateSalePayments(
+    details: SaleDetail[],
+    payments: Array<{ amount: number; currency: string }>,
+    baseCurrency?: string,
+  ): SalePaymentEvaluation {
+    const lines = details.map((detail) => detail.productPaymentOptions);
+    const totals = totalsByCurrency(lines);
+    return evaluatePayments(
+      totals,
+      payments,
+      baseCurrency ?? defaultSaleCurrency(lines, totals),
+    );
+  }
+
+  /**
+   * Precio y disponibilidad de un carrito sin guardarlo, con el mismo
+   * cálculo que usará el cobro.
+   */
+  async quote(input: QuoteSaleInput, cu?: JWTPayload): Promise<SaleQuote> {
+    const lines: SaleQuote['lines'] = [];
+    const options: Array<SaleDetail['productPaymentOptions']> = [];
+
+    for (const detail of this.mergeDetails(input.details ?? [])) {
+      const line: SaleQuote['lines'][number] = {
+        productId: detail.productId,
+        quantity: detail.quantity,
+        available: 0,
+        prices: [],
       };
+      lines.push(line);
+
+      try {
+        const product = await this.productService.findOne(
+          detail.productId,
+          cu,
+          STOCK_SCOPES,
+        );
+        line.available = (product.inventories ?? []).reduce(
+          (sum, inventory) => sum + inventory.currentStock,
+          0,
+        );
+
+        const paymentOptions =
+          await this.productService.calculatePaymentOptions(
+            detail.productId,
+            detail.quantity,
+          );
+        options.push(paymentOptions);
+        line.prices = paymentOptions.paymentOptions.map((option) => ({
+          currency: option.currency,
+          unitPrice: option.unitPrice,
+          total: option.total,
+        }));
+
+        if (line.available < detail.quantity) {
+          line.error =
+            line.available > 0
+              ? `Solo quedan ${line.available} de "${product.name}"`
+              : `"${product.name}" está agotado`;
+        }
+      } catch (error) {
+        line.error = errorText(error);
+      }
     }
 
+    const priced = options.length === lines.length;
+    const totals = priced ? totalsByCurrency(options) : [];
+    const evaluation = evaluatePayments(
+      totals,
+      input.payments ?? [],
+      input.baseCurrency ?? defaultSaleCurrency(options, totals),
+    );
+
+    const lineError = lines.find((line) => line.error)?.error;
     return {
-      valid: true,
-      totalInBaseCurrency: bestCombination.totalInBaseCurrency,
+      ...evaluation,
+      valid: evaluation.valid && !lineError,
+      message: lineError ?? evaluation.message,
+      lines,
     };
   }
 
-  // Genera todas las combinaciones posibles de monedas
-  private generateCurrencyCombinations(currencies: string[]): string[][] {
-    const result: string[][] = [];
+  /** Anula un borrador y devuelve su stock reservado. */
+  async cancelSale(
+    saleId: number,
+    cu?: JWTPayload,
+    scopes?: ScopedAccessEnum[],
+    manager?: EntityManager,
+  ): Promise<Sale> {
+    if (!manager) {
+      return this.saleRepository.manager.transaction((txManager) =>
+        this.cancelSale(saleId, cu, scopes, txManager),
+      );
+    }
+    scopes = this.scopesFor(cu, scopes);
 
-    // Función recursiva para generar combinaciones
-    function backtrack(start: number, current: string[]) {
-      if (current.length > 0) {
-        result.push([...current]);
-      }
-
-      for (let i = start; i < currencies.length; i++) {
-        current.push(currencies[i]);
-        backtrack(i + 1, current);
-        current.pop();
-      }
+    const sale = await this.findOne(saleId, cu, scopes, manager);
+    if (sale.saleStatus === SaleStatus.CANCELLED) return sale;
+    if (sale.saleStatus !== SaleStatus.DRAFT) {
+      throw new BadRequestError(
+        'Una venta cobrada no se cancela: hay que devolverla',
+      );
     }
 
-    backtrack(0, []);
-    return result;
+    await this.saleDetailService.cancelSaleDetails(
+      sale.details ?? [],
+      cu,
+      manager,
+    );
+    await manager.getRepository(Sale).update(saleId, {
+      saleStatus: SaleStatus.CANCELLED,
+      isConfirmed: false,
+      ...(cu && { updatedBy: { id: cu.sub } }),
+    });
+
+    return this.findOne(saleId, cu, scopes, manager);
   }
 
   async getSalesByScope(
@@ -746,50 +867,10 @@ export class SaleService extends BaseService<Sale> {
     return sales;
   }
 
-  public async confirmSale(
-    saleId: number,
-    cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
-    manager?: EntityManager,
-  ): Promise<Sale> {
-    const sale = await this.findOne(saleId, cu, scopes, manager);
-
-    // // Validar que la venta pueda ser confirmada
-    // if (!sale.effectiveDate || new Date(sale.effectiveDate) > new Date()) {
-    //   throw new BadRequestError('Sale is not finalized yet');
-    // }
-
-    // Obtener todos los sale details de esta venta
-    const saleDetails = await this.saleDetailService.findBySale(
-      saleId,
-      cu,
-      scopes,
-      manager,
-    );
-
-    // Confirmar todos los sale details (marcar reservas como vendidas)
-    const saleDetailIds = saleDetails.map((detail) => detail.id as number);
-    await this.saleDetailService.confirmSaleDetails(
-      saleDetailIds,
-      cu,
-      scopes,
-      manager,
-    );
-
-    // Marcar la venta como confirmada
-    return await super.baseUpdate({
-      id: saleId,
-      data: {
-        ...sale,
-        saleStatus: SaleStatus.CONFIRMED,
-        isConfirmed: true,
-      },
-      cu,
-      scopes,
-      manager,
-    });
-  }
-
+  /**
+   * Devuelve la venta completa (`saleId`) o algunas de sus líneas
+   * (`saleDetailIds`); el stock vuelve al inventario.
+   */
   async refundSale(
     input: {
       saleId?: number;
@@ -799,122 +880,180 @@ export class SaleService extends BaseService<Sale> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Sale> {
-    // Validar exclusividad de parámetros
-    if (!input.saleId && !input.saleDetailIds) {
+    if (!manager) {
+      return this.saleRepository.manager.transaction((txManager) =>
+        this.refundSale(input, cu, scopes, txManager),
+      );
+    }
+    scopes = this.scopesFor(cu, scopes);
+
+    const hasDetailIds = !!input.saleDetailIds?.length;
+    if (!input.saleId && !hasDetailIds) {
       throw new BadRequestError(
-        'Either saleId or saleDetailIds must be provided',
+        'Indica la venta o las líneas que se devuelven',
+      );
+    }
+    if (input.saleId && hasDetailIds) {
+      throw new BadRequestError(
+        'Indica la venta o sus líneas, no las dos cosas',
       );
     }
 
-    if (input.saleId && input.saleDetailIds) {
-      throw new BadRequestError(
-        'Provide either saleId or saleDetailIds, not both',
-      );
-    }
+    let detailIds = input.saleDetailIds as number[];
+    if (input.saleId) {
+      const sale = await this.findOne(input.saleId, cu, scopes, manager);
 
-    // Usar transaction para asegurar consistencia
-    const executeRefund = async (txManager: EntityManager) => {
-      let sale: Sale;
-      let refundResult: Awaited<
-        ReturnType<SaleDetailService['refundSaleDetails']>
-      >;
-
-      if (input.saleId) {
-        // Caso 1: Devolución total de la venta
-        sale = await this.findOne(input.saleId, cu, scopes, txManager);
-
-        if (!sale) {
-          throw new NotFoundError('Sale not found');
-        }
-
-        if (sale.saleStatus === SaleStatus.FULLY_REFUNDED) {
-          throw new BadRequestError('Sale is already fully refunded');
-        }
-
-        if (sale.saleStatus !== SaleStatus.CONFIRMED) {
-          throw new BadRequestError('Only confirmed sales can be refunded');
-        }
-
-        // Obtener todos los detalles confirmados de la venta
-        const detailsToRefund =
-          sale.details?.filter(
-            (d) => d.saleDetailStatus !== SaleDetailStatus.REFUNDED,
-          ) || [];
-
-        if (detailsToRefund.length === 0) {
-          throw new BadRequestError('No confirmed details to refund');
-        }
-
-        // Procesar devolución de todos los detalles
-        refundResult = await this.saleDetailService.refundSaleDetails(
-          detailsToRefund.map((d) => d.id as number),
-          cu,
-          scopes,
-          txManager,
-        );
-
-        // Actualizar estado de la venta
-        sale = await super.baseUpdate({
-          id: input.saleId,
-          data: {
-            ...sale,
-            saleStatus: SaleStatus.FULLY_REFUNDED,
-          },
-          cu,
-          scopes,
-          manager: txManager,
-        });
-      } else {
-        // Caso 2: Devolución parcial (por saleDetailIds)
-        refundResult = await this.saleDetailService.refundSaleDetails(
-          input.saleDetailIds!,
-          cu,
-          scopes,
-          txManager,
-        );
-
-        sale = await this.findOne(refundResult.saleId, cu, scopes, txManager);
-
-        // Verificar si después de esta devolución, la venta queda totalmente devuelta
-        const allDetailsRefunded = sale.details?.every(
-          (d) => d.saleDetailStatus === SaleDetailStatus.REFUNDED,
-        );
-
-        const newStatus = allDetailsRefunded
-          ? SaleStatus.FULLY_REFUNDED
-          : SaleStatus.PARTIALLY_REFUNDED;
-
-        // Actualizar estado de la venta
-        sale = await super.baseUpdate({
-          id: refundResult.saleId,
-          data: {
-            ...sale,
-            saleStatus: newStatus,
-          },
-          cu,
-          scopes,
-          manager: txManager,
-        });
+      if (sale.saleStatus === SaleStatus.FULLY_REFUNDED) {
+        throw new BadRequestError('La venta ya está devuelta por completo');
       }
 
-      // TODO: Llamar al servicio de pagos para procesar la devolución del dinero
-      // Ejemplo: await this.paymentService.processRefund({
-      //   saleId: refundResult.saleId,
-      //   amount: refundResult.totalRefundAmount,
-      //   currency: refundResult.currency,
-      //   refundedDetailIds: refundResult.refundedDetails.map(d => d.id),
-      //   reason: 'Customer refund',
-      //   refundMethod: determinar según método de pago original,
-      // }, cu, scopes, txManager);
-
-      return sale;
-    };
-
-    // Ejecutar en transacción si no hay manager
-    if (manager) {
-      return executeRefund(manager);
-    } else {
-      return this.saleRepository.manager.transaction(executeRefund);
+      detailIds = (sale.details ?? [])
+        .filter((d) => d.saleDetailStatus === SaleDetailStatus.CONFIRMED)
+        .map((d) => d.id as number);
+      if (detailIds.length === 0) {
+        throw new BadRequestError('Solo se puede devolver una venta cobrada');
+      }
     }
+
+    const { saleId } = await this.saleDetailService.refundSaleDetails(
+      detailIds,
+      cu,
+      scopes,
+      manager,
+    );
+
+    // Queda devuelta por completo cuando no le queda ninguna línea vendida.
+    const sale = await this.findOne(saleId, cu, scopes, manager);
+    const hasSoldDetails = sale.details?.some(
+      (d) => d.saleDetailStatus === SaleDetailStatus.CONFIRMED,
+    );
+
+    await manager.getRepository(Sale).update(saleId, {
+      saleStatus: hasSoldDetails
+        ? SaleStatus.PARTIALLY_REFUNDED
+        : SaleStatus.FULLY_REFUNDED,
+      ...(cu && { updatedBy: { id: cu.sub } }),
+    });
+
+    return this.findOne(saleId, cu, scopes, manager);
+  }
+
+  /** Trabajador vinculado al usuario de la sesión, si lo hay. */
+  async findOwnWorker(
+    cu?: JWTPayload,
+    manager?: EntityManager,
+  ): Promise<Worker | null> {
+    if (!cu) return null;
+    const repository = manager?.getRepository(Worker) ?? this.workerRepository;
+    return repository.findOne({
+      where: { user: { id: cu.sub } },
+      relations: WORKER_RELATIONS,
+    });
+  }
+
+  private async findWorker(
+    id: number,
+    cu: JWTPayload | undefined,
+    manager: EntityManager | undefined,
+    label: string,
+  ): Promise<Worker> {
+    const repository = manager?.getRepository(Worker) ?? this.workerRepository;
+    const worker = await repository.findOne({
+      where: { id },
+      relations: WORKER_RELATIONS,
+    });
+
+    // Nunca un trabajador de otra empresa.
+    if (!worker || (cu?.businessId && worker.business?.id !== cu.businessId)) {
+      throw new NotFoundError(`${label} no encontrado`);
+    }
+    return worker;
+  }
+
+  /**
+   * Quien vende: un vendedor sin mando siempre vende a su nombre; el resto
+   * puede indicar otro trabajador y, si no lo hace, es él mismo.
+   */
+  private async resolveSalesWorker(
+    salesWorkerId: number | undefined | null,
+    cu?: JWTPayload,
+    manager?: EntityManager,
+  ): Promise<Worker> {
+    if (salesWorkerId && !isSellerOnly(cu)) {
+      return this.findWorker(salesWorkerId, cu, manager, 'Vendedor');
+    }
+
+    const ownWorker = await this.findOwnWorker(cu, manager);
+    if (ownWorker) return ownWorker;
+
+    throw new BadRequestError(
+      isSellerOnly(cu)
+        ? 'Tu usuario no está vinculado a un trabajador: pide a un administrador que lo asocie'
+        : 'Selecciona el vendedor de la venta',
+    );
+  }
+
+  private assertDraft(isDraft: boolean, what: string): void {
+    if (!isDraft) {
+      throw new BadRequestError(
+        `La venta ya no está en borrador: no se puede cambiar ${what}`,
+      );
+    }
+  }
+
+  private mergeDetails(
+    details: Array<{
+      productId: number;
+      quantity: number;
+      publicistIds?: number[];
+    }>,
+  ) {
+    const merged = new Map<
+      number,
+      { productId: number; quantity: number; publicistIds: number[] }
+    >();
+    for (const detail of details) {
+      const current = merged.get(detail.productId) ?? {
+        productId: detail.productId,
+        quantity: 0,
+        publicistIds: [],
+      };
+      current.quantity += detail.quantity;
+      current.publicistIds = [
+        ...new Set([...current.publicistIds, ...(detail.publicistIds ?? [])]),
+      ];
+      merged.set(detail.productId, current);
+    }
+    return [...merged.values()];
+  }
+
+  /** Consecutivo por empresa y año: F2026-0001. */
+  private async nextInvoiceNumber(
+    sale: Sale,
+    date: Date,
+    manager: EntityManager,
+  ): Promise<string> {
+    const prefix = `F${date.getFullYear()}-`;
+    const query = manager
+      .getRepository(Sale)
+      .createQueryBuilder('sale')
+      .withDeleted()
+      .select(
+        `MAX(CAST(SUBSTRING(sale.invoiceNumber FROM ${prefix.length + 1}) AS INTEGER))`,
+        'last',
+      )
+      .where('sale.invoiceNumber ~ :pattern', { pattern: `^${prefix}[0-9]+$` });
+
+    if (sale.business?.id) {
+      query.andWhere('sale.businessId = :businessId', {
+        businessId: sale.business.id,
+      });
+    } else {
+      query.andWhere('sale.businessId IS NULL');
+    }
+
+    const row = await query.getRawOne<{ last: number | null }>();
+    const next = (Number(row?.last) || 0) + 1;
+    return `${prefix}${String(next).padStart(4, '0')}`;
   }
 }

@@ -1,23 +1,25 @@
 import {
   IsArray,
-  IsNumber,
-  IsString,
   IsOptional,
-  ValidateNested,
+  IsString,
   Length,
+  ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { SaleDetailInput } from './create-sale.input';
 import { MakeSalePaymentInput } from './make-sale.input';
 
-export class ValidateSalePaymentsInput {
-  @IsNumber()
-  saleId: number;
+export class QuoteSaleInput {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SaleDetailInput)
+  details: SaleDetailInput[];
 
-  // Vacío devuelve solo el precio de la venta en cada moneda.
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => MakeSalePaymentInput)
-  payments: MakeSalePaymentInput[];
+  payments?: MakeSalePaymentInput[];
 
   @IsOptional()
   @IsString()
