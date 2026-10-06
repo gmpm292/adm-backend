@@ -24,7 +24,6 @@ import { ReserveReleaseReason } from '../enums/reserve-release-reason';
 import { ConditionalOperator } from '../../../../core/graphql/remote-operations/enums/conditional-operation.enum';
 import { InventoryMovement } from '../../inventory-movement/entities/inventory-movement.entity';
 import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
-import { UpdateInventoryMovementInput } from '../../inventory-movement/dto/update-inventory-movement.input';
 import { UnitOfMeasureService } from '../../unit-of-measure/services/unit-of-measure.service';
 import { MaterialCostService } from '../../../payroll/material-cost/services/material-cost.service';
 import { MaterialCost } from '../../../payroll/material-cost/entities/material-cost.entity';
@@ -349,7 +348,7 @@ export class ProductService extends BaseService<Product> {
       quantity < product.saleRules.minQuantity
     ) {
       throw new BadRequestError(
-        `La cantidad mínima es ${product.saleRules.minQuantity}`,
+        `La cantidad mínima de "${product.name}" es ${product.saleRules.minQuantity}`,
       );
     }
 
@@ -358,82 +357,100 @@ export class ProductService extends BaseService<Product> {
       quantity > product.saleRules.maxQuantity
     ) {
       throw new BadRequestError(
-        `La cantidad máxima es ${product.saleRules.maxQuantity}`,
+        `La cantidad máxima de "${product.name}" es ${product.saleRules.maxQuantity}`,
       );
     }
 
     // Validar moneda si fue introducida.
     if (
       currency &&
-      product.pricingConfig.acceptedCurrencies.includes(currency)
+      !this.acceptedCurrenciesOf(product).includes(currency)
     ) {
       throw new BadRequestError(
         `La moneda ${currency} no se permite para este producto`,
       );
     }
 
-    // Calcular opciones para la moneda dada o cada moneda aceptada.
+    return this.buildPaymentOptions(product, quantity, currency);
+  }
+
+  /** Monedas en las que se puede cobrar el producto; su moneda base siempre. */
+  private acceptedCurrenciesOf(product: Product): string[] {
+    const accepted = product.pricingConfig?.acceptedCurrencies ?? [];
+    return accepted.includes(product.baseCurrency)
+      ? accepted
+      : [product.baseCurrency, ...accepted];
+  }
+
+  /**
+   * Precio del producto en cada moneda aceptada, sin validar las reglas de
+   * cantidad (el catálogo de venta lo usa para mostrar precios unitarios).
+   * Una moneda sin tasa de cambio configurada se omite, salvo que sea la
+   * única pedida.
+   */
+  async buildPaymentOptions(
+    product: Product,
+    quantity: number = 1,
+    currency?: string,
+  ): Promise<ProductPaymentOptions> {
+    const basePrice = Number(product.basePrice);
+    const decimalPlaces = product.pricingConfig?.decimalPlaces ?? 2;
+    const round = (value: number) => parseFloat(value.toFixed(decimalPlaces));
     const currencies = currency
       ? [currency]
-      : product.pricingConfig.acceptedCurrencies;
-    const paymentOptions = await Promise.all(
-      currencies.map(async (currency) => {
-        // Buscar precio fijo primero
-        const fixedPrice = product.pricingConfig.fixedPrices?.find(
-          (p) => p.currency === currency,
-        );
+      : this.acceptedCurrenciesOf(product);
 
-        if (fixedPrice) {
-          return {
-            currency,
-            unitPrice: fixedPrice.amount,
-            total: fixedPrice.amount * quantity,
-            isFixedPrice: true,
-          };
-        }
+    const bulkDiscount = (product.saleRules?.bulkDiscounts ?? [])
+      .filter((d) => quantity >= d.minQty)
+      .sort((a, b) => b.minQty - a.minQty)[0];
 
-        // Calcular conversión con margen
-        const exchangeRate = await this.currencyService.getExchangeRate(
-          product.baseCurrency,
-          currency,
-        );
+    const paymentOptions: ProductPaymentOptions['paymentOptions'] = [];
+    for (const code of currencies) {
+      const fixedPrice = product.pricingConfig?.fixedPrices?.find(
+        (p) => p.currency === code,
+      );
 
-        const marginMultiplier =
-          1 + (product.pricingConfig.exchangeRateMargin || 0) / 100;
-        const convertedPrice =
-          product.basePrice * exchangeRate * marginMultiplier;
-        const decimalPlaces = product.pricingConfig.decimalPlaces ?? 2;
-        const roundedPrice = parseFloat(convertedPrice.toFixed(decimalPlaces));
-
-        return {
-          currency,
-          unitPrice: roundedPrice,
-          total: roundedPrice * quantity,
-          isFixedPrice: false,
-          exchangeRate,
-        };
-      }),
-    );
-
-    // Aplicar descuentos por volumen si existen
-    if (product.saleRules?.bulkDiscounts) {
-      const bestDiscount = product.saleRules.bulkDiscounts
-        .filter((d) => quantity >= d.minQty)
-        .sort((a, b) => b.minQty - a.minQty)[0];
-
-      if (bestDiscount) {
-        paymentOptions.forEach((option) => {
-          if (bestDiscount.applicableCurrencies.includes(option.currency)) {
-            const discountMultiplier = 1 - bestDiscount.discount / 100;
-            option.total *= discountMultiplier;
-            option.unitPrice *= discountMultiplier;
+      let unitPrice: number;
+      let exchangeRate: number | undefined;
+      if (fixedPrice) {
+        unitPrice = Number(fixedPrice.amount);
+      } else if (code === product.baseCurrency) {
+        unitPrice = basePrice;
+      } else {
+        try {
+          exchangeRate = await this.currencyService.getExchangeRate(
+            product.baseCurrency,
+            code,
+          );
+        } catch {
+          if (currency) {
+            throw new BadRequestError(
+              `No hay tasa de cambio configurada entre ${product.baseCurrency} y ${code}`,
+            );
           }
-        });
+          continue;
+        }
+        const marginMultiplier =
+          1 + (product.pricingConfig?.exchangeRateMargin || 0) / 100;
+        unitPrice = basePrice * exchangeRate * marginMultiplier;
       }
+
+      if (bulkDiscount?.applicableCurrencies?.includes(code)) {
+        unitPrice *= 1 - bulkDiscount.discount / 100;
+      }
+
+      unitPrice = round(unitPrice);
+      paymentOptions.push({
+        currency: code,
+        unitPrice,
+        total: round(unitPrice * quantity),
+        isFixedPrice: !!fixedPrice,
+        ...(exchangeRate !== undefined && { exchangeRate }),
+      });
     }
 
     return {
-      basePrice: product.basePrice,
+      basePrice,
       baseCurrency: product.baseCurrency,
       paymentOptions,
       quantity,
@@ -452,7 +469,13 @@ export class ProductService extends BaseService<Product> {
     manager?: EntityManager,
     reservationId = uuidv4(), // Si existe es un ajuste a una reserva anterior, sino generar un UUID único para esta reserva
   ): Promise<string> {
-    //const reservationId = uuidv4(); // Generar un UUID único para esta reserva
+    // El inventario se lleva en unidades enteras.
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      throw new BadRequestError(
+        'La cantidad debe ser un número entero mayor que cero',
+      );
+    }
+
     const inventory = await this.inventoryService.findByProduct(
       productId,
       cu,
@@ -466,8 +489,9 @@ export class ProductService extends BaseService<Product> {
     );
 
     if (availableStock < quantity) {
+      const name = inventory[0]?.product?.name ?? `#${productId}`;
       throw new BadRequestError(
-        `Insufficient stock for product ${productId}. Available: ${availableStock}, Requested: ${quantity}`,
+        `Stock insuficiente de "${name}": disponible ${availableStock}, solicitado ${quantity}`,
       );
     }
 
@@ -525,8 +549,7 @@ export class ProductService extends BaseService<Product> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<void> {
-    // 1. Validar que existan reservas previas
-    const reservations = (
+    const movements = (
       await this.inventoryMovementService.find(
         {
           filters: [
@@ -543,58 +566,78 @@ export class ProductService extends BaseService<Product> {
       )
     ).data as Array<InventoryMovement>;
 
-    if (!reservations || reservations.length === 0) {
+    if (!movements || movements.length === 0) {
+      // Ventas cargadas sin movimientos de inventario (datos importados): al
+      // devolverlas la mercancía entra igualmente, al primer inventario.
+      if (reason === ReserveReleaseReason.SALE_REFUND) {
+        const [inventory] = await this.inventoryService.findByProduct(
+          productId,
+          cu,
+          scopes,
+          manager,
+        );
+        if (inventory) {
+          await this.inventoryMovementService.create(
+            {
+              inventoryId: inventory.id as number,
+              type: 'IN',
+              quantity,
+              reason,
+              reservationId,
+            },
+            cu,
+            scopes,
+            manager,
+          );
+          return;
+        }
+      }
       throw new BadRequestError(
         `No stock reservations found with ID ${reservationId}`,
       );
     }
 
-    const reservedQuantity = reservations.reduce(
-      (sum, mov) => sum + mov.quantity,
+    // Lo que sigue fuera de cada inventario: salidas menos lo ya devuelto.
+    const outstanding = new Map<number, number>();
+    for (const movement of movements) {
+      const inventoryId = movement.inventory.id as number;
+      const signed =
+        movement.type === 'OUT' ? movement.quantity : -movement.quantity;
+      outstanding.set(inventoryId, (outstanding.get(inventoryId) ?? 0) + signed);
+    }
+
+    const totalOutstanding = [...outstanding.values()].reduce(
+      (sum, value) => sum + Math.max(value, 0),
       0,
     );
-
-    if (reservedQuantity < quantity) {
+    if (totalOutstanding < quantity) {
       throw new BadRequestError(
-        `Attempting to release ${quantity} but only ${reservedQuantity} were reserved`,
+        `Attempting to release ${quantity} but only ${totalOutstanding} were reserved`,
       );
     }
 
-    // 2. Proceder con la liberación
-    const inventory = await this.inventoryService.findByProduct(
-      productId,
-      cu,
-      scopes,
-      manager,
-    );
-
-    // Ordenar por fecha (más reciente primero)
-    const sortedInventory = [...inventory].sort(
-      (a, b) =>
-        new Date(b.createdAt as Date).getTime() -
-        new Date(a.createdAt as Date).getTime(),
-    );
-
+    // El stock vuelve a los mismos inventarios de los que salió.
     let remainingQuantity = quantity;
-
-    for (const inventoryItem of sortedInventory) {
+    for (const [inventoryId, pending] of outstanding) {
       if (remainingQuantity <= 0) break;
+      const quantityToReturn = Math.min(remainingQuantity, pending);
+      if (quantityToReturn <= 0) continue;
 
       await this.inventoryMovementService.create(
         {
-          inventoryId: inventoryItem.id as number,
+          inventoryId,
           type: 'IN',
-          quantity: remainingQuantity,
+          quantity: quantityToReturn,
           reason,
           reservationId, // Mismo ID de reserva
-          referenceId: reservations[0].referenceId, // Misma referencia
+          referenceId: movements[0].referenceId, // Misma referencia
         },
         cu,
         scopes,
         manager,
       );
 
-      remainingQuantity = 0;
+      remainingQuantity -= quantityToReturn;
     }
   }
 
@@ -634,21 +677,19 @@ export class ProductService extends BaseService<Product> {
       );
     }
 
-    // Actualizar cada movimiento de reserva para marcarlo como vendido
-    await Promise.all(
-      reservations.map((movement) =>
-        this.inventoryMovementService.update(
-          movement.id as number,
-          {
-            isReservation: false, // Ya no es reserva, es venta confirmada
-            referenceId: saleReferenceId, // ID de la venta final
-            reason: 'SALE_CONFIRMED', // as ReserveReleaseReason,
-          } as UpdateInventoryMovementInput,
-          cu,
-          scopes,
-          manager,
-        ),
-      ),
+    // La reserva pasa a ser una salida por venta; la cantidad no cambia, así
+    // que el stock no se toca.
+    const repository =
+      manager?.getRepository(InventoryMovement) ??
+      this.inventoryMovementService.getRepository();
+    await repository.update(
+      reservations.map((movement) => movement.id as number),
+      {
+        isReservation: false,
+        referenceId: saleReferenceId,
+        reason: 'SALE_CONFIRMED',
+        ...(cu && { updatedBy: { id: cu.sub } }),
+      },
     );
   }
 }

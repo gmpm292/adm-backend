@@ -21,8 +21,10 @@ type SaleDetail implements SecurityBaseEntity {
   team: Team
 
   quantity: Float!
+  # Precio en la moneda de la venta (`currency`); calculados, no se guardan
   unitPrice: Float
   subtotal: Float
+  currency: String
   discountPercentage: Float
   productSnapshot: JSON
   productPaymentOptions: JSON

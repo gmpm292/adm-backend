@@ -1,5 +1,5 @@
-import { forwardRef, Inject, Injectable } from '@nestjs/common';
-import { EntityManager, Repository } from 'typeorm';
+import { Injectable } from '@nestjs/common';
+import { EntityManager, Not, Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CreateCustomerInput } from '../dto/create-customer.input';
 import { UpdateCustomerInput } from '../dto/update-customer.input';
@@ -10,11 +10,19 @@ import {
   ListSummary,
 } from '../../../../core/graphql/remote-operations';
 import { NotFoundError } from '../../../../core/errors/appErrors/NotFoundError.error';
+import { ConflictError } from '../../../../core/errors/appErrors/ConflictError.error';
 import { JWTPayload } from '../../../auth/dto/jwt-payload.dto';
 import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
 import { ScopedAccessService } from '../../../scoped-access/services/scoped-access.service';
-import { SaleService } from '../../sale/services/sale.service';
 import { UsersService } from '../../../users/services/users.service';
+import { SALE_SCOPES } from '../../sale/helpers/sale-scopes';
+
+// Datos que identifican a una persona: no se repiten dentro de una empresa.
+const UNIQUE_FIELDS = [
+  { field: 'phone', label: 'ese teléfono' },
+  { field: 'email', label: 'ese correo' },
+  { field: 'ci', label: 'ese carné de identidad' },
+] as const;
 
 @Injectable()
 export class CustomerService extends BaseService<Customer> {
@@ -22,18 +30,21 @@ export class CustomerService extends BaseService<Customer> {
     @InjectRepository(Customer)
     private customerRepository: Repository<Customer>,
     private userService: UsersService,
-    @Inject(forwardRef(() => SaleService))
-    private saleService: SaleService,
     protected scopedAccessService: ScopedAccessService,
   ) {
     super(customerRepository);
   }
 
-  private generateFullName(name: string, lastName?: string): string {
-    if (lastName) {
-      return `${name} ${lastName}`.trim();
-    }
-    return name.trim();
+  // Los clientes son de la tienda, igual que sus ventas.
+  private scopesFor(cu?: JWTPayload, scopes?: ScopedAccessEnum[]) {
+    return scopes ?? this.scopedAccessService.scopesOrDefault(cu, SALE_SCOPES);
+  }
+
+  private generateFullName(name: string, lastName?: string | null): string {
+    return [name, lastName]
+      .map((part) => part?.trim())
+      .filter(Boolean)
+      .join(' ');
   }
 
   async create(
@@ -42,43 +53,44 @@ export class CustomerService extends BaseService<Customer> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Customer> {
-    if (!scopes) scopes = [ScopedAccessEnum.OFFICE];
+    scopes = this.scopesFor(cu, scopes);
+    const { userId, ...input } = createCustomerInput;
 
-    // Generar fullName automáticamente
-    const fullName = this.generateFullName(
-      createCustomerInput.name,
-      createCustomerInput.lastName,
+    const customer = {
+      ...input,
+      name: input.name.trim(),
+      lastName: input.lastName?.trim() || null,
+      fullName: this.generateFullName(input.name, input.lastName),
+      ci: input.ci?.trim() || null,
+      email: input.email?.trim().toLowerCase() || null,
+      phone: input.phone || null,
+      loyaltyPoints: input.loyaltyPoints || 0,
+    } as unknown as Customer;
+
+    await this.assertUnique(
+      customer,
+      createCustomerInput.businessId,
+      undefined,
+      manager,
     );
 
-    const customer: Customer = {
-      ...createCustomerInput,
-      fullName, // Agregar el fullName generado
-      email: createCustomerInput.email || null,
-      phone: createCustomerInput.phone || null,
-      loyaltyPoints: createCustomerInput.loyaltyPoints || 0, // Valor por defecto
-    } as Customer;
-
-    if (createCustomerInput.userId) {
-      const user = await this.userService.findOne(
-        createCustomerInput.userId,
+    if (userId) {
+      customer.user = await this.userService.findOne(
+        userId,
         undefined,
         cu,
         scopes,
         manager,
       );
-      if (!user) {
-        throw new NotFoundError('User not found');
-      }
-      customer.user = user;
     }
 
-    return super.baseCreate({
+    const created = await super.baseCreate({
       data: customer,
-      uniqueFields: ['email', 'phone'],
       cu,
       scopes,
       manager,
     });
+    return this.findOne(created.id as number, cu, scopes, manager);
   }
 
   async find(
@@ -87,11 +99,12 @@ export class CustomerService extends BaseService<Customer> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<ListSummary> {
+    // Sin las ventas: un listado no debe arrastrar el historial de cada cliente.
     return await super.baseFind({
       options,
-      relationsToLoad: ['user', 'sales', 'business', 'office'],
+      relationsToLoad: ['user', 'business', 'office'],
       cu,
-      scopes,
+      scopes: this.scopesFor(cu, scopes),
       manager,
     });
   }
@@ -106,12 +119,15 @@ export class CustomerService extends BaseService<Customer> {
       id,
       relationsToLoad: {
         user: true,
-        sales: true,
         business: true,
         office: true,
+        department: true,
+        team: true,
+        createdBy: true,
+        updatedBy: true,
       },
       cu,
-      scopes,
+      scopes: this.scopesFor(cu, scopes),
       manager,
     });
   }
@@ -123,73 +139,67 @@ export class CustomerService extends BaseService<Customer> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Customer> {
-    const customer = await super.baseFindOne({ id, cu, scopes, manager });
-    if (!customer) {
-      throw new NotFoundError();
+    scopes = this.scopesFor(cu, scopes);
+    const customer = await this.findOne(id, cu, scopes, manager);
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { userId, id: _id, ...input } = updateCustomerInput;
+    const data: Partial<Customer> = { ...input } as Partial<Customer>;
+
+    // `null` o una cadena vacía borran el dato opcional.
+    if (input.name !== undefined) data.name = input.name.trim();
+    for (const field of ['lastName', 'ci', 'phone'] as const) {
+      if (input[field] !== undefined) {
+        data[field] = input[field]?.trim() || (null as unknown as undefined);
+      }
+    }
+    if (input.email !== undefined) {
+      data.email =
+        input.email?.trim().toLowerCase() || (null as unknown as undefined);
     }
 
-    // Si se actualizan name o lastName, regenerar fullName
-    if (updateCustomerInput.name || updateCustomerInput.lastName) {
-      const newName = updateCustomerInput.name || customer.name;
-      const newLastName = updateCustomerInput.lastName ?? customer.lastName;
-      customer.fullName = this.generateFullName(newName, newLastName);
-    }
+    data.fullName = this.generateFullName(
+      data.name ?? customer.name,
+      data.lastName !== undefined ? data.lastName : customer.lastName,
+    );
 
-    if (updateCustomerInput.userId) {
-      const user = await this.userService.findOne(
-        updateCustomerInput.userId,
+    await this.assertUnique(
+      data,
+      input.businessId ?? (customer.business?.id as number),
+      id,
+      manager,
+    );
+
+    if (userId) {
+      data.user = await this.userService.findOne(
+        userId,
         undefined,
         cu,
         scopes,
         manager,
       );
-      if (!user) {
-        throw new NotFoundError('User not found');
-      }
-      customer.user = user;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { userId, ...rest } = updateCustomerInput;
-    return super.baseUpdate({
-      id,
-      data: { ...customer, ...rest },
-      cu,
-      scopes,
-      manager,
-    });
+    await super.baseUpdate({ id, data, cu, scopes, manager });
+    return this.findOne(id, cu, scopes, manager);
   }
 
+  /**
+   * Da de baja a los clientes. Sus ventas se conservan: son el registro de lo
+   * vendido y cobrado.
+   */
   async remove(
     ids: number[],
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Customer[]> {
-    const customers = await super.baseFindByIds({
-      ids,
-      relationsToLoad: { sales: true },
-      cu,
-      scopes,
-      manager,
-    });
+    scopes = this.scopesFor(cu, scopes);
+    const customers = await super.baseFindByIds({ ids, cu, scopes, manager });
 
     if (customers.length === 0) {
-      throw new NotFoundError('No customers found.');
+      throw new NotFoundError('Cliente no encontrado');
     }
-
-    await Promise.all(
-      customers.map((customer) =>
-        customer.sales?.length
-          ? this.saleService.remove(
-              customer.sales.map((s) => s.id) as number[],
-              cu,
-              scopes,
-              manager,
-            )
-          : Promise.resolve(),
-      ),
-    );
 
     return super.baseDeleteMany({
       ids: customers.map((c) => c.id) as Array<number>,
@@ -207,10 +217,10 @@ export class CustomerService extends BaseService<Customer> {
     manager?: EntityManager,
   ): Promise<number> {
     if (ids.length === 0) return 0;
+    scopes = this.scopesFor(cu, scopes);
 
     const customers = await super.baseFindByIds({
       ids,
-      relationsToLoad: { sales: true },
       cu,
       scopes,
       manager,
@@ -220,26 +230,39 @@ export class CustomerService extends BaseService<Customer> {
     const deletedCustomers = customers.filter((c) => c.deletedAt);
     if (deletedCustomers.length === 0) return 0;
 
-    await Promise.all(
-      deletedCustomers.map((customer) =>
-        customer.sales?.length
-          ? this.saleService.restore(
-              customer.sales
-                .filter((s) => s.deletedAt)
-                .map((s) => s.id) as number[],
-              cu,
-              scopes,
-              manager,
-            )
-          : Promise.resolve(),
-      ),
-    );
-
     return super.baseRestoreDeletedMany({
       ids: deletedCustomers.map((c) => c.id) as Array<number>,
       cu,
       scopes,
       manager,
     });
+  }
+
+  private async assertUnique(
+    data: Partial<Customer>,
+    businessId: number | undefined,
+    exceptId?: number,
+    manager?: EntityManager,
+  ): Promise<void> {
+    const repository =
+      manager?.getRepository(Customer) ?? this.customerRepository;
+
+    for (const { field, label } of UNIQUE_FIELDS) {
+      const value = data[field];
+      if (!value) continue;
+
+      const existing = await repository.findOne({
+        where: {
+          [field]: value,
+          ...(businessId && { business: { id: businessId } }),
+          ...(exceptId && { id: Not(exceptId) }),
+        },
+      });
+      if (existing) {
+        throw new ConflictError(
+          `Ya hay un cliente con ${label}: ${existing.fullName ?? existing.name}`,
+        );
+      }
+    }
   }
 }

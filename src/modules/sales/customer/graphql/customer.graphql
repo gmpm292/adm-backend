@@ -22,7 +22,8 @@ type Customer implements SecurityBaseEntity {
   loyaltyPoints: Int!
   additionalInfo: JSON
   user: User
-  sales: [Sale]!
+  # Solo si se cargan; el historial se consulta con salesByCustomer
+  sales: [Sale]
 }
 
 type CustomersSummary {

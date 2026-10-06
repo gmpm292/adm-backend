@@ -34,7 +34,11 @@ type Sale implements SecurityBaseEntity {
   paymentMethod: PaymentMethod
   invoiceNumber: String
   paymentDetails: JSON
-  salesUser: User
+  salesUser: User @deprecated(reason: "Siempre nulo: usar salesWorker")
+  salesWorker: Worker
+  totalAmountCurrency: String
+  # Pagos recibidos: [{ amount, currency, paymentMethod }]
+  payments: JSON
   customer: Customer
   details: [SaleDetail]
   saleStatus: SaleStatus
@@ -50,15 +54,112 @@ type SalesSummary {
   totalCount: Int!
 }
 
+type SaleCurrencyTotal {
+  currency: String!
+  total: Float!
+}
+
 type SalePaymentValidation {
   valid: Boolean
   message: String
+  # Moneda en la que se expresan los importes
+  currency: String
+  # Precio de la venta
   totalInBaseCurrency: Float
+  paidInBaseCurrency: Float
+  pendingInBaseCurrency: Float
+  changeInBaseCurrency: Float
+  # Precio en cada moneda en que la venta puede cobrarse completa
+  totals: [SaleCurrencyTotal!]
+}
+
+type SaleQuotePrice {
+  currency: String!
+  unitPrice: Float!
+  total: Float!
+}
+
+type SaleQuoteLine {
+  productId: Int!
+  quantity: Float!
+  available: Float!
+  prices: [SaleQuotePrice!]!
+  error: String
+}
+
+type SaleQuote {
+  valid: Boolean!
+  message: String
+  currency: String
+  totalInBaseCurrency: Float!
+  paidInBaseCurrency: Float!
+  pendingInBaseCurrency: Float!
+  changeInBaseCurrency: Float!
+  totals: [SaleCurrencyTotal!]!
+  lines: [SaleQuoteLine!]!
+}
+
+type SaleCatalogOffice {
+  id: Int!
+  name: String!
+  businessId: Int!
+  businessName: String
+}
+
+type SaleCatalogCurrency {
+  code: String!
+  name: String!
+  symbol: String!
+  exchangeRateToCUP: Float!
+}
+
+type SaleCatalogCategory {
+  id: Int!
+  name: String!
+}
+
+type SaleCatalogPrice {
+  currency: String!
+  unitPrice: Float!
+}
+
+type SaleCatalogProduct {
+  id: Int!
+  name: String!
+  categoryId: Int
+  categoryName: String
+  unit: String
+  stock: Float!
+  baseCurrency: String!
+  prices: [SaleCatalogPrice!]!
+  minQuantity: Float
+  maxQuantity: Float
+}
+
+type SaleCatalogWorker {
+  id: Int!
+  name: String!
+  workerType: String!
+  userId: Int
+}
+
+# Lo que la pantalla de venta necesita de una tienda
+type SaleCatalog {
+  office: SaleCatalogOffice
+  offices: [SaleCatalogOffice!]!
+  currencies: [SaleCatalogCurrency!]!
+  defaultCurrency: String
+  categories: [SaleCatalogCategory!]!
+  products: [SaleCatalogProduct!]!
+  workers: [SaleCatalogWorker!]!
+  # Trabajador vinculado al usuario de la sesión
+  currentWorkerId: Int
+  canChooseSeller: Boolean!
 }
 
 input CreateSaleInput {
-  businessId: Int!
-  officeId: Int!
+  businessId: Int
+  officeId: Int
   departmentId: Int
   teamId: Int
 
@@ -66,7 +167,7 @@ input CreateSaleInput {
   customerId: Int
   #totalAmount: Float!
   #effectiveDate: Date
-  paymentMethod: PaymentMethod!
+  paymentMethod: PaymentMethod
   paymentDetails: JSON
   invoiceNumber: String
   details: [SaleDetailInput!]!
@@ -75,6 +176,11 @@ input CreateSaleInput {
   hasDelivery: Boolean
   deliveryWorkerId: Int
   deliveryNotes: String
+
+  # Con pagos la venta se crea ya cobrada
+  payments: [MakeSalePaymentInput!]
+  baseCurrency: String
+  customDate: Date
 }
 
 input SaleDetailInput {
@@ -84,8 +190,8 @@ input SaleDetailInput {
 }
 
 input UpdateSaleInput {
-  businessId: Int!
-  officeId: Int!
+  businessId: Int
+  officeId: Int
   departmentId: Int
   teamId: Int
 
@@ -122,6 +228,12 @@ input ValidateSalePaymentsInput {
   baseCurrency: String
 }
 
+input QuoteSaleInput {
+  details: [SaleDetailInput!]!
+  payments: [MakeSalePaymentInput!]
+  baseCurrency: String
+}
+
 input RefundSaleInput {
   saleId: Int
   saleDetailIds: [Int!]
@@ -131,6 +243,8 @@ extend type Query {
   sales(options: ListOptions): SalesSummary!
   sale(id: Int!): Sale
   salesByCustomer(customerId: Int!): [Sale]!
+  saleCatalog(officeId: Int): SaleCatalog!
+  quoteSale(quoteSaleInput: QuoteSaleInput!): SaleQuote!
 }
 
 extend type Mutation {
@@ -140,6 +254,7 @@ extend type Mutation {
   restoreSales(ids: [Int!]!): Int
 
   makeSale(makeSaleInput: MakeSaleInput!): Sale!
+  cancelSale(id: Int!): Sale!
   validateSalePayments(
     validateSalePaymentsInput: ValidateSalePaymentsInput
   ): SalePaymentValidation!

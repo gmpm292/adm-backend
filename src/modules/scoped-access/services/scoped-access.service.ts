@@ -35,6 +35,24 @@ export class ScopedAccessService {
     return this.showErrorDetails ? `${baseMessage}${details}` : baseMessage;
   }
 
+  /**
+   * Alcance a usar cuando el servicio tiene uno propio por defecto: si la
+   * empresa configuró el suyo para la operación en curso, manda ese
+   * (`undefined` deja que lo resuelvan los métodos `forBase*`).
+   */
+  public scopesOrDefault(
+    cu: JWTPayload | undefined,
+    fallback: ScopedAccessEnum[],
+  ): ScopedAccessEnum[] | undefined {
+    if (!cu) return fallback;
+    const configured =
+      this.resourceScopedAccessService.findByBusinessAndQueryOrEndpoint(
+        cu.businessId as number,
+        cu.currentQueryOrEndpoint as string,
+      )?.accessLevels;
+    return configured ? undefined : fallback;
+  }
+
   public forBaseFindOne<Entity extends ObjectLiteral>(
     cu: JWTPayload,
     repository: Repository<Entity>,

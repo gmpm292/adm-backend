@@ -379,7 +379,9 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
     const entityName = this.getEntityName();
 
     // 1. Primero validamos que la entidad exista y el usuario tenga acceso
-    const dataInDB = await this.baseFindOne({ id, cu, scopes });
+    // Con el mismo manager: dentro de una transacción la fila puede no estar
+    // confirmada todavía y otra conexión no la vería.
+    const dataInDB = await this.baseFindOne({ id, cu, scopes, manager });
     if (!dataInDB) {
       const details = this.showErrorDetails ? ` con ID ${id}` : '';
       throw new NotFoundError(

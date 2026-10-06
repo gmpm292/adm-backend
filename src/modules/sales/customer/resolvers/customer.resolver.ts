@@ -90,28 +90,14 @@ export class CustomerResolver {
     );
   }
 
-  @Roles(
-    Role.SUPER,
-    Role.PRINCIPAL,
-    Role.ADMIN,
-    Role.MANAGER,
-    Role.SUPERVISOR,
-    Role.AGENT,
-  )
+  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('removeCustomers')
   async remove(@CurrentUser() user: JWTPayload, @Args('ids') ids: number[]) {
     return this.customerService.remove(ids, user);
   }
 
-  @Roles(
-    Role.SUPER,
-    Role.PRINCIPAL,
-    Role.ADMIN,
-    Role.MANAGER,
-    Role.SUPERVISOR,
-    Role.AGENT,
-  )
+  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('restoreCustomers')
   async restore(@CurrentUser() user: JWTPayload, @Args('ids') ids: number[]) {
