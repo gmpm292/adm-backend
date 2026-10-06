@@ -1,8 +1,6 @@
-/* eslint-disable @typescript-eslint/no-unsafe-return */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Injectable } from '@nestjs/common';
-import { DeepPartial, EntityManager, Repository } from 'typeorm';
-import { InjectEntityManager, InjectRepository } from '@nestjs/typeorm';
+import { EntityManager, Repository } from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
 import { CreateOfficeInput } from '../dto/create-office.input';
 import { UpdateOfficeInput } from '../dto/update-office.input';
 import { BaseService } from '../../../../core/services/base.service';
@@ -11,28 +9,47 @@ import {
   ListOptions,
   ListSummary,
 } from '../../../../core/graphql/remote-operations';
+import { SortDirection } from '../../../../core/graphql/remote-operations/enums/sort-direction.enum';
 import { NotFoundError } from '../../../../core/errors/appErrors/NotFoundError.error';
+import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
+import { ForbiddenResourceError } from '../../../../core/errors/appErrors/ForbiddenResourceError';
 import { Business } from '../../business/entities/co_business.entity';
+import { Department } from '../../department/entities/co_department.entity';
+import { User } from '../../../users/entities/user.entity';
 import { JWTPayload } from '../../../../modules/auth/dto/jwt-payload.dto';
 import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
 import { ScopedAccessService } from '../../../scoped-access/services/scoped-access.service';
-import { DepartmentService } from '../../department/services/department.service';
-import { TeamService } from '../../team/services/team.service';
-import { UsersService } from '../../../users/services/users.service';
+import {
+  assertNotInUse,
+  assertUniqueName,
+  cleanName,
+  cleanText,
+  plural,
+} from '../../helpers/company-structure.helper';
 
 @Injectable()
 export class OfficeService extends BaseService<Office> {
   constructor(
-    @InjectEntityManager()
-    private readonly manager: EntityManager,
     @InjectRepository(Office)
     private officeRepository: Repository<Office>,
-    private userService: UsersService,
-    private departmentService: DepartmentService,
-    private teamService: TeamService,
     protected scopedAccessService: ScopedAccessService,
   ) {
     super(officeRepository);
+  }
+
+  private managerOf(manager?: EntityManager): EntityManager {
+    return manager ?? this.officeRepository.manager;
+  }
+
+  private async findBusiness(
+    businessId: number,
+    manager?: EntityManager,
+  ): Promise<Business> {
+    const business = await this.managerOf(manager).findOne(Business, {
+      where: { id: businessId },
+    });
+    if (!business) throw new NotFoundError('Empresa no encontrada');
+    return business;
   }
 
   async create(
@@ -41,23 +58,40 @@ export class OfficeService extends BaseService<Office> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Office> {
-    const { businessId, address, description, name, officeType } =
-      createOfficeInput;
+    const { businessId, officeType } = createOfficeInput;
+    const name = cleanName(createOfficeInput.name);
+    // Quien pertenece a una empresa solo crea oficinas en la suya.
+    if (cu?.businessId && cu.businessId !== businessId) {
+      throw new ForbiddenResourceError(
+        'Solo puedes crear oficinas en tu empresa',
+      );
+    }
+    const business = await this.findBusiness(businessId, manager);
+
+    await assertUniqueName(
+      this.managerOf(manager),
+      Office,
+      name,
+      { business: { id: businessId } },
+      `"${business.name}" ya tiene una oficina llamada "${name}"`,
+    );
+
+    // `description` y `address` son columnas obligatorias: vacías, no nulas.
     const office = {
       business: { id: businessId } as Business,
-      officeType: officeType,
-      name: name,
-      description: description,
-      address: address,
+      officeType,
+      name,
+      description: cleanText(createOfficeInput.description) ?? '',
+      address: cleanText(createOfficeInput.address) ?? '',
     } as Office;
 
-    return super.baseCreate({
+    const created = await super.baseCreate({
       data: office,
-      uniqueFields: ['name'],
       cu,
       scopes,
       manager,
     });
+    return this.findOne(created.id as number, cu, scopes, manager);
   }
 
   async find(
@@ -66,8 +100,12 @@ export class OfficeService extends BaseService<Office> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<ListSummary> {
+    const sorts = options?.sorts?.length
+      ? options.sorts
+      : [{ property: 'name', direction: SortDirection.ASC }];
+
     return await super.baseFind({
-      options,
+      options: { ...(options ?? { skip: 0, take: 10 }), sorts },
       relationsToLoad: ['business', 'departments'],
       cu,
       scopes,
@@ -100,72 +138,75 @@ export class OfficeService extends BaseService<Office> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Office> {
-    const { businessId, ...rest } = updateOfficeInput;
-    const office = await super.baseFindOne({ id, cu, scopes, manager });
-    if (!office) {
-      throw new NotFoundError();
+    const office = await this.findOne(id, cu, scopes, manager);
+    const data: Partial<Office> = {};
+
+    const { businessId } = updateOfficeInput;
+    if (businessId && businessId !== office.business?.id) {
+      // Sus departamentos y usuarios seguirían apuntando a la otra empresa.
+      throw new BadRequestError(
+        'Una oficina no puede cambiarse de empresa: crea otra en la empresa nueva',
+      );
     }
-    const data: DeepPartial<Office> = {
-      ...office,
-      business: businessId ? ({ id: businessId } as Business) : office.business,
-      ...rest,
-    };
-    return super.baseUpdate({ id, data, cu, scopes, manager });
+
+    if (updateOfficeInput.name !== undefined) {
+      data.name = cleanName(updateOfficeInput.name);
+      await assertUniqueName(
+        this.managerOf(manager),
+        Office,
+        data.name,
+        { business: { id: office.business?.id } },
+        `La empresa ya tiene una oficina llamada "${data.name}"`,
+        id,
+      );
+    }
+    if (updateOfficeInput.officeType) {
+      data.officeType = updateOfficeInput.officeType;
+    }
+    for (const field of ['description', 'address'] as const) {
+      if (updateOfficeInput[field] !== undefined) {
+        data[field] = cleanText(updateOfficeInput[field]) ?? '';
+      }
+    }
+
+    if (Object.keys(data).length > 0) {
+      await super.baseUpdate({ id, data, cu, scopes, manager });
+    }
+    return this.findOne(id, cu, scopes, manager);
   }
 
+  /** Solo se elimina una oficina vacía: sin departamentos ni usuarios. */
   async remove(
     ids: number[],
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Office[]> {
-    const offices = await super.baseFindByIds({
-      ids,
-      relationsToLoad: {
-        users: true,
-        departments: {
-          teams: true,
-        },
-      },
-      cu,
-      scopes,
-      manager,
-    });
+    const offices = await super.baseFindByIds({ ids, cu, scopes, manager });
 
     if (offices.length === 0) {
-      throw new NotFoundError('No offices found');
+      throw new NotFoundError('Oficina no encontrada');
     }
 
-    await Promise.all([
-      ...offices.flatMap((office) =>
-        office.users?.length
-          ? this.userService.remove(
-              office.users.map((u) => u.id) as Array<number>,
-              undefined,
-              cu as JWTPayload,
-              scopes,
-              manager,
-            )
-          : Promise.resolve(),
-      ),
-      ...offices.flatMap((office) =>
-        office.departments?.length
-          ? this.departmentService.remove(
-              office.departments.map((d) => d.id) as number[],
-              cu,
-              scopes,
-              manager,
-            )
-          : Promise.resolve(),
-      ),
+    await assertNotInUse(this.managerOf(manager), offices, [
+      {
+        entity: Department,
+        where: (id) => ({ office: { id } }),
+        label: plural('departamento', 'departamentos'),
+      },
+      {
+        entity: User,
+        where: (id) => ({ office: { id } }),
+        label: plural('usuario', 'usuarios'),
+      },
     ]);
 
     return super.baseDeleteMany({
-      ids: offices.map((o) => o.id) as Array<number>,
+      ids: offices.map((o) => o.id) as number[],
       cu,
       scopes,
-      softRemove: true,
       manager,
+      softRemove: true,
     });
   }
 
@@ -179,50 +220,24 @@ export class OfficeService extends BaseService<Office> {
 
     const offices = await super.baseFindByIds({
       ids,
-      relationsToLoad: {
-        users: true,
-        departments: {
-          teams: true,
-        },
-      },
+      relationsToLoad: { business: true },
       cu,
       scopes,
-      withDeleted: true,
       manager,
+      withDeleted: true,
     });
 
     const deletedOffices = offices.filter((o) => o.deletedAt);
     if (deletedOffices.length === 0) return 0;
 
-    await Promise.all([
-      ...deletedOffices.flatMap((office) =>
-        office.users?.filter((u) => u.deletedAt)?.length
-          ? this.userService.restore(
-              office.users
-                .filter((u) => u.deletedAt)
-                .map((u) => u.id as number),
-              cu as JWTPayload,
-              scopes,
-              manager,
-            )
-          : Promise.resolve(),
-      ),
-      ...deletedOffices.flatMap((office) =>
-        office.departments?.filter((d) => d.deletedAt)?.length
-          ? this.departmentService.restore(
-              office.departments
-                .filter((d) => d.deletedAt)
-                .map((d) => d.id) as number[],
-              cu,
-              scopes,
-              manager,
-            )
-          : Promise.resolve(),
-      ),
-    ]);
+    if (deletedOffices.some((o) => !o.business || o.business.deletedAt)) {
+      throw new BadRequestError(
+        'La empresa de esta oficina está eliminada: restáurala primero',
+      );
+    }
 
     return super.baseRestoreDeletedMany({
-      ids: deletedOffices.map((o) => o.id) as Array<number>,
+      ids: deletedOffices.map((o) => o.id) as number[],
       cu,
       scopes,
       manager,

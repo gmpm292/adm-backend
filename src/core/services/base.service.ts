@@ -268,8 +268,9 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
       id: In(ids),
     } as FindOptionsWhere<Entity>;
 
-    // Apply scope filters if available
-    if (cu && this.scopedAccessService && scopes?.length) {
+    // Con o sin alcance explícito: sin él se aplica el de por defecto, igual
+    // que en baseFindOne. Si no, eliminar o restaurar por lote no filtraba.
+    if (cu && this.scopedAccessService) {
       const scopeFilters = this.scopedAccessService.forBaseFindOne(
         cu,
         repository,

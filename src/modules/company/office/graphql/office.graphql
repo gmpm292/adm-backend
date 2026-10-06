@@ -25,7 +25,7 @@ input CreateOfficeInput {
   businessId: Int!
   officeType: OfficeType!
   name: String!
-  description: String!
+  description: String
   address: String
 }
 

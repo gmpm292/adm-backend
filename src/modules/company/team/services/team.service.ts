@@ -1,11 +1,6 @@
-import { forwardRef, Inject, Injectable } from '@nestjs/common';
-import { InjectEntityManager, InjectRepository } from '@nestjs/typeorm';
-import {
-  DeepPartial,
-  EntityManager,
-  FindOptionsWhere,
-  Repository,
-} from 'typeorm';
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { EntityManager, FindOptionsWhere, Repository } from 'typeorm';
 import { CreateTeamInput } from '../dto/create-team.input';
 import { UpdateTeamInput } from '../dto/update-team.input';
 import { BaseService } from '../../../../core/services/base.service';
@@ -14,29 +9,49 @@ import {
   ListOptions,
   ListSummary,
 } from '../../../../core/graphql/remote-operations';
+import { SortDirection } from '../../../../core/graphql/remote-operations/enums/sort-direction.enum';
 import { NotFoundError } from '../../../../core/errors/appErrors/NotFoundError.error';
-import { ConditionalOperator } from '../../../../core/graphql/remote-operations/enums/conditional-operation.enum';
-import { ConflictError } from '../../../../core/errors/appErrors/ConflictError.error';
+import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
 import { JWTPayload } from '../../../../modules/auth/dto/jwt-payload.dto';
 import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
-import { UsersService } from '../../../users/services/users.service';
-import { DepartmentService } from '../../department/services/department.service';
 import { ScopedAccessService } from '../../../scoped-access/services/scoped-access.service';
 import { Department } from '../../department/entities/co_department.entity';
+import { User } from '../../../users/entities/user.entity';
+import {
+  assertNotInUse,
+  assertUniqueName,
+  cleanName,
+  cleanText,
+  plural,
+} from '../../helpers/company-structure.helper';
+
+const TEAM_RELATIONS = { department: true, office: true, business: true };
 
 @Injectable()
 export class TeamService extends BaseService<Team> {
   constructor(
-    @InjectEntityManager()
-    private readonly manager: EntityManager,
     @InjectRepository(Team)
     private teamRepository: Repository<Team>,
-    @Inject(forwardRef(() => DepartmentService))
-    private departmentService: DepartmentService,
-    private userService: UsersService,
     protected scopedAccessService: ScopedAccessService,
   ) {
     super(teamRepository);
+  }
+
+  private managerOf(manager?: EntityManager): EntityManager {
+    return manager ?? this.teamRepository.manager;
+  }
+
+  /** El departamento con su oficina y su empresa: el equipo hereda las tres. */
+  private async findDepartment(
+    departmentId: number,
+    manager?: EntityManager,
+  ): Promise<Department> {
+    const department = await this.managerOf(manager).findOne(Department, {
+      where: { id: departmentId },
+      relations: { office: true, business: true },
+    });
+    if (!department) throw new NotFoundError('Departamento no encontrado');
+    return department;
   }
 
   async create(
@@ -45,34 +60,38 @@ export class TeamService extends BaseService<Team> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Team> {
-    const { departmentId, teamType, ...rest } = createTeamInput;
+    const name = cleanName(createTeamInput.name);
+    const department = await this.findDepartment(
+      createTeamInput.departmentId,
+      manager,
+    );
 
-    // Get department with its office and business
-    const department = departmentId
-      ? await this.departmentService.findOne(departmentId, cu, scopes, manager)
-      : null;
+    await assertUniqueName(
+      this.managerOf(manager),
+      Team,
+      name,
+      { department: { id: department.id } },
+      `"${department.name}" ya tiene un equipo llamado "${name}"`,
+    );
 
-    if (!department && departmentId) {
-      throw new NotFoundError('Department not found');
-    }
-
-    const team: DeepPartial<Team> = {
-      ...rest,
-      teamType,
-      department: department ? { id: departmentId } : undefined,
-      office: department?.office ? { id: department.office.id } : undefined,
-      business: department?.business
+    const team = {
+      name,
+      description: cleanText(createTeamInput.description),
+      teamType: createTeamInput.teamType,
+      department: { id: department.id },
+      office: department.office ? { id: department.office.id } : undefined,
+      business: department.business
         ? { id: department.business.id }
         : undefined,
-    };
+    } as Team;
 
-    await this.validateUniqueTeam(createTeamInput, cu, scopes, manager);
-    return super.baseCreate({
+    const created = await super.baseCreate({
       data: team,
       cu,
       scopes,
       manager,
     });
+    return this.findOne(created.id as number, cu, scopes, manager);
   }
 
   async find(
@@ -81,8 +100,12 @@ export class TeamService extends BaseService<Team> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<ListSummary> {
+    const sorts = options?.sorts?.length
+      ? options.sorts
+      : [{ property: 'name', direction: SortDirection.ASC }];
+
     return await super.baseFind({
-      options,
+      options: { ...(options ?? { skip: 0, take: 10 }), sorts },
       relationsToLoad: ['department', 'office', 'business'],
       cu,
       scopes,
@@ -98,11 +121,7 @@ export class TeamService extends BaseService<Team> {
   ): Promise<Team> {
     return super.baseFindOne({
       id,
-      relationsToLoad: {
-        department: true,
-        office: true,
-        business: true,
-      },
+      relationsToLoad: TEAM_RELATIONS,
       cu,
       scopes,
       manager,
@@ -117,11 +136,7 @@ export class TeamService extends BaseService<Team> {
   ): Promise<Team> {
     return super.baseFindOneByFilters({
       filters,
-      relationsToLoad: {
-        department: true,
-        office: true,
-        business: true,
-      },
+      relationsToLoad: TEAM_RELATIONS,
       cu,
       scopes,
       manager,
@@ -135,75 +150,59 @@ export class TeamService extends BaseService<Team> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Team> {
-    const { departmentId, teamType, ...rest } = updateTeamInput;
-    const team = await super.baseFindOne({ id, cu, scopes, manager });
-    if (!team) {
-      throw new NotFoundError();
-    }
+    const team = await this.findOne(id, cu, scopes, manager);
+    const data: Partial<Team> = {};
 
-    let department: Department | undefined;
-    if (departmentId) {
-      department = await this.departmentService.findOne(
-        departmentId,
-        cu,
-        scopes,
-        manager,
+    const { departmentId } = updateTeamInput;
+    if (departmentId && departmentId !== team.department?.id) {
+      // Sus usuarios seguirían apuntando al departamento anterior.
+      throw new BadRequestError(
+        'Un equipo no puede cambiarse de departamento: crea otro en el departamento nuevo',
       );
-      if (!department) {
-        throw new NotFoundError('Department not found');
-      }
     }
 
-    const updateData: DeepPartial<Team> = {
-      ...rest,
-      teamType: teamType || team.teamType,
-      department: departmentId ? { id: departmentId } : team.department,
-      office: department?.office ? { id: department.office.id } : team.office,
-      business: department?.office?.business
-        ? { id: department.office.business.id }
-        : team.business,
-    };
+    if (updateTeamInput.name !== undefined) {
+      data.name = cleanName(updateTeamInput.name);
+      await assertUniqueName(
+        this.managerOf(manager),
+        Team,
+        data.name,
+        { department: { id: team.department?.id } },
+        `El departamento ya tiene un equipo llamado "${data.name}"`,
+        id,
+      );
+    }
+    if (updateTeamInput.teamType) data.teamType = updateTeamInput.teamType;
+    if (updateTeamInput.description !== undefined) {
+      data.description = cleanText(updateTeamInput.description) as string;
+    }
 
-    return super.baseUpdate({
-      id,
-      data: updateData,
-      cu,
-      scopes,
-      manager,
-    });
+    if (Object.keys(data).length > 0) {
+      await super.baseUpdate({ id, data, cu, scopes, manager });
+    }
+    return this.findOne(id, cu, scopes, manager);
   }
 
+  /** Solo se elimina un equipo vacío: sus usuarios no se eliminan con él. */
   async remove(
     ids: number[],
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Team[]> {
-    const teams = await super.baseFindByIds({
-      ids,
-      relationsToLoad: { users: true },
-      cu,
-      scopes,
-      manager,
-    });
+    const teams = await super.baseFindByIds({ ids, cu, scopes, manager });
 
     if (teams.length === 0) {
-      throw new NotFoundError('No teams found');
+      throw new NotFoundError('Equipo no encontrado');
     }
 
-    await Promise.all(
-      teams.map((team) =>
-        team.users?.length
-          ? this.userService.remove(
-              team.users.map((u) => u.id) as number[],
-              undefined,
-              cu as JWTPayload,
-              scopes,
-              manager,
-            )
-          : Promise.resolve(),
-      ),
-    );
+    await assertNotInUse(this.managerOf(manager), teams, [
+      {
+        entity: User,
+        where: (id) => ({ team: { id } }),
+        label: plural('usuario', 'usuarios'),
+      },
+    ]);
 
     return super.baseDeleteMany({
       ids: teams.map((t) => t.id) as number[],
@@ -224,7 +223,7 @@ export class TeamService extends BaseService<Team> {
 
     const teams = await super.baseFindByIds({
       ids,
-      relationsToLoad: { users: true },
+      relationsToLoad: { department: true },
       cu,
       scopes,
       withDeleted: true,
@@ -234,18 +233,11 @@ export class TeamService extends BaseService<Team> {
     const deletedTeams = teams.filter((t) => t.deletedAt);
     if (deletedTeams.length === 0) return 0;
 
-    await Promise.all(
-      deletedTeams.map((team) =>
-        team.users?.filter((u) => u.deletedAt)?.length
-          ? this.userService.restore(
-              team.users.filter((u) => u.deletedAt).map((u) => u.id as number),
-              cu as JWTPayload,
-              scopes,
-              manager,
-            )
-          : Promise.resolve(),
-      ),
-    );
+    if (deletedTeams.some((t) => !t.department || t.department.deletedAt)) {
+      throw new BadRequestError(
+        'El departamento de este equipo está eliminado: restáuralo primero',
+      );
+    }
 
     return super.baseRestoreDeletedMany({
       ids: deletedTeams.map((t) => t.id) as number[],
@@ -253,39 +245,5 @@ export class TeamService extends BaseService<Team> {
       scopes,
       manager,
     });
-  }
-
-  async validateUniqueTeam(
-    createTeamInput: CreateTeamInput,
-    cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
-    manager?: EntityManager,
-  ): Promise<boolean> {
-    const dataInDB = await this.baseFind({
-      options: {
-        take: 0,
-        filters: [
-          {
-            property: 'teamType',
-            operator: ConditionalOperator.EQUAL,
-            value: createTeamInput.teamType,
-          },
-          {
-            property: 'department.id',
-            operator: ConditionalOperator.EQUAL,
-            value: createTeamInput.departmentId.toString(),
-          },
-        ],
-      },
-      relationsToLoad: ['department'],
-      cu,
-      scopes,
-      manager,
-    });
-    if (dataInDB.totalCount > 0) {
-      throw new ConflictError(`The Team already exists`);
-    }
-
-    return true;
   }
 }

@@ -12,7 +12,8 @@ export class CreateOfficeInput {
   name: string;
 
   @IsString()
-  description: string;
+  @IsOptional()
+  description?: string;
 
   @IsString()
   @IsOptional()
