@@ -1,8 +1,10 @@
-import { IsEmail, IsNotEmpty } from 'class-validator';
+import { IsEmail, IsString, MinLength } from 'class-validator';
 
 export class ChangePasswordByEmailInput {
   @IsEmail()
   public email: string;
-  @IsNotEmpty()
+
+  @IsString()
+  @MinLength(8)
   public newPassword: string;
 }

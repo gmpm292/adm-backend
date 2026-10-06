@@ -99,7 +99,7 @@ input CreateUserInput {
   email: String!
   name: String!
   lastName: String
-  mobile: String
+  mobile: String!
   role: [Role]!
 
   businessId: Int
@@ -145,6 +145,7 @@ input UpdateUserProfileInput {
 input UpdateUserRoleInput {
   id: Int!
   role: [Role!]!
+  businessId: Int
   officeId: Int
   departmentId: Int
   teamId: Int
