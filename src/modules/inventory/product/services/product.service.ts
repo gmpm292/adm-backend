@@ -11,7 +11,7 @@ import {
   ListOptions,
   ListSummary,
 } from '../../../../core/graphql/remote-operations';
-import { NotFoundError } from '../../../../core/errors/appErrors/NotFoundError.error';
+import { ConflictError } from '../../../../core/errors/appErrors/ConflictError.error';
 import { JWTPayload } from '../../../auth/dto/jwt-payload.dto';
 import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
 import { ScopedAccessService } from '../../../scoped-access/services/scoped-access.service';
@@ -54,6 +54,8 @@ export class ProductService extends BaseService<Product> {
   ): Promise<Product> {
     const { categoryId, unitOfMeasureId, materialCostId, ...rest } =
       createProductInput;
+    rest.name = rest.name.trim();
+    this.assertValidRules(rest);
 
     const category = await this.categoryService.findOne(
       categoryId,
@@ -61,22 +63,15 @@ export class ProductService extends BaseService<Product> {
       scopes,
       manager,
     );
-    if (!category) {
-      throw new NotFoundError('Category not found');
-    }
+    await this.assertUniqueName(rest.name, categoryId, undefined, manager);
 
-    // Validar y obtener unidad de medida
     const unitOfMeasure = await this.unitOfMeasureService.findOne(
       unitOfMeasureId,
       cu,
       scopes,
       manager,
     );
-    if (!unitOfMeasure) {
-      throw new NotFoundError('Unit of measure not found');
-    }
 
-    // Validar y obtener material cost (si se proporciona)
     let materialCost: MaterialCost | undefined = undefined;
     if (materialCostId) {
       materialCost = await this.materialCostService.findOne(
@@ -85,9 +80,6 @@ export class ProductService extends BaseService<Product> {
         scopes,
         manager,
       );
-      if (!materialCost) {
-        throw new NotFoundError('Material cost not found');
-      }
     }
 
     const product: Product = {
@@ -124,6 +116,8 @@ export class ProductService extends BaseService<Product> {
         'unitOfMeasure',
         'materialCost',
         'materialCost.currency',
+        'business',
+        'office',
       ],
       cu,
       scopes,
@@ -178,78 +172,141 @@ export class ProductService extends BaseService<Product> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Product> {
-    const product = await super.baseFindOne({ id, cu, scopes, manager });
-    if (!product) {
-      throw new NotFoundError();
-    }
+    const product = await super.baseFindOne({
+      id,
+      relationsToLoad: { category: true },
+      cu,
+      scopes,
+      manager,
+    });
 
-    if (updateProductInput.categoryId) {
+    /* eslint-disable @typescript-eslint/no-unused-vars */
+    const {
+      id: _id,
+      categoryId,
+      unitOfMeasureId,
+      materialCostId,
+      businessId,
+      officeId,
+      departmentId,
+      teamId,
+      ...changes
+    } = updateProductInput;
+    /* eslint-enable @typescript-eslint/no-unused-vars */
+    if (changes.name !== undefined) changes.name = changes.name.trim();
+
+    // Lo que llega sustituye a lo guardado; lo que no llega se queda
+    const data: Partial<Product> = { ...changes } as Partial<Product>;
+    this.assertValidRules({ ...product, ...data });
+
+    if (categoryId) {
       const category = await this.categoryService.findOne(
-        updateProductInput.categoryId,
+        categoryId,
         cu,
         scopes,
         manager,
       );
-      if (!category) {
-        throw new NotFoundError('Category not found');
-      }
-      product.category = category;
-      product.business = category.business;
-      product.office = category.office;
-      product.department = category.department;
-      product.team = category.team;
+      data.category = category;
+      data.business = category.business;
+      data.office = category.office;
+      data.department = category.department;
+      data.team = category.team;
     }
+    await this.assertUniqueName(
+      data.name ?? product.name,
+      categoryId ?? (product.category?.id as number),
+      id,
+      manager,
+    );
 
-    // Actualizar unidad de medida si se proporciona
-    if (updateProductInput.unitOfMeasureId) {
-      const unitOfMeasure = await this.unitOfMeasureService.findOne(
-        updateProductInput.unitOfMeasureId,
+    if (unitOfMeasureId) {
+      data.unitOfMeasure = await this.unitOfMeasureService.findOne(
+        unitOfMeasureId,
         cu,
         scopes,
         manager,
       );
-      if (!unitOfMeasure) {
-        throw new NotFoundError('Unit of measure not found');
-      }
-      product.unitOfMeasure = unitOfMeasure;
     }
 
-    // Actualizar material cost si se proporciona
-    if (updateProductInput.materialCostId !== undefined) {
-      if (updateProductInput.materialCostId === null) {
-        // Si se envía explícitamente null, quitar la relación
-        product.materialCost = undefined;
-      } else {
-        const materialCost = await this.materialCostService.findOne(
-          updateProductInput.materialCostId,
-          cu,
-          scopes,
-          manager,
-        );
-        if (!materialCost) {
-          throw new NotFoundError('Material cost not found');
-        }
-        product.materialCost = materialCost;
-      }
+    // `null` quita el material; si no llega, se queda el que tenía
+    if (materialCostId === null) {
+      data.materialCost = null as unknown as MaterialCost;
+    } else if (materialCostId !== undefined) {
+      data.materialCost = await this.materialCostService.findOne(
+        materialCostId,
+        cu,
+        scopes,
+        manager,
+      );
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { categoryId, ...rest } = updateProductInput;
     return super.baseUpdate({
       id,
-      data: { ...rest, ...product },
+      data,
       cu,
       scopes,
       manager,
     });
   }
 
+  /** Reglas que el formulario ya comprueba, repetidas aquí por si acaso */
+  private assertValidRules(
+    product: Pick<Partial<Product>, 'saleRules' | 'pricingConfig'>,
+  ): void {
+    const min = product.saleRules?.minQuantity;
+    const max = product.saleRules?.maxQuantity;
+    if (min && max && min > max) {
+      throw new BadRequestError(
+        'La cantidad mínima de venta no puede ser mayor que la máxima',
+      );
+    }
+    const fixed = product.pricingConfig?.fixedPrices ?? [];
+    if (new Set(fixed.map((p) => p.currency)).size !== fixed.length) {
+      throw new BadRequestError('Hay dos precios fijos en la misma moneda');
+    }
+  }
+
+  /** Dos productos con el mismo nombre en una categoría son el mismo */
+  private async assertUniqueName(
+    name: string,
+    categoryId: number,
+    exceptId: number | undefined,
+    manager?: EntityManager,
+  ): Promise<void> {
+    const repository =
+      manager?.getRepository(Product) ?? this.productRepository;
+    const duplicated = await repository
+      .createQueryBuilder('product')
+      .where('LOWER(TRIM(product.name)) = LOWER(:name)', { name: name.trim() })
+      .andWhere('"product"."categoryId" = :categoryId', { categoryId })
+      .andWhere(exceptId ? 'product.id != :exceptId' : '1=1', { exceptId })
+      .withDeleted()
+      .getOne();
+    if (duplicated) {
+      throw new ConflictError(
+        duplicated.deletedAt
+          ? `Ya hay un producto eliminado llamado "${duplicated.name}" en esta categoría: restáuralo desde el listado`
+          : `Ya hay un producto llamado "${duplicated.name}" en esta categoría`,
+      );
+    }
+  }
+
+  /**
+   * Elimina productos sin existencias junto con sus inventarios (vacíos).
+   * Las ventas y movimientos que los nombran se conservan.
+   */
   async remove(
     ids: number[],
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Product[]> {
+    if (!manager) {
+      return this.productRepository.manager.transaction((txManager) =>
+        this.remove(ids, cu, scopes, txManager),
+      );
+    }
+
     const products = await super.baseFindByIds({
       ids,
       relationsToLoad: { inventories: true },
@@ -258,22 +315,25 @@ export class ProductService extends BaseService<Product> {
       manager,
     });
 
-    if (products.length === 0) {
-      throw new NotFoundError('No products found.');
+    for (const product of products) {
+      const stock = (product.inventories ?? []).reduce(
+        (sum, inventory) => sum + inventory.currentStock,
+        0,
+      );
+      if (stock > 0) {
+        throw new ConflictError(
+          `No se puede eliminar "${product.name}": aún tiene ${stock} unidades en inventario. Registra antes su salida.`,
+        );
+      }
+      if (product.inventories?.length) {
+        await this.inventoryService.remove(
+          product.inventories.map((i) => i.id) as number[],
+          cu,
+          scopes,
+          manager,
+        );
+      }
     }
-
-    await Promise.all(
-      products.map((product) =>
-        product.inventories?.length
-          ? this.inventoryService.remove(
-              product.inventories.map((i) => i.id) as number[],
-              cu,
-              scopes,
-              manager,
-            )
-          : Promise.resolve(),
-      ),
-    );
 
     return super.baseDeleteMany({
       ids: products.map((p) => p.id) as Array<number>,
@@ -284,6 +344,7 @@ export class ProductService extends BaseService<Product> {
     });
   }
 
+  /** Restaura los productos y los inventarios que se eliminaron con ellos */
   async restore(
     ids: number[],
     cu?: JWTPayload,
@@ -291,10 +352,15 @@ export class ProductService extends BaseService<Product> {
     manager?: EntityManager,
   ): Promise<number> {
     if (ids.length === 0) return 0;
+    if (!manager) {
+      return this.productRepository.manager.transaction((txManager) =>
+        this.restore(ids, cu, scopes, txManager),
+      );
+    }
 
     const products = await super.baseFindByIds({
       ids,
-      relationsToLoad: { inventories: true },
+      relationsToLoad: { inventories: true, category: true },
       cu,
       scopes,
       manager,
@@ -304,27 +370,45 @@ export class ProductService extends BaseService<Product> {
     const deletedProducts = products.filter((p) => p.deletedAt);
     if (deletedProducts.length === 0) return 0;
 
-    await Promise.all(
-      deletedProducts.map((product) =>
-        product.inventories?.length
-          ? this.inventoryService.restore(
-              product.inventories
-                .filter((i) => i.deletedAt)
-                .map((i) => i.id) as number[],
-              cu,
-              scopes,
-              manager,
-            )
-          : Promise.resolve(),
-      ),
-    );
+    for (const product of deletedProducts) {
+      if (product.category?.deletedAt) {
+        throw new ConflictError(
+          `La categoría de "${product.name}" está eliminada: restáurala primero`,
+        );
+      }
+      await this.assertUniqueName(
+        product.name,
+        product.category?.id as number,
+        product.id,
+        manager,
+      );
+    }
 
-    return super.baseRestoreDeletedMany({
+    const restored = await super.baseRestoreDeletedMany({
       ids: deletedProducts.map((p) => p.id) as Array<number>,
       cu,
       scopes,
       manager,
     });
+
+    // Los inventarios se borraron con el producto, en el mismo instante
+    for (const product of deletedProducts) {
+      const inventoryIds = (product.inventories ?? [])
+        .filter(
+          (i) =>
+            i.deletedAt &&
+            Math.abs(
+              new Date(i.deletedAt).getTime() -
+                new Date(product.deletedAt as Date).getTime(),
+            ) < 5000,
+        )
+        .map((i) => i.id as number);
+      if (inventoryIds.length) {
+        await this.inventoryService.restore(inventoryIds, cu, scopes, manager);
+      }
+    }
+
+    return restored;
   }
 
   async calculatePaymentOptions(
@@ -362,10 +446,7 @@ export class ProductService extends BaseService<Product> {
     }
 
     // Validar moneda si fue introducida.
-    if (
-      currency &&
-      !this.acceptedCurrenciesOf(product).includes(currency)
-    ) {
+    if (currency && !this.acceptedCurrenciesOf(product).includes(currency)) {
       throw new BadRequestError(
         `La moneda ${currency} no se permite para este producto`,
       );
@@ -533,7 +614,7 @@ export class ProductService extends BaseService<Product> {
 
     if (remainingQuantity > 0) {
       throw new BadRequestError(
-        `Error processing inventory for product ${productId}`,
+        `No se pudo reservar todo el stock del producto #${productId}`,
       );
     }
 
@@ -593,7 +674,7 @@ export class ProductService extends BaseService<Product> {
         }
       }
       throw new BadRequestError(
-        `No stock reservations found with ID ${reservationId}`,
+        `No se encontró la reserva de existencias ${reservationId}`,
       );
     }
 
@@ -603,7 +684,10 @@ export class ProductService extends BaseService<Product> {
       const inventoryId = movement.inventory.id as number;
       const signed =
         movement.type === 'OUT' ? movement.quantity : -movement.quantity;
-      outstanding.set(inventoryId, (outstanding.get(inventoryId) ?? 0) + signed);
+      outstanding.set(
+        inventoryId,
+        (outstanding.get(inventoryId) ?? 0) + signed,
+      );
     }
 
     const totalOutstanding = [...outstanding.values()].reduce(
@@ -612,20 +696,42 @@ export class ProductService extends BaseService<Product> {
     );
     if (totalOutstanding < quantity) {
       throw new BadRequestError(
-        `Attempting to release ${quantity} but only ${totalOutstanding} were reserved`,
+        `Se quieren devolver ${quantity} unidades pero solo salieron ${totalOutstanding}`,
       );
     }
 
-    // El stock vuelve a los mismos inventarios de los que salió.
+    // El stock vuelve a los mismos inventarios de los que salió; si alguno se
+    // eliminó después, al primer inventario activo del producto.
+    const deleted = new Set(
+      movements
+        .filter((movement) => movement.inventory.deletedAt)
+        .map((movement) => movement.inventory.id as number),
+    );
+    const [fallback] = deleted.size
+      ? await this.inventoryService.findByProduct(
+          productId,
+          cu,
+          scopes,
+          manager,
+        )
+      : [];
+
     let remainingQuantity = quantity;
     for (const [inventoryId, pending] of outstanding) {
       if (remainingQuantity <= 0) break;
       const quantityToReturn = Math.min(remainingQuantity, pending);
       if (quantityToReturn <= 0) continue;
 
+      const target = deleted.has(inventoryId) ? fallback?.id : inventoryId;
+      if (!target) {
+        throw new BadRequestError(
+          'El inventario del que salió este producto ya no existe: crea uno para recibir la devolución',
+        );
+      }
+
       await this.inventoryMovementService.create(
         {
-          inventoryId,
+          inventoryId: target,
           type: 'IN',
           quantity: quantityToReturn,
           reason,
@@ -673,7 +779,7 @@ export class ProductService extends BaseService<Product> {
 
     if (!reservations || reservations.length === 0) {
       throw new BadRequestError(
-        `No stock reservations found with ID ${reservationId}`,
+        `No se encontró la reserva de existencias ${reservationId}`,
       );
     }
 

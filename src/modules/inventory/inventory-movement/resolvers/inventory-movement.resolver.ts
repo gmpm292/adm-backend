@@ -2,7 +2,6 @@ import { UseGuards } from '@nestjs/common';
 import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { AccessTokenAuthGuard } from '../../../auth/guards/access-token-auth.guard';
 import { CreateInventoryMovementInput } from '../dto/create-inventory-movement.input';
-//import { UpdateInventoryMovementInput } from '../dto/update-inventory-movement.input';
 import { RoleGuard } from '../../../auth/guards/role.guard';
 import { Roles } from '../../../auth/decorators/roles.decorator';
 import { CurrentUser } from '../../../auth/decorators/current-user.decorator';
@@ -20,7 +19,9 @@ import { InventoryMovementFiltersValidator } from '../filters-validator/inventor
 export class InventoryMovementResolver {
   constructor(private readonly movementService: InventoryMovementService) {}
 
-  @Roles(Role.SUPER, Role.PRINCIPAL)
+  // Los mismos roles que crean inventarios: quien abre un inventario con
+  // existencias puede registrar después sus entradas y salidas.
+  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('createInventoryMovement')
   async create(
@@ -28,7 +29,7 @@ export class InventoryMovementResolver {
     @Args('createInventoryMovementInput')
     createInput: CreateInventoryMovementInput,
   ) {
-    return this.movementService.create(createInput, user);
+    return this.movementService.register(createInput, user);
   }
 
   @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER, Role.SUPERVISOR)
@@ -48,31 +49,6 @@ export class InventoryMovementResolver {
   async findOne(@CurrentUser() user: JWTPayload, @Args('id') id: number) {
     return this.movementService.findOne(id, user);
   }
-
-  // @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
-  // @UseGuards(AccessTokenAuthGuard, RoleGuard)
-  // @Mutation('updateInventoryMovement')
-  // async update(
-  //   @CurrentUser() user: JWTPayload,
-  //   @Args('updateInventoryMovementInput')
-  //   updateInput: UpdateInventoryMovementInput,
-  // ) {
-  //   return this.movementService.update(updateInput.id, updateInput, user);
-  // }
-
-  // @Roles(Role.SUPER, Role.PRINCIPAL)
-  // @UseGuards(AccessTokenAuthGuard, RoleGuard)
-  // @Mutation('removeInventoryMovements')
-  // async remove(@CurrentUser() user: JWTPayload, @Args('ids') ids: number[]) {
-  //   return this.movementService.remove(ids, user);
-  // }
-
-  // @Roles(Role.SUPER)
-  // @UseGuards(AccessTokenAuthGuard, RoleGuard)
-  // @Mutation('restoreInventoryMovements')
-  // async restore(@CurrentUser() user: JWTPayload, @Args('ids') ids: number[]) {
-  //   return this.movementService.restore(ids, user);
-  // }
 
   @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER, Role.SUPERVISOR)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)

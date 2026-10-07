@@ -5,6 +5,15 @@ export class InventoryFiltersValidator extends BaseFiltersValidator {
   @IsString()
   'product.name': string;
 
+  @IsNumberString()
+  'product.id': string;
+
+  @IsString()
+  'category.name': string;
+
+  @IsNumberString()
+  'category.id': string;
+
   @IsString()
   location: string;
 
@@ -12,8 +21,20 @@ export class InventoryFiltersValidator extends BaseFiltersValidator {
   currentStock: string;
 
   @IsNumberString()
-  'office.id': string;
+  minStock: string;
+
+  @IsString()
+  'business.name': string;
+
+  @IsString()
+  'office.name': string;
 
   @IsNumberString()
-  'category.id': string;
+  'office.id': string;
+
+  @IsString()
+  'department.name': string;
+
+  @IsString()
+  'team.name': string;
 }

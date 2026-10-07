@@ -6,6 +6,7 @@ import {
   IsBoolean,
   IsOptional,
   IsUUID,
+  MaxLength,
   ValidateIf,
 } from 'class-validator';
 
@@ -13,21 +14,15 @@ import {
  * DTO for creating a new inventory movement record
  * Example: {
  *   inventoryId: 1,
- *   userId: 5,
- *   type: "OUT",
+ *   type: "IN",
  *   quantity: 100,
- *   reason: "SALE_RESERVATION",
- *   isReservation: true,
- *   reservationId: "a1b2c3d4-e5f6-7890-g1h2-i3j4k5l6m7n8",
- *   referenceId: "sale-123"
+ *   reason: "PURCHASE",
+ *   referenceId: "Factura 0045"
  * }
  */
 export class CreateInventoryMovementInput {
   @IsInt()
   inventoryId: number;
-
-  // @IsInt()
-  // userId: number;
 
   @IsString()
   @IsIn(['IN', 'OUT'])
@@ -48,7 +43,9 @@ export class CreateInventoryMovementInput {
   @IsOptional()
   isReservation?: boolean = false; // Default false si no se especifica
 
+  // La venta que lo causó o, si se registra a mano, una nota (factura...)
   @IsString()
   @IsOptional()
-  referenceId?: string; // ID de la venta, orden, etc. que causó la reserva
+  @MaxLength(255)
+  referenceId?: string;
 }

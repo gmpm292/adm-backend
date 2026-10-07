@@ -1,10 +1,14 @@
 import {
   IsString,
   IsNumber,
+  IsInt,
   IsOptional,
-  IsJSON,
+  IsObject,
   Length,
   IsArray,
+  ArrayNotEmpty,
+  Max,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -16,14 +20,18 @@ export class FixedPriceDto {
   currency: string;
 
   @IsNumber()
+  @Min(0)
   amount: number;
 }
 
 export class BulkDiscountDto {
-  @IsNumber()
+  @IsInt()
+  @Min(1)
   minQty: number;
 
   @IsNumber()
+  @Min(0)
+  @Max(100)
   discount: number;
 
   @IsArray()
@@ -33,11 +41,13 @@ export class BulkDiscountDto {
 }
 
 export class SaleRulesDto {
-  @IsNumber()
+  @IsInt()
+  @Min(1)
   @IsOptional()
   minQuantity?: number;
 
-  @IsNumber()
+  @IsInt()
+  @Min(1)
   @IsOptional()
   maxQuantity?: number;
 
@@ -50,6 +60,7 @@ export class SaleRulesDto {
 
 export class PricingConfigDto {
   @IsArray()
+  @ArrayNotEmpty()
   @IsString({ each: true })
   @Length(3, 3, { each: true })
   acceptedCurrencies: string[];
@@ -61,31 +72,34 @@ export class PricingConfigDto {
   fixedPrices?: FixedPriceDto[];
 
   @IsNumber()
+  @Min(0)
   @IsOptional()
   exchangeRateMargin?: number;
 
-  @IsNumber()
+  @IsInt()
+  @Min(0)
+  @Max(6)
   @IsOptional()
   decimalPlaces?: number;
 }
 
-// export class CreateProductInput extends CreateSecurityBaseInput {
 export class CreateProductInput extends CreateSecurityBaseInput {
-  @IsNumber()
+  @IsInt()
   categoryId: number;
 
   @IsString()
   @Length(1, 100)
   name: string;
 
-  @IsNumber()
+  @IsInt()
   unitOfMeasureId: number;
 
-  @IsNumber()
+  @IsInt()
   @IsOptional()
   materialCostId?: number;
 
   @IsNumber()
+  @Min(0)
   costPrice: number;
 
   @IsString()
@@ -93,19 +107,21 @@ export class CreateProductInput extends CreateSecurityBaseInput {
   costCurrency: string;
 
   @IsNumber()
+  @Min(0)
   basePrice: number;
 
   @IsString()
   @Length(3, 3)
   baseCurrency: string;
 
-  @IsJSON()
+  // Pares característica/valor: { talla: 'XL', color: 'Rojo' }
+  @IsObject()
   @IsOptional()
   attributes?: Record<string, unknown>;
 
   @IsString()
   @IsOptional()
-  @Length(1, 100)
+  @Length(0, 100)
   warranty?: string;
 
   @ValidateNested()

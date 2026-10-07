@@ -132,6 +132,27 @@ en la base de datos con SQL directo (`StatisticsService`).
   constructor de consultas usa como alias el último tramo de la relación, y
   dos relaciones `*.user` chocan.
 
+## Inventario (`src/modules/inventory`)
+
+- **Existencias**: solo cambian con movimientos. `InventoryMovementService.create`
+  abre su propia transacción si no recibe `manager`, y `InventoryService.adjust`
+  suma en la propia sentencia SQL y nunca deja el stock en negativo.
+- **Movimientos manuales** (`createInventoryMovement`): solo con los motivos de
+  `inventory-movement/enums/movement-reason.ts`; `INITIAL_INVENTORY` y `SALE_*`
+  los pone el sistema. `referenceId` es el id de la venta o, a mano, una nota.
+  Los movimientos no se editan ni se eliminan.
+- **Historial**: el listado de movimientos une inventarios y productos
+  eliminados (`withDeleted`); sin eso la relación `inventory` llega vacía y
+  GraphQL falla.
+- **Inventarios**: uno por producto, oficina y ubicación. Se eliminan solo con
+  existencias a cero y conservan sus movimientos. Una devolución cuyo
+  inventario se eliminó entra en el primer inventario activo del producto.
+- **Productos**: el nombre no se repite en una categoría (contando los
+  eliminados). Eliminar exige existencias a cero y elimina sus inventarios
+  vacíos; restaurar los recupera.
+- **Roles**: crear y editar productos, inventarios y movimientos SUPER,
+  PRINCIPAL y ADMIN; eliminar SUPER y PRINCIPAL; restaurar solo SUPER.
+
 ## Empresa (`src/modules/company`)
 
 - Cuatro niveles: empresa → oficina → departamento → equipo. Cada uno hereda

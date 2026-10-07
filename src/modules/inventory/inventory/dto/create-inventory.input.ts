@@ -1,4 +1,4 @@
-import { IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 import { CreateSecurityBaseInput } from '../../../../core/dtos/create-security-base.input';
 
 /**
@@ -25,5 +25,6 @@ export class CreateInventoryInput extends CreateSecurityBaseInput {
 
   @IsString()
   @IsOptional()
+  @MaxLength(100)
   location?: string;
 }
