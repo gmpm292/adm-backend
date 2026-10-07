@@ -1,4 +1,4 @@
-import { forwardRef, Global, Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { UnitOfMeasureResolver } from './resolvers/unit-of-measure.resolver';
 import { UnitOfMeasureService } from './services/unit-of-measure.service';
@@ -11,7 +11,6 @@ import { Product } from '../product/entities/product.entity';
 @Module({
   imports: [
     TypeOrmModule.forFeature([UnitOfMeasure, User, MaterialCost, Product]),
-    forwardRef(() => MaterialCost),
   ],
   providers: [UnitOfMeasureResolver, UnitOfMeasureService],
   exports: [UnitOfMeasureService],

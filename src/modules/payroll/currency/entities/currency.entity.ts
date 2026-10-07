@@ -1,5 +1,6 @@
 import { Entity, Column } from 'typeorm';
 import { SecurityBaseEntity } from '../../../../core/entities/security-base.entity';
+import { decimalTransformer } from '../../../../core/transformers/decimal.transformer';
 
 @Entity('py_currencies')
 export class Currency extends SecurityBaseEntity {
@@ -12,7 +13,13 @@ export class Currency extends SecurityBaseEntity {
   @Column({ type: 'varchar', length: 10 })
   symbol: string;
 
-  @Column({ type: 'decimal', precision: 10, scale: 6 })
+  // Cuántos CUP vale una unidad
+  @Column({
+    type: 'decimal',
+    precision: 10,
+    scale: 6,
+    transformer: decimalTransformer,
+  })
   exchangeRateToCUP: number;
 
   @Column({ type: 'boolean', default: true })

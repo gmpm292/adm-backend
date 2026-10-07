@@ -8,6 +8,7 @@ import { Roles } from '../../auth/decorators/roles.decorator';
 import { Role } from '../../../core/enums/role.enum';
 import { RoleGuard } from '../../auth/guards/role.guard';
 
+// Imprimen los mismos roles que venden, cajeros (AGENT) incluidos
 @Resolver('QZTray')
 export class QZTrayResolver {
   constructor(private readonly qzTrayService: QZTrayService) {}
@@ -32,7 +33,7 @@ export class QZTrayResolver {
     Role.ADMIN,
     Role.MANAGER,
     Role.SUPERVISOR,
-    Role.USER,
+    Role.AGENT,
   )
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('signQZRequest')

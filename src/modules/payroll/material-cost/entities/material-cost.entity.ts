@@ -3,6 +3,7 @@ import { SecurityBaseEntity } from '../../../../core/entities/security-base.enti
 import { Product } from '../../../inventory/product/entities/product.entity';
 import { UnitOfMeasure } from '../../../inventory/unit-of-measure/entities/unit-of-measure.entity';
 import { Currency } from '../../currency/entities/currency.entity';
+import { decimalTransformer } from '../../../../core/transformers/decimal.transformer';
 
 /**
  * Description: Represents the cost price of a material or element per unit of measure.
@@ -23,7 +24,12 @@ export class MaterialCost extends SecurityBaseEntity {
   @JoinColumn()
   unitOfMeasure: UnitOfMeasure;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2 })
+  @Column({
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    transformer: decimalTransformer,
+  })
   costPrice: number; // Cost per unitOfMeasure
 
   @ManyToOne(() => Currency)

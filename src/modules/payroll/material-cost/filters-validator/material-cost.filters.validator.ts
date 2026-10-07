@@ -1,9 +1,4 @@
-import {
-  IsString,
-  Min,
-  IsBooleanString,
-  IsNumberString,
-} from 'class-validator';
+import { IsBooleanString, IsNumberString, IsString } from 'class-validator';
 import { BaseFiltersValidator } from '../../../../core/filters-validator/base-filters.validator';
 
 export class MaterialCostFiltersValidator extends BaseFiltersValidator {
@@ -14,15 +9,20 @@ export class MaterialCostFiltersValidator extends BaseFiltersValidator {
   description?: string;
 
   @IsNumberString()
-  unitOfMeasureId?: number;
+  'unitOfMeasure.id'?: string;
+
+  @IsString()
+  'unitOfMeasure.name'?: string;
 
   @IsNumberString()
-  @Min(0)
-  costPrice?: number;
+  costPrice?: string;
 
-  @IsNumberString()
-  currencyId?: number;
+  @IsString()
+  'currency.code'?: string;
+
+  @IsString()
+  'business.name'?: string;
 
   @IsBooleanString()
-  isActive?: boolean;
+  isActive?: string;
 }

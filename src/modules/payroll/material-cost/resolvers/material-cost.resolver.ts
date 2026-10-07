@@ -1,12 +1,5 @@
 import { UseGuards } from '@nestjs/common';
-import {
-  Args,
-  Mutation,
-  Query,
-  Resolver,
-  ResolveField,
-  Parent,
-} from '@nestjs/graphql';
+import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { AccessTokenAuthGuard } from '../../../auth/guards/access-token-auth.guard';
 import { CreateMaterialCostInput } from '../dto/create-material-cost.input';
 import { UpdateMaterialCostInput } from '../dto/update-material-cost.input';
@@ -23,11 +16,8 @@ import { Opts } from '../../../../core/graphql/remote-operations/decorators/opts
 import { MaterialCostService } from '../services/material-cost.service';
 import { MaterialCostFiltersValidator } from '../filters-validator/material-cost.filters.validator';
 
-import { Currency } from '../../currency/entities/currency.entity';
-import { MaterialCost } from '../entities/material-cost.entity';
-import { UnitOfMeasure } from '../../../inventory/unit-of-measure/entities/unit-of-measure.entity';
-import { Product } from '../../../inventory/product/entities/product.entity';
-
+// Los mantiene la dirección de la empresa; también los lee quien da de alta
+// productos (MANAGER)
 @Resolver('MaterialCost')
 export class MaterialCostResolver {
   constructor(private readonly materialCostService: MaterialCostService) {}
@@ -43,7 +33,7 @@ export class MaterialCostResolver {
     return this.materialCostService.create(createMaterialCostInput, user);
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
+  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Query('materialCosts')
   async findAll(
@@ -54,7 +44,7 @@ export class MaterialCostResolver {
     return this.materialCostService.find(options, user);
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
+  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Query('materialCost')
   async findOne(@CurrentUser() user: JWTPayload, @Args('id') id: number) {
@@ -90,56 +80,10 @@ export class MaterialCostResolver {
     return this.materialCostService.restore(ids, user);
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
+  @Roles(Role.SUPER, Role.PRINCIPAL)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('toggleMaterialCostActive')
   async toggleActive(@CurrentUser() user: JWTPayload, @Args('id') id: number) {
     return this.materialCostService.toggleActive(id, user);
-  }
-
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
-  @UseGuards(AccessTokenAuthGuard, RoleGuard)
-  @Query('materialCostsByUnitOfMeasure')
-  async findByUnitOfMeasure(
-    @CurrentUser() user: JWTPayload,
-    @Args('unitOfMeasureId') unitOfMeasureId: number,
-    @Opts({ arg: 'options', dto: MaterialCostFiltersValidator })
-    options?: ListOptions,
-  ): Promise<ListSummary> {
-    return this.materialCostService.findByUnitOfMeasure(
-      unitOfMeasureId,
-      options,
-      user,
-    );
-  }
-
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
-  @UseGuards(AccessTokenAuthGuard, RoleGuard)
-  @Query('materialCostsByCurrency')
-  async findByCurrency(
-    @CurrentUser() user: JWTPayload,
-    @Args('currencyId') currencyId: number,
-    @Opts({ arg: 'options', dto: MaterialCostFiltersValidator })
-    options?: ListOptions,
-  ): Promise<ListSummary> {
-    return this.materialCostService.findByCurrency(currencyId, options, user);
-  }
-
-  // ResolveField for unitOfMeasure
-  @ResolveField('unitOfMeasure')
-  getUnitOfMeasure(@Parent() materialCost: MaterialCost): UnitOfMeasure {
-    return materialCost.unitOfMeasure;
-  }
-
-  // ResolveField for currency
-  @ResolveField('currency')
-  getCurrency(@Parent() materialCost: MaterialCost): Currency {
-    return materialCost.currency;
-  }
-
-  // ResolveField for products
-  @ResolveField('products')
-  getProducts(@Parent() materialCost: MaterialCost): Product[] {
-    return materialCost.products || [];
   }
 }

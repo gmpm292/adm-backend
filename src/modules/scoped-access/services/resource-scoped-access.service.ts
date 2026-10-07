@@ -10,6 +10,7 @@ import {
 import { CreateScopedAccessInput } from '../dto/create-scoped-access.input';
 import { UpdateScopedAccessInput } from '../dto/update-scoped-access.input';
 import { NotFoundError } from '../../../core/errors/appErrors/NotFoundError.error';
+import { ConflictError } from '../../../core/errors/appErrors/ConflictError.error';
 import { JWTPayload } from '../../../modules/auth/dto/jwt-payload.dto';
 import { ScopedAccessEnum } from '../../../core/enums/scoped-access.enum';
 import { Business } from '../../company/business/entities/co_business.entity';
@@ -23,6 +24,19 @@ interface ScopedAccessCacheKey {
   roleGuardId: number;
 }
 
+/** La API manda el estado como nombre (`ENABLED`); la columna guarda el número */
+const toEntityStatus = (status?: string): EntityStatus | undefined =>
+  status === undefined
+    ? undefined
+    : status === 'DISABLED'
+      ? EntityStatus.DISABLED
+      : EntityStatus.ENABLED;
+
+/**
+ * Niveles de acceso por empresa y operación: sustituyen el alcance con el que
+ * una operación filtra los datos. Se guardan en memoria; solo cuentan los
+ * activos.
+ */
 @Injectable()
 export class ResourceScopedAccessService
   extends BaseService<ScopedAccessEntity>
@@ -44,61 +58,22 @@ export class ResourceScopedAccessService
   }
 
   /**
-   * Busca en caché por businessId y roleGuardId (síncrono)
-   */
-  findByBusinessAndRoleGuard(
-    businessId: number,
-    roleGuardId: number,
-  ): ScopedAccessEntity | null {
-    const cacheKey = this.generateCacheKey({ businessId, roleGuardId });
-    return this.scopedAccessCache.get(cacheKey) || null;
-  }
-
-  /**
    * Busca en caché por businessId y currentQueryOrEndpoint (síncrono)
    */
   findByBusinessAndQueryOrEndpoint(
     businessId: number,
     currentQueryOrEndpoint: string,
   ): ScopedAccessEntity | null {
-    const roleGuardId = this.getRoleGuardIdFromQueryOrEndpoint(
+    const roleGuardId = this.roleGuardService.getRoleGuard(
       currentQueryOrEndpoint,
-    );
+    )?.id;
     if (!roleGuardId) {
       return null;
     }
-    return this.findByBusinessAndRoleGuard(businessId, roleGuardId);
+    const cacheKey = this.generateCacheKey({ businessId, roleGuardId });
+    return this.scopedAccessCache.get(cacheKey) || null;
   }
 
-  /**
-   * Obtiene los access levels desde caché por businessId y roleGuardId (síncrono)
-   */
-  getAccessLevelsByBusinessAndRoleGuard(
-    businessId: number,
-    roleGuardId: number,
-  ): ScopedAccessEnum[] {
-    const scopedAccess = this.findByBusinessAndRoleGuard(
-      businessId,
-      roleGuardId,
-    );
-    return scopedAccess?.accessLevels || [];
-  }
-
-  /**
-   * Obtiene los access levels desde caché por businessId y currentQueryOrEndpoint (síncrono)
-   */
-  getAccessLevelsByBusinessAndQueryOrEndpoint(
-    businessId: number,
-    currentQueryOrEndpoint: string,
-  ): ScopedAccessEnum[] {
-    const scopedAccess = this.findByBusinessAndQueryOrEndpoint(
-      businessId,
-      currentQueryOrEndpoint,
-    );
-    return scopedAccess?.accessLevels || [];
-  }
-
-  // Resto de los métodos permanecen igual...
   async create(
     createScopedAccessInput: CreateScopedAccessInput,
     cu?: JWTPayload,
@@ -107,26 +82,25 @@ export class ResourceScopedAccessService
   ): Promise<ScopedAccessEntity> {
     const { businessId, roleGuardId, entityStatus, ...rest } =
       createScopedAccessInput;
+    await this.checkUnique(businessId, roleGuardId);
+
     const scopedAccess: ScopedAccessEntity = {
       ...rest,
-      entityStatus:
-        entityStatus == 'DISABLED'
-          ? EntityStatus.DISABLED
-          : EntityStatus.ENABLED,
+      entityStatus: toEntityStatus(entityStatus) ?? EntityStatus.ENABLED,
       business: { id: businessId } as Business,
       roleGuard: { id: roleGuardId } as RoleGuardEntity,
     };
 
-    const result = await super.baseCreate({
+    const created = await super.baseCreate({
       data: scopedAccess,
-      //uniqueFields: ['business', 'roleGuard'],
       cu,
       scopes,
       manager,
     });
 
     await this.loadScopedAccessCache();
-    return result;
+    // Con empresa y operación completas: el cliente no debe recibirlas a medias
+    return this.findOne(created.id as number, cu, scopes, manager);
   }
 
   async find(
@@ -162,6 +136,7 @@ export class ResourceScopedAccessService
     });
   }
 
+  /** Solo cambia lo que llega: sin `businessId` o `roleGuardId` se conservan */
   async update(
     id: number,
     updateScopedAccessInput: UpdateScopedAccessInput,
@@ -169,30 +144,31 @@ export class ResourceScopedAccessService
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<ScopedAccessEntity> {
-    const {
-      id: inputId,
-      businessId,
-      roleGuardId,
-      entityStatus,
-      ...rest
-    } = updateScopedAccessInput;
-    const scopedAccess = await super.baseFindOne({ id, cu, scopes, manager });
+    const { businessId, roleGuardId, entityStatus, accessLevels } =
+      updateScopedAccessInput;
+    const current = await this.findOne(id, cu, scopes, manager);
 
-    if (!scopedAccess) {
-      throw new NotFoundError('Scoped access not found');
+    const newBusinessId = businessId ?? current.business?.id;
+    const newRoleGuardId = roleGuardId ?? current.roleGuard?.id;
+    if (
+      newBusinessId !== current.business?.id ||
+      newRoleGuardId !== current.roleGuard?.id
+    ) {
+      await this.checkUnique(newBusinessId as number, newRoleGuardId as number);
     }
 
-    const result = await super.baseUpdate({
+    const status = toEntityStatus(entityStatus);
+    await super.baseUpdate({
       id,
       data: {
-        ...scopedAccess,
-        ...rest,
-        entityStatus:
-          entityStatus == 'DISABLED'
-            ? EntityStatus.DISABLED
-            : EntityStatus.ENABLED,
-        business: { id: businessId } as Business,
-        roleGuard: { id: roleGuardId } as RoleGuardEntity,
+        ...(accessLevels !== undefined && { accessLevels }),
+        ...(status !== undefined && { entityStatus: status }),
+        ...(businessId !== undefined && {
+          business: { id: businessId } as Business,
+        }),
+        ...(roleGuardId !== undefined && {
+          roleGuard: { id: roleGuardId } as RoleGuardEntity,
+        }),
       },
       cu,
       scopes,
@@ -200,7 +176,7 @@ export class ResourceScopedAccessService
     });
 
     await this.loadScopedAccessCache();
-    return result;
+    return this.findOne(id, cu, scopes, manager);
   }
 
   async remove(
@@ -218,7 +194,7 @@ export class ResourceScopedAccessService
     });
 
     if (scopedAccesses.length === 0) {
-      throw new NotFoundError('No scoped accesses found');
+      throw new NotFoundError('No se encontraron los niveles de acceso');
     }
 
     const result = await super.baseDeleteMany({
@@ -264,89 +240,46 @@ export class ResourceScopedAccessService
     return result;
   }
 
-  async updateAccessLevels(
-    id: number,
-    accessLevels: ScopedAccessEnum[],
-    cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
-    manager?: EntityManager,
-  ): Promise<ScopedAccessEntity> {
-    const scopedAccess = await super.baseFindOne({ id, cu, scopes, manager });
-
-    if (!scopedAccess) {
-      throw new NotFoundError('Scoped access not found');
-    }
-
-    const result = await super.baseUpdate({
-      id,
-      data: { ...scopedAccess, accessLevels },
-      cu,
-      scopes,
-      manager,
-    });
-
-    await this.loadScopedAccessCache();
-    return result;
-  }
-
-  async updateEntityStatus(
-    id: number,
-    entityStatus: EntityStatus,
-    cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
-    manager?: EntityManager,
-  ): Promise<ScopedAccessEntity> {
-    const scopedAccess = await super.baseFindOne({ id, cu, scopes, manager });
-
-    if (!scopedAccess) {
-      throw new NotFoundError('Scoped access not found');
-    }
-
-    const result = await super.baseUpdate({
-      id,
-      data: { ...scopedAccess, entityStatus },
-      cu,
-      scopes,
-      manager,
-    });
-
-    await this.loadScopedAccessCache();
-    return result;
-  }
-
   /**
-   * Carga todos los scoped access en memoria
+   * Una empresa tiene un solo nivel de acceso por operación. La restricción
+   * única de la base también cuenta los eliminados: entonces toca restaurarlo.
    */
-  private async loadScopedAccessCache(): Promise<void> {
-    this.scopedAccessCache.clear();
-
-    const allScopedAccess = await this.findInDB({ skip: 0 });
-
-    if (allScopedAccess.totalCount > 0) {
-      for (const scopedAccess of allScopedAccess.data as ScopedAccessEntity[]) {
-        if (scopedAccess.business?.id && scopedAccess.roleGuard?.id) {
-          const cacheKey = this.generateCacheKey({
-            businessId: scopedAccess.business.id,
-            roleGuardId: scopedAccess.roleGuard.id,
-          });
-          this.scopedAccessCache.set(cacheKey, scopedAccess);
-        }
-      }
-    }
-
-    console.log(
-      `Loaded ${allScopedAccess.totalCount} scoped access entities into cache`,
+  private async checkUnique(businessId: number, roleGuardId: number) {
+    const existing = await this.scopedAccessRepository.findOne({
+      where: { business: { id: businessId }, roleGuard: { id: roleGuardId } },
+      withDeleted: true,
+    });
+    if (!existing) return;
+    throw new ConflictError(
+      existing.deletedAt
+        ? 'Esa empresa ya tuvo un nivel de acceso para esta operación y está eliminado: restáuralo en lugar de crear otro'
+        : 'Esa empresa ya tiene un nivel de acceso para esta operación',
     );
   }
 
   /**
-   * Busca en la base de datos (para operaciones que requieren datos frescos)
+   * Carga en memoria los niveles de acceso activos
    */
-  private async findInDB(options?: ListOptions): Promise<ListSummary> {
-    return await super.baseFind({
-      options,
-      relationsToLoad: ['business', 'roleGuard'],
+  private async loadScopedAccessCache(): Promise<void> {
+    const all = await this.scopedAccessRepository.find({
+      relations: { business: true, roleGuard: true },
     });
+
+    this.scopedAccessCache.clear();
+    for (const scopedAccess of all) {
+      if (
+        // La columna llega como texto ('1'): se compara como número
+        Number(scopedAccess.entityStatus) === Number(EntityStatus.ENABLED) &&
+        scopedAccess.business?.id &&
+        scopedAccess.roleGuard?.id
+      ) {
+        const cacheKey = this.generateCacheKey({
+          businessId: scopedAccess.business.id,
+          roleGuardId: scopedAccess.roleGuard.id,
+        });
+        this.scopedAccessCache.set(cacheKey, scopedAccess);
+      }
+    }
   }
 
   /**
@@ -354,32 +287,5 @@ export class ResourceScopedAccessService
    */
   private generateCacheKey(key: ScopedAccessCacheKey): string {
     return `${key.businessId}:${key.roleGuardId}`;
-  }
-
-  /**
-   * Obtiene el roleGuardId desde queryOrEndpoint usando RoleGuardService
-   */
-  private getRoleGuardIdFromQueryOrEndpoint(
-    queryOrEndpoint: string,
-  ): number | null {
-    const roleGuard = this.roleGuardService.getRoleGuard(queryOrEndpoint);
-    return roleGuard?.id || null;
-  }
-
-  /**
-   * Método para forzar recarga del cache (útil para testing o sincronización)
-   */
-  async reloadCache(): Promise<void> {
-    await this.loadScopedAccessCache();
-  }
-
-  /**
-   * Obtiene estadísticas del cache (útil para monitoreo)
-   */
-  getCacheStats(): { size: number; keys: string[] } {
-    return {
-      size: this.scopedAccessCache.size,
-      keys: Array.from(this.scopedAccessCache.keys()),
-    };
   }
 }

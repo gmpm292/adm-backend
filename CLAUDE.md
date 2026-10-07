@@ -51,6 +51,30 @@ desde el frontend) y después en el `.env`. Ahí viven, en **segundos**,
 `CONFIRMATION_TOKEN_EXPIRE_IN` (360000), además de `FRONTEND_CHANGE_PASSWORD_URL`
 y la configuración de correo.
 
+- Los grupos los define `backend-configurations.helper.ts`; al arrancar se
+  sincronizan (claves, descripción, categoría). La API de `config` es solo
+  para SUPER y enmascara las claves de `SECRET_CONFIG_KEYS`; si al guardar
+  llega la máscara, se conserva el valor.
+- Guardar, desactivar o eliminar un grupo recarga el mapa en memoria y sube
+  `ConfigService.getConfigVersion()`: el transporte de correo se rehace en el
+  siguiente envío y QZ Tray lee sus claves en cada firma. No hace falta
+  reiniciar.
+- Correo con Google: la cuenta autorizada debe ser `EMAIL_USER` (el envío busca
+  su token por esa dirección); si no coincide, la autorización se rechaza.
+
+## Permisos y niveles de acceso
+
+- **Permisos** (`role-guard-resource`): una fila de `RoleGuardEntity` con
+  `roles` sustituye los `@Roles` del código; con `roles` nulo manda el código.
+  `RoleGuardService` lee del código (`DiscoveryService`) los `@Roles` y si la
+  operación pasa por `RoleGuard` (`codeRoles`, `usesRoleGuard`). Al guardar,
+  la lista no puede quedar vacía y debe incluir SUPER; en operaciones sin
+  `RoleGuard` no se permite (no tendría efecto).
+- **Niveles de acceso** (`scoped-access`): uno por empresa y operación (la
+  restricción única cuenta los eliminados: se restaura, no se repite). Solo
+  SUPER. En memoria solo se cargan los activos. `update` cambia solo los
+  campos que llegan.
+
 ## Autenticación (`src/modules/auth`)
 
 - **Cookies** `Authorization` (acceso) y `Refresh`, `HttpOnly; Secure;
@@ -124,7 +148,8 @@ en la base de datos con SQL directo (`StatisticsService`).
   parte en otra. `unitPrice`, `subtotal` y `currency` de una línea, y el total
   de un borrador, se calculan al leer: no son columnas.
 - **Alcance** (`sale/helpers/sale-scopes.ts`): ventas y clientes son de la
-  tienda (empresa + oficina). Un vendedor sin mando solo ve sus ventas.
+  tienda (empresa + oficina). Un vendedor sin mando solo ve sus ventas, y en
+  Detalles de venta solo las líneas de ellas (`SaleDetailService.ownSalesFilter`).
 - **Clientes**: teléfono, correo y carné no se repiten dentro de una empresa.
   Eliminar un cliente conserva sus ventas.
 - **Mensajería**: una venta con `hasDelivery` no se cobra sin mensajero.
@@ -187,6 +212,22 @@ en la base de datos con SQL directo (`StatisticsService`).
 - Las columnas `decimal` de pagos y acumuladores llevan `decimalTransformer`
   (`core/transformers`): Postgres las devuelve como texto.
 
+## Nomencladores
+
+- **Monedas** (`payroll/currency`) y **unidades de medida**
+  (`inventory/unit-of-measure`) son comunes a todas las empresas: todos los
+  leen y solo SUPER los cambia. Nombre y símbolo de unidad, y código de
+  moneda, son únicos en todo el sistema, también entre eliminados.
+- Una moneda guarda cuántos CUP vale (`exchangeRateToCUP`); CUP es la
+  referencia: tasa 1, no se desactiva. El código no cambia (productos y pagos
+  lo guardan) y no se desactiva una moneda que acepten productos. Guardar una
+  moneda vacía la caché de tasas.
+- **Categorías** y **costos de materiales** son de cada empresa: el nombre no
+  se repite dentro de ella. Con productos (o reglas de pago, en categorías) no
+  se eliminan; restaurar recupera solo el registro. Ambos devuelven
+  `productCount`.
+- No se elimina una unidad que usen productos o materiales.
+
 ## Empresa (`src/modules/company`)
 
 - Cuatro niveles: empresa → oficina → departamento → equipo. Cada uno hereda
@@ -240,6 +281,8 @@ en la base de datos con SQL directo (`StatisticsService`).
 - El emisor que muestra la aplicación de autenticación está fijo como
   `GoldenSoft` en `AuthService.generate2FASecret`.
 - Los intentos de código 2FA no tienen límite.
+- QZ Tray tiene el certificado y la clave de ejemplo: hasta cargar los reales
+  en Configuración no se imprime.
 
 ## Dudas para consultar con el cliente
 

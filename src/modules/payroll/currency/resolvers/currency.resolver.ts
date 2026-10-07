@@ -16,11 +16,12 @@ import { Opts } from '../../../../core/graphql/remote-operations/decorators/opts
 import { CurrencyService } from '../services/currency.service';
 import { CurrencyFiltersValidator } from '../filters-validator/currency-filters.validator';
 
+// Las monedas y sus tasas valen para todas las empresas: solo SUPER las cambia
 @Resolver('Currency')
 export class CurrencyResolver {
   constructor(private readonly currencyService: CurrencyService) {}
 
-  @Roles(Role.SUPER, Role.PRINCIPAL)
+  @Roles(Role.SUPER)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('createCurrency')
   async create(
@@ -30,7 +31,7 @@ export class CurrencyResolver {
     return this.currencyService.create(createCurrencyInput, user);
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
+  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Query('currencies')
   async findAll(
@@ -58,7 +59,7 @@ export class CurrencyResolver {
     return this.currencyService.findByCode(code, user);
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL)
+  @Roles(Role.SUPER)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('updateCurrency')
   async update(
@@ -72,17 +73,20 @@ export class CurrencyResolver {
     );
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL)
+  @Roles(Role.SUPER)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('deactivateCurrency')
-  async deactivate(@CurrentUser() user: JWTPayload, @Args('id') id: number) {
-    return this.currencyService.updateStatus(id, false, user);
+  async deactivate(
+    @CurrentUser() user: JWTPayload,
+    @Args('code') code: string,
+  ) {
+    return this.currencyService.updateStatus(code, false, user);
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL)
+  @Roles(Role.SUPER)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('activateCurrency')
-  async activate(@CurrentUser() user: JWTPayload, @Args('id') id: number) {
-    return this.currencyService.updateStatus(id, true, user);
+  async activate(@CurrentUser() user: JWTPayload, @Args('code') code: string) {
+    return this.currencyService.updateStatus(code, true, user);
   }
 }

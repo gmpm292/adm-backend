@@ -1,5 +1,6 @@
 import { IsString, IsBooleanString, IsIn } from 'class-validator';
 import { BaseFiltersValidator } from '../../../../core/filters-validator/base-filters.validator';
+import { UNIT_CATEGORIES } from '../unit-categories';
 
 export class UnitOfMeasureFiltersValidator extends BaseFiltersValidator {
   @IsString()
@@ -9,17 +10,7 @@ export class UnitOfMeasureFiltersValidator extends BaseFiltersValidator {
   symbol?: string;
 
   @IsString()
-  @IsIn([
-    'peso',
-    'volumen',
-    'longitud',
-    'área',
-    'unidades',
-    'tiempo',
-    'energía',
-    'potencia',
-    'temperatura',
-  ])
+  @IsIn(UNIT_CATEGORIES)
   category?: string;
 
   @IsBooleanString()

@@ -4,7 +4,11 @@ import { EntityManager, FindOptionsWhere, Repository } from 'typeorm';
 import { CreateConfigInput } from '../dto/create-config.input';
 import { UpdateConfigInput } from '../dto/update-config.input';
 
-import { backendConfigurations } from '../backend-configurations/backend-configurations.helper';
+import {
+  backendConfigurations,
+  SECRET_CONFIG_KEYS,
+  SECRET_MASK,
+} from '../backend-configurations/backend-configurations.helper';
 import { Config } from '../entities/config.entity';
 import { BaseService } from '../../../../core/services/base.service';
 import {
@@ -21,6 +25,9 @@ export class ConfigResourceService
   implements OnModuleInit
 {
   private _Map_Vars: Map<string, SettingMapType> = new Map();
+  // Sube cada vez que se recargan los grupos: quien guarda objetos construidos
+  // con la configuración (transporte de correo...) sabe así que debe rehacerlos
+  private _version = 0;
   constructor(
     @InjectRepository(Config) private configRepository: Repository<Config>,
     @InjectEntityManager()
@@ -42,29 +49,12 @@ export class ConfigResourceService
     return created;
   }
 
-  async find(
-    options?: ListOptions /*user?: JWTPayload*/,
-  ): Promise<ListSummary> {
-    if (!options || !options.filters) {
-      options = { ...options, filters: [] } as ListOptions;
-    }
-    //TODO
-    // if (user && !user?.role.some((r) => r == Role.SUPER)) {
-    //   options.filters.push({
-    //     property: 'configVisibility',
-    //     operator: ConditionalOperator.EQUAL,
-    //     value: String(ConfigVisibility.PUBLIC_ENT),
-    //     logicalOperator: LogicalOperator.AND,
-    //   } as ListFilter);
-    // }
+  async find(options?: ListOptions): Promise<ListSummary> {
     return await super.baseFind({ options });
   }
 
-  async findOne(id: number /*user?: JWTPayload*/): Promise<Config> {
+  async findOne(id: number): Promise<Config> {
     const filters: FindOptionsWhere<Config> = { id };
-    // if (!user?.role.some((r) => r == Role.SUPER)) {
-    //   filters = { ...filters, configVisibility: ConfigVisibility.PUBLIC_ENT };
-    // }
     return super.baseFindOneByFilters({ filters });
   }
 
@@ -72,13 +62,40 @@ export class ConfigResourceService
     id: number,
     updateConfigInput: UpdateConfigInput,
   ): Promise<Config> {
-    const updated = await super.baseUpdate({ id, data: updateConfigInput });
+    const data = { ...updateConfigInput };
+    if (data.values) {
+      // Si un secreto llega enmascarado es que no se tocó: se conserva
+      const current = await this.findOne(id);
+      data.values = Object.fromEntries(
+        Object.entries(data.values).map(([key, value]) => [
+          key,
+          value === SECRET_MASK ? current.values?.[key] : value,
+        ]),
+      );
+    }
+    const updated = await super.baseUpdate({ id, data });
     await this.initMap();
     return updated;
   }
 
   async remove(ids: number[]): Promise<Config[]> {
-    return super.baseDeleteMany({ ids, softRemove: false });
+    const removed = await super.baseDeleteMany({ ids, softRemove: false });
+    await this.initMap();
+    return removed;
+  }
+
+  /** Copia para la API con los secretos enmascarados */
+  maskSecrets(config: Config): Config {
+    if (!config?.values) return config;
+    const values = Object.fromEntries(
+      Object.entries(config.values).map(([key, value]) => [
+        key,
+        SECRET_CONFIG_KEYS.includes(key) && value !== '' && value != null
+          ? SECRET_MASK
+          : value,
+      ]),
+    );
+    return { ...config, values };
   }
 
   async syncBackendConfigurationsAndDB() {
@@ -101,6 +118,8 @@ export class ConfigResourceService
         if (
           JSON.stringify(storageKeys) != JSON.stringify(configKeys) ||
           data.configVisibility != config.configVisibility ||
+          data.description != config.description ||
+          data.category != config.category ||
           data.configStatus != config.configStatus
         ) {
           //delete from storageConf the keys that not in new configKeys
@@ -131,18 +150,23 @@ export class ConfigResourceService
     if (idsToRemove.length > 0) await this.remove(idsToRemove);
   }
 
+  /** Recarga los grupos activos: los desactivados o eliminados dejan de valer */
   async initMap() {
-    console.log('Initializing vars map.');
     const _vars = await this.configRepository.find({
       where: {
         configStatus: ConfigStatus.ENABLED,
       },
     });
+    this._Map_Vars.clear();
     _vars.forEach((s) => {
       const { group, ...rest } = s;
       this._Map_Vars.set(group, rest);
     });
-    console.log('Vars map initialized!, ', _vars.length);
+    this._version++;
+  }
+
+  get version() {
+    return this._version;
   }
 
   getGroup(group: string) {

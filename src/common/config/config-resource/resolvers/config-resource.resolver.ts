@@ -5,67 +5,75 @@ import { CreateConfigInput } from '../dto/create-config.input';
 import { UpdateConfigInput } from '../dto/update-config.input';
 
 import { ConfigResourceService } from '../services/config-resource.service';
+import { Config } from '../entities/config.entity';
 
 import { FiltersValidator } from '../filters-validator/filters.validator';
 import { Role } from '../../../../core/enums/role.enum';
 import { Roles } from '../../../../modules/auth/decorators/roles.decorator';
 import { AccessTokenAuthGuard } from '../../../../modules/auth/guards/access-token-auth.guard';
 import { RoleGuard } from '../../../../modules/auth/guards/role.guard';
-import { CurrentUser } from '../../../../modules/auth/decorators/current-user.decorator';
-import { JWTPayload } from '../../../../modules/auth/dto/jwt-payload.dto';
 import {
   ListOptions,
   ListSummary,
 } from '../../../../core/graphql/remote-operations';
 import { Opts } from '../../../../core/graphql/remote-operations/decorators/opts.decorator';
 
+/** Configuración del sistema: solo SUPER, y los secretos salen enmascarados */
 @Resolver('Config')
 export class ConfigResourceResolver {
   constructor(private readonly configService: ConfigResourceService) {}
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
+  @Roles(Role.SUPER)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('createConfig')
-  create(@Args('createConfigInput') createConfigInput: CreateConfigInput) {
-    return this.configService.create(createConfigInput);
+  async create(
+    @Args('createConfigInput') createConfigInput: CreateConfigInput,
+  ) {
+    return this.configService.maskSecrets(
+      await this.configService.create(createConfigInput),
+    );
   }
 
-  @Roles(
-    Role.SUPER,
-    Role.PRINCIPAL,
-    Role.ADMIN,
-    Role.MANAGER,
-    Role.SUPERVISOR,
-    Role.AGENT,
-  )
+  @Roles(Role.SUPER)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Query('configs')
-  findAll(
-    @CurrentUser() user: JWTPayload,
+  async findAll(
     @Opts({ arg: 'options', dto: FiltersValidator })
     options?: ListOptions,
   ): Promise<ListSummary> {
-    return this.configService.find(options);
+    const result = await this.configService.find(options);
+    return {
+      ...result,
+      data: (result.data as Config[]).map((c) =>
+        this.configService.maskSecrets(c),
+      ),
+    };
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
+  @Roles(Role.SUPER)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Query('config')
-  findOne(@Args('id') id: number, @CurrentUser() user: JWTPayload) {
-    return this.configService.findOne(id);
+  async findOne(@Args('id') id: number) {
+    return this.configService.maskSecrets(await this.configService.findOne(id));
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
+  @Roles(Role.SUPER)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('updateConfig')
-  update(@Args('updateConfigInput') updateConfigInput: UpdateConfigInput) {
-    return this.configService.update(updateConfigInput.id, updateConfigInput);
+  async update(
+    @Args('updateConfigInput') updateConfigInput: UpdateConfigInput,
+  ) {
+    return this.configService.maskSecrets(
+      await this.configService.update(updateConfigInput.id, updateConfigInput),
+    );
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
+  @Roles(Role.SUPER)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('removeConfigs')
-  remove(@Args('ids') ids: number[]) {
-    return this.configService.remove(ids);
+  async remove(@Args('ids') ids: number[]) {
+    return (await this.configService.remove(ids)).map((c) =>
+      this.configService.maskSecrets(c),
+    );
   }
 }

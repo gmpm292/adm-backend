@@ -18,13 +18,14 @@ import {
 } from '../../../core/graphql/remote-operations';
 import { Opts } from '../../../core/graphql/remote-operations/decorators/opts.decorator';
 
+// Cambia cómo filtran los datos las operaciones: solo para SUPER
 @Resolver('ScopedAccess')
 export class ScopedAccessResolver {
   constructor(
     private readonly scopedAccessService: ResourceScopedAccessService,
   ) {}
 
-  @Roles(Role.SUPER, Role.PRINCIPAL)
+  @Roles(Role.SUPER)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('createScopedAccess')
   async create(
@@ -35,7 +36,7 @@ export class ScopedAccessResolver {
     return this.scopedAccessService.create(createScopedAccessInput, user);
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Query('scopedAccesses')
   async findAll(
@@ -46,14 +47,14 @@ export class ScopedAccessResolver {
     return this.scopedAccessService.find(options, user);
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER)
+  @Roles(Role.SUPER)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Query('scopedAccess')
   async findOne(@CurrentUser() user: JWTPayload, @Args('id') id: number) {
     return this.scopedAccessService.findOne(id, user);
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL)
+  @Roles(Role.SUPER)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('updateScopedAccess')
   async update(

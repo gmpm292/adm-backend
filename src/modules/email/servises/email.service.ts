@@ -13,7 +13,7 @@ import { compile } from 'handlebars';
 import { EmailProvider } from '../enums/email-provider.enum';
 import { SendEmailInput } from '../dto/send-email.input';
 import { EmailStats } from '../interfaces/email-stats.interface';
-import { SentMessageInfo, Transporter } from 'nodemailer';
+import { SentMessageInfo } from 'nodemailer';
 import { CreateEmailTemplateInput } from '../dto/create-email-template.input';
 import { UpdateEmailTemplateInput } from '../dto/update-email-template.input';
 import { NotFoundError } from '../../../core/errors/appErrors/NotFoundError.error';
@@ -24,7 +24,6 @@ import { EmailHealthService } from './email-health.service';
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
-  private transporter: Transporter | undefined;
 
   constructor(
     @InjectRepository(Email)
@@ -48,8 +47,8 @@ export class EmailService {
 
   private async initializeTransport(): Promise<void> {
     try {
-      this.transporter = await this.transportService.getTransporter();
-      if (!this.transporter) {
+      const transporter = await this.transportService.getTransporter();
+      if (!transporter) {
         this.logger.warn('Email transporter not initialized');
       }
     } catch (error) {
@@ -119,7 +118,9 @@ export class EmailService {
         await this.applyTemplate(data, emailRecord);
       }
 
-      if (!this.transporter) {
+      // Se pide en cada envío: si cambió la configuración se rehace
+      const transporter = await this.transportService.getTransporter();
+      if (!transporter) {
         throw new Error('Email transporter not initialized');
       }
 
@@ -133,8 +134,7 @@ export class EmailService {
         attachments: data.attachments,
       };
 
-      const info: SentMessageInfo =
-        await this.transporter.sendMail(mailOptions);
+      const info: SentMessageInfo = await transporter.sendMail(mailOptions);
 
       emailRecord.status = EmailStatus.SENT;
       emailRecord.sentAt = new Date();

@@ -19,7 +19,8 @@ type Category implements SecurityBaseEntity {
 
   name: String!
   description: String
-  products: [Product]! # Relationship to products
+  "Productos de la categoría (sin contar los eliminados)"
+  productCount: Int
 }
 
 type CategoriesSummary {
@@ -58,8 +59,4 @@ extend type Mutation {
   updateCategory(updateCategoryInput: UpdateCategoryInput!): Category!
   removeCategories(ids: [Int!]!): [Category]!
   restoreCategories(ids: [Int!]!): Int
-}
-
-extend type Subscription {
-  categoryChanged: Boolean
 }

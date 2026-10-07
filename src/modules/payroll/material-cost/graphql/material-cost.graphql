@@ -24,8 +24,8 @@ type MaterialCost implements SecurityBaseEntity {
   currency: Currency
   isActive: Boolean
 
-  # Relationships
-  products: [Product]!
+  "Productos que lo usan (sin contar los eliminados)"
+  productCount: Int
 }
 
 type MaterialCostsSummary {
@@ -65,14 +65,6 @@ input UpdateMaterialCostInput {
 extend type Query {
   materialCosts(options: ListOptions): MaterialCostsSummary!
   materialCost(id: Int!): MaterialCost
-  materialCostsByUnitOfMeasure(
-    unitOfMeasureId: Int!
-    options: ListOptions
-  ): MaterialCostsSummary!
-  materialCostsByCurrency(
-    currencyId: Int!
-    options: ListOptions
-  ): MaterialCostsSummary!
 }
 
 extend type Mutation {

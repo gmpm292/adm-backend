@@ -1,9 +1,10 @@
 import { IsString, IsOptional, Length, IsBoolean, IsIn } from 'class-validator';
 import { CreateSecurityBaseInput } from '../../../../core/dtos/create-security-base.input';
+import { UNIT_CATEGORIES } from '../unit-categories';
 
 /**
  * DTO for creating a new unit of measure.
- * Example: { name: "Gram", symbol: "g", category: "weight" }
+ * Example: { name: "Gramo", symbol: "g", category: "peso" }
  */
 export class CreateUnitOfMeasureInput extends CreateSecurityBaseInput {
   @IsString()
@@ -16,24 +17,8 @@ export class CreateUnitOfMeasureInput extends CreateSecurityBaseInput {
 
   @IsString()
   @IsOptional()
-  @IsIn(
-    [
-      'weight',
-      'volume',
-      'length',
-      'area',
-      'time',
-      'count',
-      'energy',
-      'power',
-      'pressure',
-      'temperature',
-      'speed',
-      'density',
-      'other',
-    ],
-    { message: 'Category must be a valid unit category' },
-  )
+  // Vacío: sin categoría
+  @IsIn(UNIT_CATEGORIES, { message: 'La categoría no es válida' })
   category?: string;
 
   @IsString()

@@ -1,4 +1,6 @@
 import {
+  IsPositive,
+  Matches,
   IsString,
   IsNumber,
   IsBoolean,
@@ -9,7 +11,7 @@ import { CreateSecurityBaseInput } from '../../../../core/dtos/create-security-b
 
 export class CreateCurrencyInput extends CreateSecurityBaseInput {
   @IsString()
-  @Length(3, 3)
+  @Matches(/^[A-Za-z]{3}$/, { message: 'El código son tres letras, como USD' })
   code: string; // CUP, MLC, USD
 
   @IsString()
@@ -21,6 +23,7 @@ export class CreateCurrencyInput extends CreateSecurityBaseInput {
   symbol: string;
 
   @IsNumber()
+  @IsPositive({ message: 'La tasa debe ser mayor que cero' })
   exchangeRateToCUP: number;
 
   @IsBoolean()
