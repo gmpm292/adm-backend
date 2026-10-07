@@ -153,6 +153,40 @@ en la base de datos con SQL directo (`StatisticsService`).
 - **Roles**: crear y editar productos, inventarios y movimientos SUPER,
   PRINCIPAL y ADMIN; eliminar SUPER y PRINCIPAL; restaurar solo SUPER.
 
+## Nómina (`src/modules/payroll`)
+
+- **Trabajadores**: nombre y contacto son del trabajador (columnas `temp*`,
+  que ya no son temporales). La cuenta de usuario solo se vincula
+  (`userId`, misma empresa salvo SUPER, una por trabajador); las cuentas se
+  crean en Usuarios. `worker.paymentRule` no lo usa el cálculo.
+- **Asistencia**: la tarea `GENERATE_DAILY_ATTENDANCES` (06:00 UTC, salvo
+  domingos) abre el registro del día de cada trabajador como `absent`; al
+  anotar la entrada pasa a `present` y con la salida se calculan las horas.
+  Un registro por trabajador y día. `isPaid` solo con `markAsPaid`.
+  `shouldWorkToday` mira el horario que cubre la fecha (el de su oficina o el
+  de toda la empresa).
+- **Horarios**: semanas con días laborables; sin oficina valen para toda la
+  empresa.
+- **Períodos**: sin solapes en una empresa, 31 días como mucho. Se cierran con
+  `closePayrollPeriod` (terminado y sin pagos pendientes); `updatePayrollPeriod`
+  no cierra y no cambia las fechas de un período con pagos.
+- **Cálculo** (desde el período): `processPeriodPayments` (importe fijo × las
+  unidades del ámbito) y `processPeriodSales` (comisiones venta a venta).
+  - Las comisiones salen de las líneas vendidas (`helpers/sold-lines.helper.ts`):
+    sin devueltas ni canceladas, filtradas por el producto o la categoría de la
+    regla y con el precio en la moneda de la regla (el guardado en la línea o el
+    base convertido). Nunca se suman monedas.
+  - Recalcular borra y rehace solo lo no pagado; lo pagado, revertido o
+    compensado no se toca. Cada acumulador guarda en `metadata.bySale` lo que
+    aportó cada venta, para restarlo al recalcular.
+  - Fuera de todos los tramos de precio, o por debajo del primer escalón de
+    cantidad, no se paga (las unidades sí cuentan para llegar al mínimo).
+- **Pagos**: un pago hecho o de un período cerrado no se edita ni se elimina;
+  `markWorkerPaymentsAsPaid` los marca por lote. Los 8 pagos antiguos sin
+  período hacen que `WorkerPayment.payrollPeriod` sea opcional en el esquema.
+- Las columnas `decimal` de pagos y acumuladores llevan `decimalTransformer`
+  (`core/transformers`): Postgres las devuelve como texto.
+
 ## Empresa (`src/modules/company`)
 
 - Cuatro niveles: empresa → oficina → departamento → equipo. Cada uno hereda
@@ -219,5 +253,9 @@ en la base de datos con SQL directo (`StatisticsService`).
   solo mostrador?
 - **Devolución parcial**: no rebaja el total de la venta, así que las
   estadísticas la cuentan completa. Corregirlo pide guardar el importe devuelto.
-- **«ID Venta» en el cálculo de nómina** (frontend): es lo único que identifica
-  cada venta en esa tabla; lo correcto sería mostrar el número de factura.
+- **Comisiones ya pagadas de una venta devuelta**: recalcular no las toca (ya
+  se pagaron). ¿Se descuentan en el período siguiente? El servicio
+  `PaymentRollbackService` crea compensaciones, pero ninguna pantalla lo usa.
+- **Registros de asistencia «Presente con 0 h»** que creó la tarea antigua
+  (corría cada minuto): siguen en la base y cuentan para el reparto. ¿Se pasan
+  a «Ausente» con una migración?

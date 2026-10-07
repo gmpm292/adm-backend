@@ -10,7 +10,8 @@ import {
   ListOptions,
   ListSummary,
 } from '../../../../core/graphql/remote-operations';
-import { NotFoundError } from '../../../../core/errors/appErrors/NotFoundError.error';
+import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
+import { ConflictError } from '../../../../core/errors/appErrors/ConflictError.error';
 import { JWTPayload } from '../../../auth/dto/jwt-payload.dto';
 import { ScopedAccessService } from '../../../scoped-access/services/scoped-access.service';
 import { PaymentType } from '../enums/payment-type.enum';
@@ -47,7 +48,7 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
     const paymentRule = new PaymentRule();
 
     paymentRule.paymentType = createPaymentRuleInput.paymentType;
-    paymentRule.name = createPaymentRuleInput.name;
+    paymentRule.name = createPaymentRuleInput.name.trim();
     paymentRule.description = createPaymentRuleInput.description;
     paymentRule.isActive = createPaymentRuleInput.isActive ?? true;
     paymentRule.workerType = createPaymentRuleInput.workerType;
@@ -97,75 +98,147 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
       createPaymentRuleInput.conditions,
     );
 
+    await this.assertUniqueName(
+      paymentRule.name,
+      createPaymentRuleInput.businessId ?? cu?.businessId,
+      undefined,
+      manager,
+    );
+
     return super.baseCreate({
       data: paymentRule,
-      uniqueFields: ['name'],
       cu,
       scopes,
       manager,
     });
   }
 
+  /** Las condiciones del tipo de pago, comprobadas y sin campos de más */
   private processConditions(
     paymentType: PaymentType,
     conditions: ConditionsInput,
   ): Conditions {
-    const result: Conditions = {};
+    const fail = (message: string): never => {
+      throw new BadRequestError(message);
+    };
+    const isSet = (value: unknown) => value !== undefined && value !== null;
+    const percent = (value: number | undefined | null) =>
+      typeof value === 'number' && value > 0 && value <= 100;
 
     switch (paymentType) {
-      case PaymentType.PRICE_RANGE:
-        if (!conditions.priceRanges?.length) {
-          throw new Error('Price ranges are required for PRICE_RANGE type');
-        }
-        result.priceRanges = conditions.priceRanges.map((range) => ({
-          min: range.min,
-          max: range.max ?? null,
-          currency: range.currency,
-          amount: range.amount,
-          percentage: range.percentage,
-        }));
-        break;
+      case PaymentType.PRICE_RANGE: {
+        const ranges = [...(conditions.priceRanges ?? [])].sort(
+          (x, y) => x.min - y.min,
+        );
+        if (!ranges.length) fail('Añade al menos un rango de precios');
+        ranges.forEach((range, index) => {
+          if (range.min < 0) {
+            fail('El precio mínimo de un rango no puede ser negativo');
+          }
+          if (isSet(range.max) && range.max <= range.min) {
+            fail(
+              'En cada rango, el precio máximo debe ser mayor que el mínimo',
+            );
+          }
+          if (isSet(range.amount) === isSet(range.percentage)) {
+            fail('Cada rango paga un importe o un porcentaje (uno de los dos)');
+          }
+          if (isSet(range.amount) && range.amount <= 0) {
+            fail('El importe de un rango debe ser mayor que cero');
+          }
+          if (isSet(range.percentage) && !percent(range.percentage)) {
+            fail('El porcentaje de un rango va de 0 a 100');
+          }
+          const next = ranges[index + 1];
+          if (next && (!isSet(range.max) || range.max > next.min)) {
+            fail('Los rangos de precios no pueden solaparse');
+          }
+        });
+        return {
+          priceRanges: ranges.map((range) => ({
+            min: range.min,
+            max: range.max ?? null,
+            currency: range.currency,
+            amount: range.amount ?? undefined,
+            percentage: range.percentage ?? undefined,
+          })),
+        } as Conditions;
+      }
 
-      case PaymentType.SALE_QUANTITY:
-        if (!conditions.saleQuantity?.length) {
-          throw new Error(
-            'Sale quantity conditions are required for SALE_QUANTITY type',
-          );
+      case PaymentType.SALE_QUANTITY: {
+        const steps = [...(conditions.saleQuantity ?? [])].sort(
+          (x, y) => x.minProducts - y.minProducts,
+        );
+        if (!steps.length) fail('Añade al menos un escalón de cantidad');
+        steps.forEach((step) => {
+          if (!(step.minProducts >= 1)) {
+            fail('Cada escalón empieza en 1 producto o más');
+          }
+          if (isSet(step.ratePerProduct) === isSet(step.percentagePerProduct)) {
+            fail(
+              'Cada escalón paga un importe o un porcentaje por producto (uno de los dos)',
+            );
+          }
+          if (isSet(step.ratePerProduct) && step.ratePerProduct <= 0) {
+            fail('El importe por producto debe ser mayor que cero');
+          }
+          if (
+            isSet(step.percentagePerProduct) &&
+            !percent(step.percentagePerProduct)
+          ) {
+            fail('El porcentaje por producto va de 0 a 100');
+          }
+        });
+        if (new Set(steps.map((x) => x.minProducts)).size !== steps.length) {
+          fail('Hay dos escalones que empiezan en la misma cantidad');
         }
-        result.saleQuantity = conditions.saleQuantity.map((sq) => ({
-          minProducts: sq.minProducts,
-          ratePerProduct: sq.ratePerProduct,
-          percentagePerProduct: sq.percentagePerProduct,
-        }));
-        break;
+        return {
+          saleQuantity: steps.map((step) => ({
+            minProducts: step.minProducts,
+            ratePerProduct: step.ratePerProduct ?? undefined,
+            percentagePerProduct: step.percentagePerProduct ?? undefined,
+          })),
+        } as Conditions;
+      }
 
       case PaymentType.FIXED_AMOUNT:
-        if (!conditions.fixedAmount) {
-          throw new Error(
-            'Fixed amount condition is required for FIXED_AMOUNT type',
-          );
+        if (!(conditions.fixedAmount && conditions.fixedAmount.amount > 0)) {
+          fail('Indica el importe fijo, mayor que cero');
         }
-        result.fixedAmount = {
-          amount: conditions.fixedAmount.amount,
-        };
-        break;
+        return { fixedAmount: { amount: conditions.fixedAmount!.amount } };
 
       case PaymentType.PERCENTAGE:
-        if (!conditions.percentage) {
-          throw new Error(
-            'Percentage condition is required for PERCENTAGE type',
-          );
+        if (!percent(conditions.percentage?.percentage)) {
+          fail('Indica el porcentaje, de 0 a 100');
         }
-        result.percentage = {
-          percentage: conditions.percentage.percentage,
+        return {
+          percentage: { percentage: conditions.percentage!.percentage },
         };
-        break;
 
       default:
-        throw new Error(`Unsupported payment type: ${paymentType as string}`);
+        return fail('Tipo de pago desconocido');
     }
+  }
 
-    return result;
+  /** Dos reglas de la misma empresa no se llaman igual */
+  private async assertUniqueName(
+    name: string,
+    businessId: number | undefined,
+    exceptId: number | undefined,
+    manager?: EntityManager,
+  ): Promise<void> {
+    const repository =
+      manager?.getRepository(PaymentRule) ?? this.paymentRuleRepository;
+    const query = repository
+      .createQueryBuilder('rule')
+      .where('LOWER(TRIM(rule.name)) = LOWER(:name)', { name: name.trim() });
+    if (businessId) {
+      query.andWhere('"rule"."businessId" = :businessId', { businessId });
+    }
+    if (exceptId) query.andWhere('rule.id != :exceptId', { exceptId });
+    if (await query.getCount()) {
+      throw new ConflictError(`Ya hay una regla llamada «${name.trim()}»`);
+    }
   }
 
   async find(
@@ -191,7 +264,13 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
   ): Promise<PaymentRule> {
     return super.baseFindOne({
       id,
-      relationsToLoad: { product: true, category: true },
+      relationsToLoad: {
+        product: true,
+        category: true,
+        business: true,
+        createdBy: true,
+        updatedBy: true,
+      },
       cu,
       scopes,
       manager,
@@ -205,9 +284,21 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<PaymentRule> {
-    const paymentRule = await super.baseFindOne({ id, cu, scopes, manager });
-    if (!paymentRule) {
-      throw new NotFoundError('Payment rule not found');
+    const paymentRule = await super.baseFindOne({
+      id,
+      relationsToLoad: { business: true },
+      cu,
+      scopes,
+      manager,
+    });
+    if (
+      updatePaymentRuleInput.paymentType !== undefined &&
+      updatePaymentRuleInput.paymentType !== paymentRule.paymentType &&
+      !updatePaymentRuleInput.conditions
+    ) {
+      throw new BadRequestError(
+        'Al cambiar el tipo de pago hay que indicar sus nuevas condiciones',
+      );
     }
 
     // Update fields if provided
@@ -215,7 +306,13 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
       paymentRule.paymentType = updatePaymentRuleInput.paymentType;
     }
     if (updatePaymentRuleInput.name !== undefined) {
-      paymentRule.name = updatePaymentRuleInput.name;
+      paymentRule.name = updatePaymentRuleInput.name.trim();
+      await this.assertUniqueName(
+        paymentRule.name,
+        paymentRule.business?.id,
+        id,
+        manager,
+      );
     }
     if (updatePaymentRuleInput.description !== undefined) {
       paymentRule.description = updatePaymentRuleInput.description;
@@ -254,7 +351,7 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
           manager,
         );
       } else {
-        paymentRule.product = undefined;
+        paymentRule.product = null as unknown as PaymentRule['product'];
       }
     }
 
@@ -268,7 +365,7 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
           manager,
         );
       } else {
-        paymentRule.category = undefined;
+        paymentRule.category = null as unknown as PaymentRule['category'];
       }
     }
 
@@ -305,14 +402,6 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<PaymentRule[]> {
-    // Check if any rules are assigned to workers before deletion
-    const assignedRules = await this.checkAssignedRules(ids);
-    if (assignedRules.length > 0) {
-      throw new Error(
-        `Cannot delete payment rules assigned to workers: ${assignedRules.join(', ')}`,
-      );
-    }
-
     return super.baseDeleteMany({
       ids,
       cu,
@@ -320,18 +409,6 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
       manager,
       softRemove: true,
     });
-  }
-
-  private async checkAssignedRules(ids: number[]): Promise<number[]> {
-    const result = await this.paymentRuleRepository
-      .createQueryBuilder('rule')
-      .select('rule.id')
-      .innerJoin('py_workers', 'worker', 'worker.paymentRuleId = rule.id')
-      .where('rule.id IN (:...ids)', { ids })
-      .getRawMany();
-
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access
-    return result.map((r) => r.rule_id);
   }
 
   async restore(

@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { CurrencyService } from '../../../currency/services/currency.service';
+import { soldLines } from '../../helpers/sold-lines.helper';
 import { BasePaymentProcessor } from './base-processor';
 import {
   RealTimeCalculationResult,
@@ -31,6 +33,7 @@ export class SaleQuantityProcessor extends BasePaymentProcessor {
     private readonly attendanceService: AttendanceService,
     private readonly workerService: WorkerService,
     private readonly paymentAccumulatorService: PaymentAccumulatorService,
+    private readonly currencyService: CurrencyService,
   ) {
     super();
   }
@@ -69,36 +72,13 @@ export class SaleQuantityProcessor extends BasePaymentProcessor {
 
     const saleDate = sale.effectiveDate || new Date();
 
-    // 2. BUSCAR PRODUCTOS Y CANTIDADES EN LA VENTA
-    const productDetails: Array<{
-      productId?: number;
-      productName?: string;
-      quantity: number;
-      unitPrice: number;
-    }> = [];
-
-    for (const detail of sale.details || []) {
-      // Verificar si el producto/categoría aplica a la regla
-      const productApplies =
-        !rule.product?.id || detail.product?.id === rule.product?.id;
-      const categoryApplies =
-        !rule.category?.id ||
-        detail.product?.category?.id === rule.category?.id;
-
-      if (productApplies && categoryApplies) {
-        const quantity = detail.quantity || 0;
-        const unitPrice = detail.product?.basePrice || 0;
-
-        if (quantity > 0) {
-          productDetails.push({
-            productId: detail.product?.id,
-            productName: detail.product?.name,
-            quantity,
-            unitPrice,
-          });
-        }
-      }
-    }
+    // 2. LO VENDIDO (SIN DEVOLUCIONES), CON SU PRECIO EN LA MONEDA DE LA REGLA
+    const productDetails = await soldLines(
+      sale,
+      rule,
+      rule.paymentCurrency,
+      this.currencyService,
+    );
 
     if (productDetails.length === 0) {
       return {
@@ -243,7 +223,9 @@ export class SaleQuantityProcessor extends BasePaymentProcessor {
 
         if (
           attendance &&
-          attendance.status === AttendanceStatus.PRESENT &&
+          [AttendanceStatus.PRESENT, AttendanceStatus.LATE].includes(
+            attendance.status,
+          ) &&
           attendance.countsForProfitSharing === true
         ) {
           applicableWorkers.push(worker);
@@ -292,7 +274,7 @@ export class SaleQuantityProcessor extends BasePaymentProcessor {
         workersWithAccumulators.push({
           worker,
           accumulator,
-          currentProductCounter: accumulator?.productCounter || 0,
+          currentProductCounter: Number(accumulator?.productCounter || 0),
         });
       } catch {
         workersWithAccumulators.push({
@@ -366,11 +348,7 @@ export class SaleQuantityProcessor extends BasePaymentProcessor {
             }
           }
 
-          // Si no se encuentra condición, usar la primera (mínima)
-          if (!applicableCondition && sortedConditions.length > 0) {
-            applicableCondition = sortedConditions[0];
-            conditionIndex = 0;
-          }
+          workerCalculation.productCounterIncrement += 1;
 
           if (applicableCondition) {
             // Calcular monto para esta unidad
@@ -398,7 +376,6 @@ export class SaleQuantityProcessor extends BasePaymentProcessor {
             const totalApplicableWorkers = applicableWorkers.length;
             const scaledAmount = unitAmount / totalApplicableWorkers;
             workerCalculation.totalAmount += scaledAmount;
-            workerCalculation.productCounterIncrement += 1;
 
             // Guardar detalles (solo para primeros productos para no hacer el objeto muy grande)
             if (workerCalculation.productBreakdown.length < 5) {
@@ -469,7 +446,7 @@ export class SaleQuantityProcessor extends BasePaymentProcessor {
             (accumulator?.productCounter || 0) +
             workerCalculation.productCounterIncrement,
           accumulatedAmount:
-            (accumulator?.accumulatedAmount || 0) + finalAmount,
+            Number(accumulator?.accumulatedAmount || 0) + finalAmount,
         },
       });
 

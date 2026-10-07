@@ -9,7 +9,8 @@ import {
   ListOptions,
   ListSummary,
 } from '../../../../core/graphql/remote-operations';
-import { NotFoundError } from '../../../../core/errors/appErrors/NotFoundError.error';
+import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
+import { PaymentMethod } from '../enums/payment-method.enum';
 import { JWTPayload } from '../../../auth/dto/jwt-payload.dto';
 import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
 import { ScopedAccessService } from '../../../scoped-access/services/scoped-access.service';
@@ -46,21 +47,17 @@ export class WorkerPaymentService extends BaseService<WorkerPayment> {
       this.workerService.findOne(workerId, cu, scopes, manager),
       this.payrollPeriodService.findOne(payrollPeriodId, cu, scopes, manager),
     ]);
-
-    if (!worker) {
-      throw new NotFoundError('Worker not found');
+    if (payrollPeriod.isClosed) {
+      throw new BadRequestError(
+        'El período está cerrado: no admite pagos nuevos',
+      );
     }
-    if (!payrollPeriod) {
-      throw new NotFoundError('Accounting period not found');
+    if (!(createWorkerPaymentInput.amount > 0)) {
+      throw new BadRequestError('El importe debe ser mayor que cero');
     }
-
-    // Verify currency is valid
-    const currency = await this.currencyService.findByCode(
+    const currency = await this.validCurrency(
       createWorkerPaymentInput.currency,
     );
-    if (!currency) {
-      throw new NotFoundError('Invalid currency');
-    }
 
     const workerPayment: WorkerPayment = {
       ...rest,
@@ -72,6 +69,11 @@ export class WorkerPaymentService extends BaseService<WorkerPayment> {
         : null,
       exchangeRate:
         createWorkerPaymentInput.exchangeRate || currency.exchangeRateToCUP,
+      // El pago es del lugar del trabajador
+      business: worker.business,
+      office: worker.office,
+      department: worker.department,
+      team: worker.team,
     } as WorkerPayment;
 
     return super.baseCreate({
@@ -82,6 +84,59 @@ export class WorkerPaymentService extends BaseService<WorkerPayment> {
     });
   }
 
+  /** La moneda existe y está activa */
+  private async validCurrency(code: string) {
+    const currency = await this.currencyService
+      .findByCode(code)
+      .catch(() => null);
+    if (!currency) {
+      throw new BadRequestError(`La moneda ${code} no existe`);
+    }
+    return currency;
+  }
+
+  /** Marca pagos como hechos, todos o ninguno */
+  async markAsPaid(
+    ids: number[],
+    paidDate: Date | undefined,
+    paymentMethod: PaymentMethod | undefined,
+    cu?: JWTPayload,
+    scopes?: ScopedAccessEnum[],
+    manager?: EntityManager,
+  ): Promise<WorkerPayment[]> {
+    if (!manager) {
+      return this.workerPaymentRepository.manager.transaction((txManager) =>
+        this.markAsPaid(ids, paidDate, paymentMethod, cu, scopes, txManager),
+      );
+    }
+    const payments = await super.baseFindByIds({
+      ids,
+      relationsToLoad: { payrollPeriod: true },
+      cu,
+      scopes,
+      manager,
+    });
+    if (payments.some((p) => p.payrollPeriod?.isClosed)) {
+      throw new BadRequestError('Hay pagos de un período cerrado');
+    }
+    const updated: WorkerPayment[] = [];
+    for (const payment of payments.filter((p) => !p.paidDate)) {
+      updated.push(
+        await super.baseUpdate({
+          id: payment.id as number,
+          data: {
+            paidDate: paidDate ? new Date(paidDate) : new Date(),
+            ...(paymentMethod && { paymentMethod }),
+          },
+          cu,
+          scopes,
+          manager,
+        }),
+      );
+    }
+    return updated;
+  }
+
   async find(
     options?: ListOptions,
     cu?: JWTPayload,
@@ -90,7 +145,13 @@ export class WorkerPaymentService extends BaseService<WorkerPayment> {
   ): Promise<ListSummary> {
     return await super.baseFind({
       options,
-      relationsToLoad: ['worker', 'payrollPeriod', 'paymentRule', 'sale'],
+      relationsToLoad: [
+        'worker',
+        'worker.user',
+        'payrollPeriod',
+        'paymentRule',
+        'sale',
+      ],
       cu,
       scopes,
       manager,
@@ -106,7 +167,7 @@ export class WorkerPaymentService extends BaseService<WorkerPayment> {
     return super.baseFindOne({
       id,
       relationsToLoad: {
-        worker: true,
+        worker: { user: true },
         payrollPeriod: true,
         paymentRule: true,
         sale: true,
@@ -149,6 +210,10 @@ export class WorkerPaymentService extends BaseService<WorkerPayment> {
     });
   }
 
+  /**
+   * Un pago hecho solo admite notas o deshacer el pago (`paidDate: null`);
+   * los de un período cerrado no se tocan.
+   */
   async update(
     id: number,
     updateWorkerPaymentInput: UpdateWorkerPaymentInput,
@@ -156,63 +221,96 @@ export class WorkerPaymentService extends BaseService<WorkerPayment> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<WorkerPayment> {
-    const workerPayment = await super.baseFindOne({ id, cu, scopes, manager });
-    if (!workerPayment) {
-      throw new NotFoundError();
+    const workerPayment = await super.baseFindOne({
+      id,
+      relationsToLoad: { payrollPeriod: true },
+      cu,
+      scopes,
+      manager,
+    });
+    if (workerPayment.payrollPeriod?.isClosed) {
+      throw new BadRequestError('El período del pago está cerrado');
     }
 
-    if (updateWorkerPaymentInput.workerId) {
-      const worker = await this.workerService.findOne(
-        updateWorkerPaymentInput.workerId,
+    /* eslint-disable @typescript-eslint/no-unused-vars */
+    const {
+      id: _id,
+      workerId,
+      payrollPeriodId,
+      saleId,
+      paymentRuleId,
+      ...rest
+    } = updateWorkerPaymentInput;
+    /* eslint-enable @typescript-eslint/no-unused-vars */
+    const changesMoney = [
+      workerId,
+      payrollPeriodId,
+      rest.amount,
+      rest.currency,
+      rest.paymentConcept,
+    ].some((value) => value !== undefined);
+    const stillPaid = rest.paidDate !== null && !!workerPayment.paidDate;
+    if (changesMoney && stillPaid) {
+      throw new BadRequestError(
+        'Un pago ya hecho no se modifica: quita antes la fecha de pago',
+      );
+    }
+
+    const data: Partial<WorkerPayment> = { ...rest } as Partial<WorkerPayment>;
+    if (rest.amount !== undefined && !(rest.amount > 0)) {
+      throw new BadRequestError('El importe debe ser mayor que cero');
+    }
+    if (rest.currency) await this.validCurrency(rest.currency);
+    if (workerId) {
+      data.worker = await this.workerService.findOne(
+        workerId,
         cu,
         scopes,
         manager,
       );
-      if (!worker) {
-        throw new NotFoundError('Worker not found');
-      }
-      workerPayment.worker = worker;
     }
-
-    if (updateWorkerPaymentInput.payrollPeriodId) {
-      const payrollPeriod = await this.payrollPeriodService.findOne(
-        updateWorkerPaymentInput.payrollPeriodId,
+    if (payrollPeriodId) {
+      const period = await this.payrollPeriodService.findOne(
+        payrollPeriodId,
         cu,
         scopes,
         manager,
       );
-      if (!payrollPeriod) {
-        throw new NotFoundError('Accounting period not found');
+      if (period.isClosed) {
+        throw new BadRequestError('Ese período está cerrado');
       }
-      workerPayment.payrollPeriod = payrollPeriod;
+      data.payrollPeriod = period;
     }
 
-    if (updateWorkerPaymentInput.currency) {
-      const currency = await this.currencyService.findByCode(
-        updateWorkerPaymentInput.currency,
-      );
-      if (!currency) {
-        throw new NotFoundError('Invalid currency');
-      }
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { workerId, payrollPeriodId, ...rest } = updateWorkerPaymentInput;
     return super.baseUpdate({
       id,
-      data: { ...workerPayment, ...rest },
+      data,
       cu,
       scopes,
       manager,
     });
   }
 
+  /** Solo pagos pendientes de períodos abiertos */
   async remove(
     ids: number[],
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<WorkerPayment[]> {
+    const payments = await super.baseFindByIds({
+      ids,
+      relationsToLoad: { payrollPeriod: true },
+      cu,
+      scopes,
+      manager,
+    });
+    if (payments.some((p) => p.paidDate)) {
+      throw new BadRequestError('Un pago ya hecho no se elimina');
+    }
+    if (payments.some((p) => p.payrollPeriod?.isClosed)) {
+      throw new BadRequestError('Un pago de un período cerrado no se elimina');
+    }
     return super.baseDeleteMany({
       ids,
       cu,

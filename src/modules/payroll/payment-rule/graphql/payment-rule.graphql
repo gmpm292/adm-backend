@@ -62,7 +62,6 @@ type PaymentRule implements SecurityBaseEntity {
   name: String!
   description: String
   isActive: Boolean!
-  specificWorkersIds: [Int]
   workerType: WorkerType
   otherType: String
   product: Product

@@ -1,3 +1,4 @@
+import { decimalTransformer } from '../../../../core/transformers/decimal.transformer';
 import { Entity, Column, ManyToOne, JoinColumn } from 'typeorm';
 import { SecurityBaseEntity } from '../../../../core/entities/security-base.entity';
 import { Worker } from '../../worker/entities/worker.entity';
@@ -23,13 +24,24 @@ export class WorkerPayment extends SecurityBaseEntity {
   @Column({ type: 'timestamp', nullable: true })
   paidDate?: Date; // Day it was paid. If null, it has not been carried out.
 
-  @Column({ type: 'decimal', precision: 12, scale: 2 })
+  @Column({
+    type: 'decimal',
+    precision: 12,
+    scale: 2,
+    transformer: decimalTransformer,
+  })
   amount: number;
 
   @Column({ type: 'varchar', length: 3 })
   currency: string; // CUP, MLC, USD
 
-  @Column({ type: 'decimal', precision: 12, scale: 6, nullable: true })
+  @Column({
+    type: 'decimal',
+    precision: 12,
+    scale: 6,
+    nullable: true,
+    transformer: decimalTransformer,
+  })
   exchangeRate?: number;
 
   @Column({ type: 'enum', enum: PaymentMethod })

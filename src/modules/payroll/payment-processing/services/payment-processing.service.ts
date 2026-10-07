@@ -17,6 +17,7 @@ import { PayrollPeriodService } from '../../payroll-period/services/payroll-peri
 import { ConditionalOperator } from '../../../../core/graphql/remote-operations/enums/conditional-operation.enum';
 import { PeriodSalesProcessingResult } from '../types/period-sales-processing-result.type';
 import { Sale } from '../../../sales/sale/entities/sale.entity';
+import { PayrollPeriod } from '../../payroll-period/entities/payroll-period.entity';
 
 @Injectable()
 export class PaymentProcessingService {
@@ -43,6 +44,7 @@ export class PaymentProcessingService {
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
+    period?: PayrollPeriod,
   ): Promise<{
     success: boolean;
     paymentsCreated: number;
@@ -60,6 +62,7 @@ export class PaymentProcessingService {
         cu,
         scopes,
         manager,
+        period,
       );
 
       console.log(
@@ -101,6 +104,7 @@ export class PaymentProcessingService {
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
+    period?: PayrollPeriod,
   ): Promise<BatchSaleProcessingResult> {
     console.log(
       `[PaymentProcessing] Iniciando procesamiento batch de ${saleIds.length} ventas`,
@@ -121,6 +125,7 @@ export class PaymentProcessingService {
           cu,
           scopes,
           manager,
+          period,
         );
 
         results.push({
@@ -129,6 +134,16 @@ export class PaymentProcessingService {
           paymentsCreated: result.paymentsCreated,
           totalAmount: result.totalAmount,
           details: result.details,
+          // El motivo, si falló entera o alguna de sus reglas
+          error:
+            (result.details as Array<{ error?: string; ruleName?: string }>)
+              .filter((detail) => detail.error)
+              .map((detail) =>
+                detail.ruleName
+                  ? `${detail.ruleName}: ${detail.error}`
+                  : detail.error,
+              )
+              .join('; ') || undefined,
         });
 
         if (result.success) {
@@ -218,11 +233,12 @@ export class PaymentProcessingService {
       ];
 
       // Aplicar filtros de scope si existen
-      if (cu?.businessId) {
+      const businessId = payrollPeriod.business?.id ?? cu?.businessId;
+      if (businessId) {
         filters.push({
           property: 'businessId',
           operator: ConditionalOperator.EQUAL,
-          value: String(cu.businessId),
+          value: String(businessId),
         });
       }
 
@@ -270,6 +286,7 @@ export class PaymentProcessingService {
         cu,
         scopes,
         manager,
+        payrollPeriod,
       );
 
       // 5. Calcular totales adicionales

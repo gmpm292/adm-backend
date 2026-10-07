@@ -1,35 +1,27 @@
 import {
   IsDate,
-  IsBoolean,
   IsOptional,
   IsObject,
   IsString,
+  Length,
   MaxLength,
 } from 'class-validator';
 import { CreateSecurityBaseInput } from '../../../../core/dtos/create-security-base.input';
 
 /**
- * DTO for creating a work schedule
+ * Semana (o tramo) de trabajo de una oficina: qué días se trabaja.
  * Example: {
- *   startDate: "2024-06-01",
- *   endDate: "2024-06-07",
- *   workingDays: {
- *     monday: true,
- *     tuesday: true,
- *     wednesday: false,
- *     thursday: true,
- *     friday: true,
- *     saturday: false,
- *     sunday: false
- *   },
+ *   name: "Semana 41 - 2026",
+ *   startDate: "2026-10-05",
+ *   endDate: "2026-10-11",
+ *   workingDays: { monday: true, ..., sunday: false },
  *   notes: "Semana con feriado el miércoles"
  * }
  */
 export class CreateWorkScheduleInput extends CreateSecurityBaseInput {
-  @IsOptional()
   @IsString()
-  @MaxLength(100)
-  name?: string;
+  @Length(1, 100)
+  name: string;
 
   @IsDate()
   startDate: Date;
@@ -49,9 +41,7 @@ export class CreateWorkScheduleInput extends CreateSecurityBaseInput {
   };
 
   @IsOptional()
-  @IsBoolean()
-  isRecurring?: boolean;
-
-  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
   notes?: string;
 }

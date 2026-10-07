@@ -1,5 +1,7 @@
 // payment-processing/services/payment-processors/price-range-processor.ts
 import { Injectable } from '@nestjs/common';
+import { CurrencyService } from '../../../currency/services/currency.service';
+import { soldLines } from '../../helpers/sold-lines.helper';
 import { BasePaymentProcessor } from './base-processor';
 import {
   RealTimeCalculationResult,
@@ -31,6 +33,7 @@ export class PriceRangeProcessor extends BasePaymentProcessor {
     private readonly attendanceService: AttendanceService,
     private readonly workerService: WorkerService,
     private readonly paymentAccumulatorService: PaymentAccumulatorService,
+    private readonly currencyService: CurrencyService,
   ) {
     super();
   }
@@ -69,36 +72,13 @@ export class PriceRangeProcessor extends BasePaymentProcessor {
 
     const saleDate = sale.effectiveDate || new Date();
 
-    // 2. BUSCAR PRODUCTOS, CANTIDADES Y PRECIOS EN LA VENTA
-    const productDetails: Array<{
-      productId?: number;
-      productName?: string;
-      quantity: number;
-      unitPrice: number;
-    }> = [];
-
-    for (const detail of sale.details || []) {
-      // Verificar si el producto/categoría aplica a la regla
-      const productApplies =
-        !rule.product?.id || detail.product?.id === rule.product?.id;
-      const categoryApplies =
-        !rule.category?.id ||
-        detail.product?.category?.id === rule.category?.id;
-
-      if (productApplies && categoryApplies) {
-        const quantity = detail.quantity || 0;
-        const unitPrice = detail.product?.basePrice || 0;
-
-        if (quantity > 0 && unitPrice > 0) {
-          productDetails.push({
-            productId: detail.product?.id,
-            productName: detail.product?.name,
-            quantity,
-            unitPrice,
-          });
-        }
-      }
-    }
+    // 2. LO VENDIDO (SIN DEVOLUCIONES), CON SU PRECIO EN LA MONEDA DE LA REGLA
+    const productDetails = await soldLines(
+      sale,
+      rule,
+      rule.paymentCurrency,
+      this.currencyService,
+    );
 
     if (productDetails.length === 0) {
       return {
@@ -146,7 +126,7 @@ export class PriceRangeProcessor extends BasePaymentProcessor {
         const nextRange = sortedRanges[i + 1];
 
         const rangeMin = range.min || 0;
-        const rangeMax = nextRange ? nextRange.min : range.max || Infinity;
+        const rangeMax = range.max ?? nextRange?.min ?? Infinity;
 
         if (unitPrice >= rangeMin && unitPrice < rangeMax) {
           applicableRange = range;
@@ -160,22 +140,6 @@ export class PriceRangeProcessor extends BasePaymentProcessor {
             rangeDescription = `$${rangeMin}-${rangeMax}`;
           }
           break;
-        }
-      }
-
-      // Si no se encuentra rango, usar el último como fallback
-      if (!applicableRange && sortedRanges.length > 0) {
-        applicableRange = sortedRanges[sortedRanges.length - 1];
-        const lastRange = sortedRanges[sortedRanges.length - 1];
-        const rangeMin = lastRange.min || 0;
-        const rangeMax = lastRange.max || '∞';
-
-        if (lastRange.amount !== undefined) {
-          rangeDescription = `$${rangeMin}-${rangeMax} = $${lastRange.amount} fijo`;
-        } else if (lastRange.percentage !== undefined) {
-          rangeDescription = `$${rangeMin}-${rangeMax} = ${lastRange.percentage}%`;
-        } else {
-          rangeDescription = `$${rangeMin}-${rangeMax}`;
         }
       }
 
@@ -348,7 +312,9 @@ export class PriceRangeProcessor extends BasePaymentProcessor {
 
         if (
           attendance &&
-          attendance.status === AttendanceStatus.PRESENT &&
+          [AttendanceStatus.PRESENT, AttendanceStatus.LATE].includes(
+            attendance.status,
+          ) &&
           attendance.countsForProfitSharing === true
         ) {
           applicableWorkers.push(worker);
@@ -441,7 +407,7 @@ export class PriceRangeProcessor extends BasePaymentProcessor {
         },
         accumulatorUpdate: {
           accumulatedAmount:
-            (accumulator?.accumulatedAmount || 0) + amountPerWorker,
+            Number(accumulator?.accumulatedAmount || 0) + amountPerWorker,
         },
       });
     }

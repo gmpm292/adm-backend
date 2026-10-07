@@ -9,7 +9,7 @@ import {
   ListOptions,
   ListSummary,
 } from '../../../../core/graphql/remote-operations';
-import { NotFoundError } from '../../../../core/errors/appErrors/NotFoundError.error';
+import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
 import { JWTPayload } from '../../../auth/dto/jwt-payload.dto';
 import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
 import { ScopedAccessService } from '../../../scoped-access/services/scoped-access.service';
@@ -33,19 +33,30 @@ export class WorkScheduleService extends BaseService<WorkSchedule> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<WorkSchedule> {
-    const office = await this.officeService.findOne(
-      createWorkScheduleInput.officeId as number,
-      cu,
-      scopes,
-      manager,
+    this.assertValidRange(
+      createWorkScheduleInput.startDate,
+      createWorkScheduleInput.endDate,
+      createWorkScheduleInput.workingDays,
     );
-    if (!office) {
-      throw new NotFoundError('Office not found');
-    }
+    // Sin oficina el horario es de toda la empresa (el generador anual)
+    const office = createWorkScheduleInput.officeId
+      ? await this.officeService.findOne(
+          createWorkScheduleInput.officeId,
+          cu,
+          scopes,
+          manager,
+        )
+      : undefined;
 
     const workSchedule: WorkSchedule = {
       ...createWorkScheduleInput,
+      name: createWorkScheduleInput.name.trim(),
       office,
+      business:
+        office?.business ??
+        (createWorkScheduleInput.businessId
+          ? { id: createWorkScheduleInput.businessId }
+          : undefined),
     } as WorkSchedule;
 
     return super.baseCreate({
@@ -56,6 +67,22 @@ export class WorkScheduleService extends BaseService<WorkSchedule> {
     });
   }
 
+  /** Fechas en orden y al menos un día laborable */
+  private assertValidRange(
+    startDate?: Date,
+    endDate?: Date,
+    workingDays?: WorkSchedule['workingDays'],
+  ): void {
+    if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
+      throw new BadRequestError(
+        'La fecha de inicio no puede ser posterior a la de fin',
+      );
+    }
+    if (workingDays && !Object.values(workingDays).some(Boolean)) {
+      throw new BadRequestError('Marca al menos un día laborable');
+    }
+  }
+
   async find(
     options?: ListOptions,
     cu?: JWTPayload,
@@ -64,7 +91,7 @@ export class WorkScheduleService extends BaseService<WorkSchedule> {
   ): Promise<ListSummary> {
     return await super.baseFind({
       options,
-      relationsToLoad: ['office'],
+      relationsToLoad: ['office', 'business'],
       cu,
       scopes,
       manager,
@@ -81,6 +108,9 @@ export class WorkScheduleService extends BaseService<WorkSchedule> {
       id,
       relationsToLoad: {
         office: true,
+        business: true,
+        createdBy: true,
+        updatedBy: true,
       },
       cu,
       scopes,
@@ -110,28 +140,41 @@ export class WorkScheduleService extends BaseService<WorkSchedule> {
     manager?: EntityManager,
   ): Promise<WorkSchedule> {
     const workSchedule = await super.baseFindOne({ id, cu, scopes, manager });
-    if (!workSchedule) {
-      throw new NotFoundError();
-    }
 
-    if (updateWorkScheduleInput.officeId) {
-      const office = await this.officeService.findOne(
-        updateWorkScheduleInput.officeId,
+    /* eslint-disable @typescript-eslint/no-unused-vars */
+    const {
+      id: _id,
+      officeId,
+      businessId,
+      departmentId,
+      teamId,
+      ...rest
+    } = updateWorkScheduleInput;
+    /* eslint-enable @typescript-eslint/no-unused-vars */
+    const data: Partial<WorkSchedule> = { ...rest };
+    if (rest.name !== undefined) data.name = rest.name.trim();
+
+    // `null` deja el horario para toda la empresa; sin el campo no cambia
+    if (officeId === null) {
+      data.office = null as unknown as WorkSchedule['office'];
+    } else if (officeId !== undefined) {
+      data.office = await this.officeService.findOne(
+        officeId,
         cu,
         scopes,
         manager,
       );
-      if (!office) {
-        throw new NotFoundError('Office not found');
-      }
-      workSchedule.office = office;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { officeId, ...rest } = updateWorkScheduleInput;
+    this.assertValidRange(
+      data.startDate ?? workSchedule.startDate,
+      data.endDate ?? workSchedule.endDate,
+      data.workingDays,
+    );
+
     return super.baseUpdate({
       id,
-      data: { ...workSchedule, ...rest },
+      data,
       cu,
       scopes,
       manager,

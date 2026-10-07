@@ -89,26 +89,6 @@ export class AttendanceResolver {
     );
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER, Role.AGENT)
-  @UseGuards(AccessTokenAuthGuard, RoleGuard)
-  @Mutation('checkIn')
-  async checkIn(
-    @CurrentUser() user: JWTPayload,
-    @Args('checkInInput') checkInInput: any,
-  ) {
-    return this.attendanceService.checkIn(checkInInput, user);
-  }
-
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER, Role.AGENT)
-  @UseGuards(AccessTokenAuthGuard, RoleGuard)
-  @Mutation('checkOut')
-  async checkOut(
-    @CurrentUser() user: JWTPayload,
-    @Args('checkOutInput') checkOutInput: any,
-  ) {
-    return this.attendanceService.checkOut(checkOutInput, user);
-  }
-
   @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('markAsPaid')

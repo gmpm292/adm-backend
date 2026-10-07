@@ -48,7 +48,7 @@ export class PaymentProcessingResolver {
 
   // ==================== MUTATIONS (Implementadas) ====================
 
-  @Roles(Role.PRINCIPAL, Role.ADMIN)
+  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('processPeriodPayments')
   async processPeriodPayments(
@@ -58,7 +58,7 @@ export class PaymentProcessingResolver {
     return this.paymentProcessingService.processPeriodPayments(input, user);
   }
 
-  @Roles(Role.PRINCIPAL, Role.ADMIN)
+  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('processSalePayment')
   async processSalePayment(
@@ -74,7 +74,7 @@ export class PaymentProcessingResolver {
     return this.paymentProcessingService.processSalePayment(input, user);
   }
 
-  @Roles(Role.PRINCIPAL, Role.ADMIN)
+  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('processBatchSalePayments')
   async processBatchSalePayments(
@@ -87,7 +87,7 @@ export class PaymentProcessingResolver {
     );
   }
 
-  @Roles(Role.PRINCIPAL, Role.ADMIN)
+  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('processPeriodSales')
   async processPeriodSales(
@@ -100,7 +100,7 @@ export class PaymentProcessingResolver {
     );
   }
 
-  @Roles(Role.PRINCIPAL, Role.ADMIN)
+  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('rollbackSalePayments')
   async rollbackSalePayments(

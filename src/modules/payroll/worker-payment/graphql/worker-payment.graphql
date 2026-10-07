@@ -32,7 +32,8 @@ type WorkerPayment implements SecurityBaseEntity {
   exchangeRate: Float
   paymentMethod: PaymentMethod!
   paymentConcept: PaymentConcept! # Usamos paymentConcept como en la entidad
-  payrollPeriod: PayrollPeriod!
+  "Vacío solo en pagos antiguos"
+  payrollPeriod: PayrollPeriod
   breakdown: JSON
   #breakdown: PaymentBreakdownInput
   notes: String
@@ -126,7 +127,12 @@ extend type Mutation {
   updateWorkerPayment(
     updateWorkerPaymentInput: UpdateWorkerPaymentInput!
   ): WorkerPayment!
-  #  markAsPaid(id: Int!, paidDate: Date!): WorkerPayment! # Nueva mutation para marcar como pagado
+  "Marca pagos pendientes como hechos (hoy, si no se indica la fecha)"
+  markWorkerPaymentsAsPaid(
+    ids: [Int!]!
+    paidDate: Date
+    paymentMethod: PaymentMethod
+  ): [WorkerPayment!]!
   removeWorkerPayments(ids: [Int!]!): [WorkerPayment]!
   restoreWorkerPayments(ids: [Int!]!): Int
 }

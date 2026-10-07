@@ -18,67 +18,10 @@ export class AttendanceGeneratorService {
   ) {}
 
   /**
-   * Genera registros de asistencia diarios para todos los workers activos
+   * Abre el registro del día de cada trabajador (salvo los domingos). Nace
+   * como ausente: pasa a presente al registrar la entrada. Así nadie cuenta
+   * como presente, ni entra en el reparto, sin haber venido.
    * @returns Número de registros creados
-   */
-  async generateDailyAttendances(): Promise<number> {
-    try {
-      const today = new Date();
-      this.logger.log(
-        `Iniciando generación de registros de asistencia para: ${today.toISOString().split('T')[0]}`,
-      );
-
-      // Obtener todos los workers activos
-      const activeWorkers = await this.workerService.find();
-
-      let createdCount = 0;
-      let skippedCount = 0;
-
-      for (const worker of activeWorkers.data as Array<Worker>) {
-        // Verificar si ya existe un registro para hoy
-        const existingAttendance =
-          await this.attendanceService.findDailyAttendanceForWorker(
-            worker.id as number,
-            today,
-          );
-
-        if (!existingAttendance) {
-          // Crear registro de asistencia con estado ABSENT por defecto
-          const attendanceData: CreateAttendanceInput = {
-            workerId: worker.id as number,
-            attendanceDate: today,
-            status: AttendanceStatus.ABSENT,
-            hoursWorked: 0,
-            isHoliday: false,
-            //isPaid: false,
-            notes: 'Registro automático generado por sistema',
-          };
-
-          await this.attendanceService.create(attendanceData);
-          createdCount++;
-        } else {
-          skippedCount++;
-        }
-      }
-
-      this.logger.log(
-        `Generación completada: ${createdCount} registros creados, ${skippedCount} ya existían`,
-      );
-      return createdCount;
-    } catch (error) {
-      const errorMessage =
-        error && typeof error === 'object' && 'message' in error
-          ? (error as { message: string }).message
-          : String(error);
-      this.logger.error(
-        `Error generando registros de asistencia: ${errorMessage}`,
-      );
-      throw error;
-    }
-  }
-
-  /**
-   * Versión mejorada que considera días no laborables
    */
   async generateDailyAttendancesWithChecks(): Promise<number> {
     const systemUser = this.utils.getSystemUser();
@@ -88,68 +31,60 @@ export class AttendanceGeneratorService {
     };
     try {
       const today = new Date();
-      const dayOfWeek = today.getDay(); // 0 = Domingo, 6 = Sábado
-
-      // No generar registros los domingos (opcional)
-      if (dayOfWeek === 0) {
-        this.logger.log(
-          `Fin de semana (Domingo) - omitiendo generación de registros`,
-        );
+      if (today.getDay() === 0) {
+        this.logger.log('Domingo: no se generan registros de asistencia');
         return 0;
       }
 
       this.logger.log(
-        `Iniciando generación de registros de asistencia para: ${today.toISOString().split('T')[0]}`,
+        `Generando registros de asistencia del ${today.toISOString().split('T')[0]}`,
       );
 
-      const activeWorkers = await this.workerService.find();
+      // Todos: sin `take` el listado devolvería solo los 10 primeros
+      const total = (await this.workerService.find({ take: 0 })).totalCount;
+      const workers = total
+        ? ((await this.workerService.find({ skip: 0, take: total }))
+            .data as Array<Worker>)
+        : [];
 
       let createdCount = 0;
       let skippedCount = 0;
 
-      for (const worker of activeWorkers.data as Array<Worker>) {
-        // Verificar si el worker debería trabajar hoy
+      for (const worker of workers) {
         const shouldWork = await this.attendanceService.shouldWorkToday(
           worker.id as number,
           today,
         );
-
-        if (!shouldWork) {
-          skippedCount++;
-          continue;
-        }
-
         const existingAttendance =
           await this.attendanceService.findDailyAttendanceForWorker(
             worker.id as number,
             today,
             cu,
           );
-
-        if (!existingAttendance) {
-          const attendanceData: CreateAttendanceInput = {
-            workerId: worker.id as number,
-            attendanceDate: today,
-            status: AttendanceStatus.PRESENT,
-            hoursWorked: 0,
-            isHoliday: this.attendanceService.isHoliday(today),
-            //isPaid: false,
-            notes: 'Registro automático generado por sistema',
-            businessId: worker.business?.id,
-            officeId: worker.office?.id,
-            departmentId: worker.department?.id,
-            teamId: worker.team?.id,
-          };
-
-          await this.attendanceService.create(attendanceData, cu);
-          createdCount++;
-        } else {
+        if (!shouldWork || existingAttendance) {
           skippedCount++;
+          continue;
         }
+
+        const attendanceData: CreateAttendanceInput = {
+          workerId: worker.id as number,
+          attendanceDate: today,
+          status: AttendanceStatus.ABSENT,
+          hoursWorked: 0,
+          isHoliday: this.attendanceService.isHoliday(today),
+          notes: 'Pendiente de registrar la entrada',
+          businessId: worker.business?.id,
+          officeId: worker.office?.id,
+          departmentId: worker.department?.id,
+          teamId: worker.team?.id,
+        };
+
+        await this.attendanceService.create(attendanceData, cu);
+        createdCount++;
       }
 
       this.logger.log(
-        `Generación completada: ${createdCount} registros creados, ${skippedCount} omitidos/existentes`,
+        `Asistencia: ${createdCount} registros creados, ${skippedCount} omitidos o ya existentes`,
       );
       return createdCount;
     } catch (error) {

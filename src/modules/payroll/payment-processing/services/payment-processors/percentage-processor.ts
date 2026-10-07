@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { CurrencyService } from '../../../currency/services/currency.service';
+import { soldLines } from '../../helpers/sold-lines.helper';
 import { EntityManager } from 'typeorm';
 import { BasePaymentProcessor } from './base-processor';
 
@@ -33,6 +35,7 @@ export class PercentageProcessor extends BasePaymentProcessor {
     private readonly attendanceService: AttendanceService,
     private readonly workerService: WorkerService,
     private readonly paymentAccumulatorService: PaymentAccumulatorService,
+    private readonly currencyService: CurrencyService,
   ) {
     super();
   }
@@ -51,7 +54,17 @@ export class PercentageProcessor extends BasePaymentProcessor {
     }
 
     const percentage = rule.conditions.percentage?.percentage || 0;
-    const saleAmount = sale.totalAmount || 0;
+    // Lo vendido (sin devoluciones) de los productos de la regla, en su moneda
+    const lines = await soldLines(
+      sale,
+      rule,
+      rule.paymentCurrency,
+      this.currencyService,
+    );
+    const saleAmount = lines.reduce(
+      (sum, line) => sum + line.unitPrice * line.quantity,
+      0,
+    );
     const saleDate = sale.effectiveDate || new Date();
 
     // 2. CALCULAR PORCENTAJE DE BENEFICIO
@@ -199,7 +212,9 @@ export class PercentageProcessor extends BasePaymentProcessor {
 
         if (
           attendance &&
-          attendance.status === AttendanceStatus.PRESENT &&
+          [AttendanceStatus.PRESENT, AttendanceStatus.LATE].includes(
+            attendance.status,
+          ) &&
           attendance.countsForProfitSharing === true
         ) {
           applicableWorkers.push(worker);
@@ -285,10 +300,10 @@ export class PercentageProcessor extends BasePaymentProcessor {
         },
         accumulatorUpdate: {
           salesTotal:
-            (accumulator?.salesTotal || 0) +
+            Number(accumulator?.salesTotal || 0) +
             saleAmount / applicableWorkers.length,
           accumulatedAmount:
-            (accumulator?.accumulatedAmount || 0) + amountPerWorker,
+            Number(accumulator?.accumulatedAmount || 0) + amountPerWorker,
         },
       });
     }

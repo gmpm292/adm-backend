@@ -16,6 +16,7 @@ import { ScopedAccessService } from '../../../scoped-access/services/scoped-acce
 import { WorkerPaymentService } from '../../worker-payment/services/worker-payment.service';
 import { ConditionalOperator } from '../../../../core/graphql/remote-operations/enums/conditional-operation.enum';
 import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
+import { ConflictError } from '../../../../core/errors/appErrors/ConflictError.error';
 import { SortDirection } from '../../../../core/graphql/remote-operations/enums/sort-direction.enum';
 
 @Injectable()
@@ -36,16 +37,24 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<PayrollPeriod> {
-    const payrollPeriod: PayrollPeriod = {
+    const payrollPeriod = {
       ...createPayrollPeriodInput,
-      isClosed: createPayrollPeriodInput.isClosed ?? false,
+      name: createPayrollPeriodInput.name.trim(),
+      startDate: new Date(createPayrollPeriodInput.startDate),
+      endDate: new Date(createPayrollPeriodInput.endDate),
+      isClosed: false,
     } as PayrollPeriod;
 
     this.validatePeriodIntegrity(payrollPeriod);
+    await this.assertNoOverlap(
+      payrollPeriod,
+      createPayrollPeriodInput.businessId ?? cu?.businessId,
+      undefined,
+      manager,
+    );
 
     return super.baseCreate({
       data: payrollPeriod,
-      uniqueFields: ['name'],
       cu,
       scopes,
       manager,
@@ -83,8 +92,10 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     return super.baseFindOne({
       id,
       relationsToLoad: {
-        payments: { worker: true },
+        payments: { worker: { user: true } },
         business: true,
+        createdBy: true,
+        updatedBy: true,
         office: true,
         department: true,
         team: true,
@@ -95,6 +106,7 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     });
   }
 
+  /** Cierra un período ya terminado y con todos sus pagos hechos */
   async closePeriod(
     id: number,
     cu?: JWTPayload,
@@ -102,15 +114,13 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     manager?: EntityManager,
   ): Promise<PayrollPeriod> {
     const period = await super.baseFindOne({ id, cu, scopes, manager });
-    if (!period) {
-      throw new NotFoundError('Accounting period not found');
-    }
-
     if (period.isClosed) {
-      throw new Error('Accounting period is already closed');
+      throw new BadRequestError('El período ya está cerrado');
+    }
+    if (new Date(period.endDate) > new Date()) {
+      throw new BadRequestError('El período aún no ha terminado');
     }
 
-    // Verify all payments are processed
     const pendingPayments = (
       await this.workerPaymentService.find(
         {
@@ -133,20 +143,22 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
         manager,
       )
     ).totalCount;
-
     if (pendingPayments > 0) {
-      throw new Error('Cannot close period with pending payments');
+      throw new BadRequestError(
+        `Quedan ${pendingPayments} pagos sin hacer en este período: márcalos como pagados antes de cerrarlo`,
+      );
     }
 
     return super.baseUpdate({
       id,
-      data: { ...period, isClosed: true },
+      data: { isClosed: true },
       cu,
       scopes,
       manager,
     });
   }
 
+  /** Nombre, descripción y fechas; cerrar se hace con `closePeriod` */
   async update(
     id: number,
     updatePayrollPeriodInput: UpdatePayrollPeriodInput,
@@ -154,18 +166,40 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<PayrollPeriod> {
-    const period = await super.baseFindOne({ id, cu, scopes, manager });
-    if (!period) {
-      throw new NotFoundError();
+    const period = await super.baseFindOne({
+      id,
+      relationsToLoad: { payments: true, business: true },
+      cu,
+      scopes,
+      manager,
+    });
+    if (period.isClosed) {
+      throw new BadRequestError('Un período cerrado no se modifica');
     }
 
-    if (period.isClosed) {
-      throw new Error('Cannot modify closed accounting period');
+    const { name, description, startDate, endDate } = updatePayrollPeriodInput;
+    const data: Partial<PayrollPeriod> = {};
+    if (name !== undefined) data.name = name.trim();
+    if (description !== undefined) {
+      data.description = description?.trim() || (null as unknown as string);
+    }
+    if (startDate) data.startDate = new Date(startDate);
+    if (endDate) data.endDate = new Date(endDate);
+
+    if (data.startDate || data.endDate) {
+      if (period.payments?.length) {
+        throw new BadRequestError(
+          'Este período ya tiene pagos: sus fechas no se cambian',
+        );
+      }
+      const merged = { ...period, ...data } as PayrollPeriod;
+      this.validatePeriodIntegrity(merged);
+      await this.assertNoOverlap(merged, period.business?.id, id, manager);
     }
 
     return super.baseUpdate({
       id,
-      data: { ...period, ...updatePayrollPeriodInput },
+      data,
       cu,
       scopes,
       manager,
@@ -180,21 +214,17 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
   ): Promise<PayrollPeriod[]> {
     const periods = await super.baseFindByIds({
       ids,
-      relationsToLoad: { payments: true },
+      relationsToLoad: { payments: true, paymentAccumulators: true },
       cu,
       scopes,
       manager,
     });
 
-    if (periods.length === 0) {
-      throw new NotFoundError('No accounting periods found');
-    }
-
-    // Check if any period has payments
-    const periodsWithPayments = periods.filter((p) => p.payments?.length > 0);
-    if (periodsWithPayments.length > 0) {
-      throw new Error(
-        'Cannot delete accounting periods with associated payments',
+    if (
+      periods.some((p) => p.payments?.length || p.paymentAccumulators?.length)
+    ) {
+      throw new BadRequestError(
+        'Un período con pagos calculados no se elimina',
       );
     }
 
@@ -241,44 +271,16 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
 
     // 2. Verificar que el período no esté cerrado
     if (payrollPeriod.isClosed) {
-      throw new BadRequestError('Payroll period is already closed');
+      throw new BadRequestError('El período ya está cerrado');
     }
 
     // 3. Validar fechas del período
     const today = new Date();
     if (payrollPeriod.endDate > today) {
-      throw new BadRequestError('Payroll period has not ended yet');
+      throw new BadRequestError(
+        'El período aún no ha terminado: se calcula al acabar',
+      );
     }
-
-    // // 4. Verificar que no haya pagos ya procesados para este período
-    // const existingPayments = (
-    //   await this.workerPaymentService.find(
-    //     {
-    //       filters: [
-    //         {
-    //           property: 'payrollPeriod.id',
-    //           operator: ConditionalOperator.EQUAL,
-    //           value: payrollPeriodId.toString(),
-    //         },
-    //         {
-    //           property: 'paidDate',
-    //           operator: ConditionalOperator.IS_NULL,
-    //           value: '',
-    //         },
-    //       ],
-    //       take: 0,
-    //     },
-    //     cu,
-    //     scopes,
-    //     manager,
-    //   )
-    // ).totalCount;
-
-    // if (existingPayments > 0) {
-    //   throw new BadRequestError(
-    //     `Payroll period already has ${existingPayments} processed payments.`,
-    //   );
-    // }
 
     // 6. Verificar integridad de datos del período
     this.validatePeriodIntegrity(payrollPeriod);
@@ -286,10 +288,37 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     return payrollPeriod;
   }
 
+  /** Dos períodos de la misma empresa no se pisan */
+  private async assertNoOverlap(
+    period: PayrollPeriod,
+    businessId: number | undefined,
+    exceptId: number | undefined,
+    manager?: EntityManager,
+  ): Promise<void> {
+    const repository =
+      manager?.getRepository(PayrollPeriod) ?? this.payrollPeriodRepository;
+    const query = repository
+      .createQueryBuilder('period')
+      .where('period.startDate <= :end', { end: period.endDate })
+      .andWhere('period.endDate >= :start', { start: period.startDate });
+    if (businessId) {
+      query.andWhere('"period"."businessId" = :businessId', { businessId });
+    }
+    if (exceptId) query.andWhere('period.id != :exceptId', { exceptId });
+    const other = await query.getOne();
+    if (other) {
+      throw new ConflictError(
+        `Las fechas se solapan con el período «${other.name}»`,
+      );
+    }
+  }
+
   private validatePeriodIntegrity(payrollPeriod: PayrollPeriod) {
     // Verificar que startDate sea anterior a endDate
     if (payrollPeriod.startDate >= payrollPeriod.endDate) {
-      throw new BadRequestError('Start date must be before end date');
+      throw new BadRequestError(
+        'La fecha de inicio debe ser anterior a la de fin',
+      );
     }
 
     // Verificar que el período no sea demasiado largo (ej: máximo 31 días)
@@ -299,7 +328,7 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     );
 
     if (daysDiff > 31) {
-      throw new BadRequestError('Payroll period cannot exceed 31 days');
+      throw new BadRequestError('Un período no puede durar más de 31 días');
     }
   }
 
@@ -310,7 +339,7 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     manager?: EntityManager,
   ): Promise<PayrollPeriod> {
     if (!cu?.businessId) {
-      throw new BadRequestError('User must be associated with a business');
+      throw new BadRequestError('El usuario no pertenece a ninguna empresa');
     }
 
     // Buscar período existente que contenga la fecha
@@ -332,78 +361,6 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     return lastPeriod
       ? this.createPeriodAfter(lastPeriod, cu, scopes, manager)
       : this.createFirstPeriod(date, cu, scopes, manager);
-  }
-
-  async getNextOrCreatePeriod(
-    currentPeriodId: number,
-    cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
-    manager?: EntityManager,
-  ): Promise<PayrollPeriod> {
-    if (!cu?.businessId) {
-      throw new BadRequestError('User must be associated with a business');
-    }
-
-    const currentPeriod = await this.baseFindOne({
-      id: currentPeriodId,
-      cu,
-      scopes,
-      manager,
-    });
-
-    if (!currentPeriod) {
-      throw new NotFoundError('Current period not found');
-    }
-
-    // Buscar si ya existe el período siguiente
-    const existingNextPeriod = await this.findPeriodAfterDate(
-      currentPeriod.endDate,
-      cu,
-      scopes,
-      manager,
-    );
-
-    if (existingNextPeriod) {
-      return existingNextPeriod;
-    }
-
-    // Crear el período siguiente
-    return this.createPeriodAfter(currentPeriod, cu, scopes, manager);
-  }
-
-  async getNextPeriod(
-    currentPeriodId: number,
-    cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
-    manager?: EntityManager,
-  ): Promise<PayrollPeriod> {
-    if (!cu?.businessId) {
-      throw new BadRequestError('User must be associated with a business');
-    }
-
-    const currentPeriod = await this.baseFindOne({
-      id: currentPeriodId,
-      cu,
-      scopes,
-      manager,
-    });
-
-    if (!currentPeriod) {
-      throw new NotFoundError('Current period not found');
-    }
-
-    const nextPeriod = await this.findPeriodAfterDate(
-      currentPeriod.endDate,
-      cu,
-      scopes,
-      manager,
-    );
-
-    if (!nextPeriod) {
-      throw new NotFoundError('Next period not found');
-    }
-
-    return nextPeriod;
   }
 
   private async findPeriodForDate(
@@ -446,36 +403,6 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     return (result?.data?.[0] as PayrollPeriod) || null;
   }
 
-  private async findPeriodAfterDate(
-    date: Date,
-    cu: JWTPayload,
-    scopes?: ScopedAccessEnum[],
-    manager?: EntityManager,
-  ): Promise<PayrollPeriod | null> {
-    const nextDay = new Date(date);
-    nextDay.setDate(nextDay.getDate() + 1);
-    const nextDayStr = nextDay.toISOString().split('T')[0];
-
-    const result = await super.baseFind({
-      options: {
-        filters: [
-          {
-            property: 'startDate',
-            operator: ConditionalOperator.GREATER_EQUAL_THAN,
-            value: nextDayStr,
-          },
-        ],
-        sorts: [{ property: 'startDate', direction: SortDirection.ASC }],
-        take: 1,
-      },
-      cu,
-      scopes,
-      manager,
-    });
-
-    return (result.data?.[0] as PayrollPeriod) || null;
-  }
-
   private async findLastPeriod(
     cu: JWTPayload,
     scopes?: ScopedAccessEnum[],
@@ -494,29 +421,6 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     return (result.data?.[0] as PayrollPeriod) || null;
   }
 
-  // private createFirstPeriod(
-  //   referenceDate: Date,
-  //   cu: JWTPayload,
-  //   scopes: ScopedAccessEnum[],
-  //   manager?: EntityManager,
-  // ): Promise<PayrollPeriod> {
-  //   // Crear primer período de 7 días terminando en la fecha de referencia
-  //   const endDate = new Date(referenceDate);
-  //   const startDate = new Date(endDate);
-  //   startDate.setDate(startDate.getDate() - 6);
-
-  //   const name = this.generatePeriodName(startDate, endDate);
-
-  //   const createInput: CreatePayrollPeriodInput = {
-  //     startDate,
-  //     endDate,
-  //     name,
-  //     description: `First payroll period from ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}`,
-  //     businessId: cu.businessId!,
-  //   };
-
-  //   return this.create(createInput, cu, scopes, manager);
-  // }
   private createFirstPeriod(
     referenceDate: Date,
     cu: JWTPayload,
@@ -533,7 +437,7 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
 
     // Calcular días hasta el domingo siguiente
-    const daysToSunday = 7 - dayOfWeek;
+    const daysToSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
 
     // Calcular fechas de inicio y fin (lunes a domingo)
     const startDate = new Date(referenceDate);
@@ -550,7 +454,7 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
       startDate,
       endDate,
       name,
-      description: `First payroll period from ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}`,
+      description: 'Primer período, creado al calcular pagos',
       businessId: cu.businessId!,
     };
 
@@ -567,7 +471,7 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     const startDate = new Date(previousPeriod.startDate);
 
     if (isNaN(endDate.getTime()) || isNaN(startDate.getTime())) {
-      throw new Error('Fechas inválidas en el período anterior');
+      throw new BadRequestError('Fechas inválidas en el período anterior');
     }
     const daysDiff = Math.ceil(
       (endDate.getTime() - startDate.getTime()) / (1000 * 3600 * 24),
@@ -625,7 +529,7 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
       startDate: newStartDate,
       endDate: newEndDate,
       name,
-      description: `Payroll period from ${newStartDate.toLocaleDateString()} to ${newEndDate.toLocaleDateString()}`,
+      description: 'Creado al calcular pagos',
       businessId: cu.businessId!,
     };
 
