@@ -23,7 +23,6 @@ type Attendance implements SecurityBaseEntity {
   workSchedule: WorkSchedule
   notes: String
   isHoliday: Boolean
-  recordedAt: Date
 }
 
 type AttendancesSummary {
@@ -70,22 +69,9 @@ input UpdateAttendanceInput {
   checkOutTime: String
   status: AttendanceStatus
   hoursWorked: Float
-  isPaid: Boolean
   workScheduleId: Int
   notes: String
   isHoliday: Boolean
-}
-
-input CheckInInput {
-  workerId: Int!
-  time: String
-  notes: String
-}
-
-input CheckOutInput {
-  workerId: Int!
-  time: String
-  notes: String
 }
 
 extend type Query {
@@ -102,8 +88,6 @@ extend type Query {
 extend type Mutation {
   createAttendance(createAttendanceInput: CreateAttendanceInput!): Attendance!
   updateAttendance(updateAttendanceInput: UpdateAttendanceInput!): Attendance!
-  checkIn(checkInInput: CheckInInput!): Attendance!
-  checkOut(checkOutInput: CheckOutInput!): Attendance!
   markAsPaid(ids: [Int!]!): [Attendance!]!
   removeAttendances(ids: [Int!]!): [Attendance!]!
   restoreAttendances(ids: [Int!]!): Int

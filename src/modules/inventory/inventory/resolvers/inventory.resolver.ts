@@ -85,16 +85,4 @@ export class InventoryResolver {
   ) {
     return this.inventoryService.findByProduct(productId, user);
   }
-
-  // @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER)
-  // @UseGuards(AccessTokenAuthGuard, RoleGuard)
-  // @Mutation('adjustInventory')
-  // async adjust(
-  //   @CurrentUser() user: JWTPayload,
-  //   @Args('id') id: number,
-  //   @Args('adjustment') adjustment: number,
-  //   @Args('reason') reason: string,
-  // ) {
-  //   return this.inventoryService.adjust(id, adjustment, reason, user);
-  // }
 }

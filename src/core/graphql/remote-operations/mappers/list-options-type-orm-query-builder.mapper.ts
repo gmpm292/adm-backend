@@ -433,7 +433,10 @@ export class ListOptionsTypeOrmQueryBuilderMapper {
         }
       });
     }
-    return Array.from(relations);
+    // En el orden declarado: `inventory.product` necesita antes `inventory`
+    return (relationsToLoad ?? [])
+      .map(String)
+      .filter((relation) => relations.has(relation));
   }
 
   protected autoSelectFields(

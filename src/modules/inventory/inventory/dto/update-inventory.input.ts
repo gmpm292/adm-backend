@@ -1,27 +1,20 @@
-import { IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 
 /**
- * DTO for updating an existing inventory record
- * All fields are optional except id
+ * Lo que se edita de un inventario. Las existencias no: cambian solo con
+ * movimientos. `null` vacía el dato.
  */
 export class UpdateInventoryInput {
   @IsInt()
   id: number;
 
-  // @IsOptional()
-  // @IsInt()
-  // productId: number;
-
-  // @IsInt()
-  // @Min(0)
-  // currentStock: number;
-
   @IsOptional()
   @IsInt()
   @Min(0)
-  minStock?: number;
+  minStock?: number | null;
 
   @IsOptional()
   @IsString()
-  location?: string;
+  @MaxLength(100)
+  location?: string | null;
 }

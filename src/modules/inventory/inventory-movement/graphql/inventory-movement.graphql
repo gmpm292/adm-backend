@@ -19,6 +19,10 @@ type InventoryMovement implements SecurityBaseEntity {
   type: MovementType!
   quantity: Int!
   reason: String!
+  "La venta que lo causó o la nota escrita al registrarlo a mano"
+  referenceId: String
+  "Salida que aún reserva existencias para una venta en borrador"
+  isReservation: Boolean!
   inventory: Inventory!
   user: User!
 }
@@ -35,36 +39,24 @@ enum MovementType {
 
 input CreateInventoryMovementInput {
   inventoryId: Int!
-  #userId: Int!
   type: MovementType!
   quantity: Int!
+  "Uno de los motivos manuales: PURCHASE, RETURN, TRANSFER, INVENTORY_ADJUSTMENT, LOSS, INTERNAL_USE u OTHER"
   reason: String!
+  "Nota opcional: factura del proveedor, destino de la transferencia..."
+  referenceId: String
 }
-
-#input UpdateInventoryMovementInput {
-#  id: Int!
-#  #  inventoryId: Int
-#  type: MovementType
-#  quantity: Int
-#  reason: String
-#}
 
 extend type Query {
   inventoryMovements(options: ListOptions): InventoryMovementsSummary!
   inventoryMovement(id: Int!): InventoryMovement
   movementsByInventory(inventoryId: Int!): [InventoryMovement]!
-  movementsByType(type: MovementType!): [InventoryMovement]!
 }
 
 extend type Mutation {
   createInventoryMovement(
     createInventoryMovementInput: CreateInventoryMovementInput!
   ): InventoryMovement!
-  #  updateInventoryMovement(
-  #    updateInventoryMovementInput: UpdateInventoryMovementInput!
-  #  ): InventoryMovement!
-  # removeInventoryMovements(ids: [Int!]!): [InventoryMovement]!
-  # restoreInventoryMovements(ids: [Int!]!): Int
 }
 
 extend type Subscription {

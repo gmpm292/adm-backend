@@ -1,12 +1,11 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import { EntityManager, Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CreateInventoryMovementInput } from '../dto/create-inventory-movement.input';
-import { UpdateInventoryMovementInput } from '../dto/update-inventory-movement.input';
 import { BaseService } from '../../../../core/services/base.service';
 import { InventoryMovement } from '../entities/inventory-movement.entity';
 import { NotFoundError } from '../../../../core/errors/appErrors/NotFoundError.error';
+import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
 import { JWTPayload } from '../../../auth/dto/jwt-payload.dto';
 import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
 import { ScopedAccessService } from '../../../scoped-access/services/scoped-access.service';
@@ -16,7 +15,8 @@ import {
   ListOptions,
   ListSummary,
 } from '../../../../core/graphql/remote-operations';
-import { ConflictError } from '../../../../core/errors/appErrors/ConflictError.error';
+import { ConditionalOperator } from '../../../../core/graphql/remote-operations/enums/conditional-operation.enum';
+import { MANUAL_MOVEMENT_REASONS } from '../enums/movement-reason';
 
 @Injectable()
 export class InventoryMovementService extends BaseService<InventoryMovement> {
@@ -31,17 +31,53 @@ export class InventoryMovementService extends BaseService<InventoryMovement> {
     super(movementRepository);
   }
 
+  /**
+   * Entrada o salida registrada a mano. Solo admite los motivos de
+   * `MANUAL_MOVEMENT_REASONS`: los de venta y el inventario inicial los pone
+   * el sistema.
+   */
+  async register(
+    input: CreateInventoryMovementInput,
+    cu?: JWTPayload,
+  ): Promise<InventoryMovement> {
+    if (!MANUAL_MOVEMENT_REASONS[input.type]?.includes(input.reason)) {
+      throw new BadRequestError(
+        'Ese motivo no es válido para este tipo de movimiento',
+      );
+    }
+    const referenceId = input.referenceId?.trim() || undefined;
+
+    return this.create(
+      {
+        inventoryId: input.inventoryId,
+        type: input.type,
+        quantity: input.quantity,
+        reason: input.reason,
+        referenceId,
+      },
+      cu,
+    );
+  }
+
+  /**
+   * Registra el movimiento y ajusta las existencias del inventario. Sin
+   * `manager` abre su propia transacción: el ajuste y el registro van juntos.
+   */
   async create(
     createMovementInput: CreateInventoryMovementInput,
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<InventoryMovement> {
-    const { inventoryId, isReservation, ...rest } = createMovementInput;
-    if (rest.quantity === 0) {
-      throw new ConflictError(
-        'InventoryMovementError: Quantity cannot be zero.',
+    if (!manager) {
+      return this.movementRepository.manager.transaction((txManager) =>
+        this.create(createMovementInput, cu, scopes, txManager),
       );
+    }
+
+    const { inventoryId, isReservation, ...rest } = createMovementInput;
+    if (!rest.quantity || rest.quantity <= 0) {
+      throw new BadRequestError('La cantidad debe ser mayor que cero');
     }
 
     const [inventory, user] = await Promise.all([
@@ -56,10 +92,10 @@ export class InventoryMovementService extends BaseService<InventoryMovement> {
     ]);
 
     if (!inventory) {
-      throw new NotFoundError('Inventory not found');
+      throw new NotFoundError('No se encontró el inventario');
     }
     if (!user) {
-      throw new NotFoundError('User not found');
+      throw new NotFoundError('No se encontró el usuario');
     }
 
     const movement: InventoryMovement = {
@@ -73,15 +109,9 @@ export class InventoryMovementService extends BaseService<InventoryMovement> {
       team: inventory.team,
     };
 
-    // Update inventory stock
-    const adjustment =
-      createMovementInput.type === 'IN'
-        ? createMovementInput.quantity
-        : -createMovementInput.quantity;
     await this.inventoryService.adjust(
       inventory.id as number,
-      adjustment,
-      createMovementInput.reason,
+      rest.type === 'IN' ? rest.quantity : -rest.quantity,
       cu,
       scopes,
       manager,
@@ -95,19 +125,34 @@ export class InventoryMovementService extends BaseService<InventoryMovement> {
     });
   }
 
+  /**
+   * El historial incluye los movimientos de inventarios y productos ya
+   * eliminados: sin `withDeleted` esas relaciones llegarían vacías.
+   */
   async find(
     options?: ListOptions,
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<ListSummary> {
+    const notDeleted = options?.withDeleted
+      ? []
+      : [{ property: 'deletedAt', operator: ConditionalOperator.IS_NULL }];
     return await super.baseFind({
-      options,
+      options: {
+        skip: 0,
+        take: 10,
+        ...options,
+        withDeleted: true,
+        filters: [...(options?.filters ?? []), ...notDeleted],
+      },
       relationsToLoad: [
         'inventory',
         'inventory.product',
         'product.category',
+        'product.unitOfMeasure',
         'user',
+        'office',
       ],
       cu,
       scopes,
@@ -124,7 +169,7 @@ export class InventoryMovementService extends BaseService<InventoryMovement> {
     return super.baseFindOne({
       id,
       relationsToLoad: {
-        inventory: { product: { category: true } },
+        inventory: { product: { category: true, unitOfMeasure: true } },
         user: true,
         business: true,
         office: true,
@@ -134,6 +179,7 @@ export class InventoryMovementService extends BaseService<InventoryMovement> {
         updatedBy: true,
         deletedBy: true,
       },
+      withDeleted: true,
       cu,
       scopes,
       manager,
@@ -151,138 +197,6 @@ export class InventoryMovementService extends BaseService<InventoryMovement> {
       where: { inventory: { id: inventoryId } },
       relations: ['inventory', 'user'],
       order: { createdAt: 'DESC' },
-    });
-  }
-
-  async update(
-    id: number,
-    updateMovementInput: UpdateInventoryMovementInput,
-    cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
-    manager?: EntityManager,
-  ): Promise<InventoryMovement> {
-    const movement = await super.baseFindOne({ id, cu, scopes, manager });
-    if (!movement) {
-      throw new NotFoundError();
-    }
-
-    // Handle inventory updates if quantity or type changes
-    if (updateMovementInput.quantity || updateMovementInput.type) {
-      const oldAdjustment =
-        movement.type === 'IN' ? movement.quantity : -movement.quantity;
-      const newAdjustment =
-        updateMovementInput.type === 'IN'
-          ? (updateMovementInput.quantity ?? movement.quantity)
-          : -(updateMovementInput.quantity ?? movement.quantity);
-
-      const adjustmentDiff = newAdjustment - oldAdjustment;
-
-      await this.inventoryService.adjust(
-        movement.inventory.id as number,
-        adjustmentDiff,
-        updateMovementInput.reason || movement.reason,
-        cu,
-        scopes,
-        manager,
-      );
-    }
-
-    const { inventoryId, isReservation, reservationId, referenceId, ...rest } =
-      updateMovementInput;
-
-    return super.baseUpdate({
-      id,
-      data: { ...movement, ...rest },
-      cu,
-      scopes,
-      manager,
-    });
-  }
-
-  async remove(
-    ids: number[],
-    cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
-    manager?: EntityManager,
-  ): Promise<InventoryMovement[]> {
-    const movements = await super.baseFindByIds({
-      ids,
-      relationsToLoad: { inventory: true },
-      cu,
-      scopes,
-      manager,
-    });
-
-    if (movements.length === 0) {
-      throw new NotFoundError('No movements found.');
-    }
-
-    // Reverse the inventory adjustments
-    await Promise.all(
-      movements.map((movement) => {
-        const adjustment =
-          movement.type === 'IN' ? -movement.quantity : movement.quantity;
-        return this.inventoryService.adjust(
-          movement.inventory.id as number,
-          adjustment,
-          `Reversing movement ${movement.id}`,
-          cu,
-          scopes,
-          manager,
-        );
-      }),
-    );
-
-    return super.baseDeleteMany({
-      ids: movements.map((m) => m.id) as Array<number>,
-      cu,
-      scopes,
-      manager,
-      softRemove: true,
-    });
-  }
-
-  async restore(
-    ids: number[],
-    cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
-    manager?: EntityManager,
-  ): Promise<number> {
-    if (ids.length === 0) return 0;
-
-    const movements = await super.baseFindByIds({
-      ids,
-      relationsToLoad: { inventory: true },
-      cu,
-      scopes,
-      manager,
-      withDeleted: true,
-    });
-
-    const deletedMovements = movements.filter((m) => m.deletedAt);
-    if (deletedMovements.length === 0) return 0;
-
-    // Re-apply the inventory adjustments
-    await Promise.all(
-      deletedMovements.map((movement) => {
-        const adjustment =
-          movement.type === 'IN' ? movement.quantity : -movement.quantity;
-        return this.inventoryService.adjust(
-          movement.inventory.id as number,
-          adjustment,
-          `Restoring movement ${movement.id}`,
-          cu,
-          scopes,
-          manager,
-        );
-      }),
-    );
-
-    return super.baseRestoreDeletedMany({
-      ids: deletedMovements.map((m) => m.id) as Array<number>,
-      cu,
-      scopes,
-      manager,
     });
   }
 }

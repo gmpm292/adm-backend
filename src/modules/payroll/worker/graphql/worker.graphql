@@ -51,26 +51,35 @@ type WorkersSummary {
   totalCount: Int!
 }
 
+"""
+Los datos propios (temp*) son el nombre y contacto del trabajador; se usan
+cuando no tiene cuenta de usuario vinculada.
+"""
 input CreateWorkerInput {
-  businessId: Int!
+  businessId: Int
   officeId: Int
   departmentId: Int
   teamId: Int
 
+  "Cuenta de usuario existente que se vincula"
   userId: Int
   workerType: WorkerType!
+  otherType: String
   paymentRuleId: Int
   baseSalary: Float
   customPaymentSettings: JSON
 
-  # Campos temporales para creación de usuario
   tempFirstName: String
   tempLastName: String
   tempEmail: String
   tempPhone: String
-  tempRole: [Role!]
 }
 
+"""
+null vacía un dato (userId desvincula la cuenta). El lugar se cambia entero:
+si llega uno de businessId/officeId/departmentId/teamId, los que no lleguen
+quedan vacíos.
+"""
 input UpdateWorkerInput {
   businessId: Int
   officeId: Int
@@ -80,16 +89,15 @@ input UpdateWorkerInput {
   id: Int!
   userId: Int
   workerType: WorkerType
+  otherType: String
   paymentRuleId: Int
   baseSalary: Float
   customPaymentSettings: JSON
 
-  # Campos temporales para actualización
   tempFirstName: String
   tempLastName: String
   tempEmail: String
   tempPhone: String
-  tempRole: [Role!]
 }
 
 extend type Query {
@@ -102,9 +110,6 @@ extend type Mutation {
   updateWorker(updateWorkerInput: UpdateWorkerInput!): Worker!
   removeWorkers(ids: [Int!]!): [Worker]!
   restoreWorkers(ids: [Int!]!): Int
-
-  associateUserToWorker(workerId: Int!, userId: Int!): Worker!
-  createUserFromWorker(workerId: Int!): Worker!
 }
 
 extend type Subscription {

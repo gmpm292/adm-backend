@@ -14,6 +14,7 @@ import {
 } from '../../../../core/graphql/remote-operations';
 import { Opts } from '../../../../core/graphql/remote-operations/decorators/opts.decorator';
 import { WorkerPaymentService } from '../services/worker-payment.service';
+import { PaymentMethod } from '../enums/payment-method.enum';
 import { WorkerPaymentFiltersValidator } from '../filters-validator/worker-payment-filters.validator';
 
 @Resolver('WorkerPayment')
@@ -90,5 +91,22 @@ export class WorkerPaymentResolver {
   @Mutation('restoreWorkerPayments')
   async restore(@CurrentUser() user: JWTPayload, @Args('ids') ids: number[]) {
     return this.workerPaymentService.restore(ids, user);
+  }
+
+  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
+  @UseGuards(AccessTokenAuthGuard, RoleGuard)
+  @Mutation('markWorkerPaymentsAsPaid')
+  async markAsPaid(
+    @CurrentUser() user: JWTPayload,
+    @Args('ids') ids: number[],
+    @Args('paidDate') paidDate?: Date,
+    @Args('paymentMethod') paymentMethod?: PaymentMethod,
+  ) {
+    return this.workerPaymentService.markAsPaid(
+      ids,
+      paidDate,
+      paymentMethod,
+      user,
+    );
   }
 }

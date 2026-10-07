@@ -1,5 +1,12 @@
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
-import { EntityManager, Repository } from 'typeorm';
+import {
+  Brackets,
+  EntityManager,
+  IsNull,
+  LessThanOrEqual,
+  MoreThanOrEqual,
+  Repository,
+} from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CreateAttendanceInput } from '../dto/create-attendance.input';
 import { UpdateAttendanceInput } from '../dto/update-attendance.input';
@@ -9,7 +16,6 @@ import {
   ListOptions,
   ListSummary,
 } from '../../../../core/graphql/remote-operations';
-import { NotFoundError } from '../../../../core/errors/appErrors/NotFoundError.error';
 import { JWTPayload } from '../../../auth/dto/jwt-payload.dto';
 import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
 import { ScopedAccessService } from '../../../scoped-access/services/scoped-access.service';
@@ -19,19 +25,24 @@ import { WorkerService } from '../../worker/services/worker.service';
 import { WorkScheduleService } from '../../work-schedule/services/work-schedule.service';
 import { WorkSchedule } from '../../work-schedule/entities/work-schedule.entity';
 import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
+import { ConflictError } from '../../../../core/errors/appErrors/ConflictError.error';
+import { Worker } from '../../worker/entities/worker.entity';
 
-interface CheckInInput {
-  workerId: number;
-  time?: string;
-  notes?: string;
-}
+const WEEK_DAYS = [
+  'sunday',
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+] as const;
 
-interface CheckOutInput {
-  workerId: number;
-  time?: string;
-  notes?: string;
-}
-
+/**
+ * Asistencia diaria de cada trabajador. La tarea programada abre el registro
+ * del día como ausente; al anotar la hora de entrada pasa a presente, y con
+ * la de salida se calculan las horas trabajadas.
+ */
 @Injectable()
 export class AttendanceService extends BaseService<Attendance> {
   constructor(
@@ -53,61 +64,42 @@ export class AttendanceService extends BaseService<Attendance> {
     manager?: EntityManager,
   ): Promise<Attendance> {
     const { workerId, workScheduleId, ...rest } = createAttendanceInput;
-
-    // Validar y obtener el trabajador
     const worker = await this.workerService.findOne(
       workerId,
       cu,
       scopes,
       manager,
     );
-    if (!worker) {
-      throw new NotFoundError('Worker not found');
-    }
+    const workSchedule = workScheduleId
+      ? await this.workScheduleService.findOne(
+          workScheduleId,
+          cu,
+          scopes,
+          manager,
+        )
+      : undefined;
 
-    // Validar y obtener el horario de trabajo si se proporciona
-    let workSchedule: WorkSchedule | undefined;
-    if (workScheduleId) {
-      workSchedule = await this.workScheduleService.findOne(
-        workScheduleId,
-        cu,
-        scopes,
-        manager,
-      );
-      if (!workSchedule) {
-        throw new NotFoundError('Work schedule not found');
-      }
-    }
-
-    // Validar que la fecha de asistencia no sea futura
     const attendanceDate = new Date(createAttendanceInput.attendanceDate);
-    if (attendanceDate > new Date()) {
-      throw new BadRequestError('Attendance date cannot be in the future');
-    }
+    this.assertNotFuture(attendanceDate);
+    await this.assertNoOtherRecord(worker, attendanceDate, undefined, manager);
 
-    // Verificar si ya existe un registro de asistencia para este trabajador en esta fecha
-    const existingAttendance = await this.findDailyAttendanceForWorker(
-      worker.id as number,
-      attendanceDate,
-      cu,
-      scopes,
-      manager,
-    );
-
-    if (existingAttendance) {
-      throw new BadRequestError(
-        `Ya existe un registro de asistencia para el trabajador ${worker.user?.name || worker.tempFirstName} en la fecha ${attendanceDate.toLocaleDateString()}`,
-      );
-    }
-
-    const attendance: Attendance = {
+    const checkInTime = this.normalizeTime(rest.checkInTime, 'entrada');
+    const checkOutTime = this.normalizeTime(rest.checkOutTime, 'salida');
+    const attendance = {
       ...rest,
+      checkInTime,
+      checkOutTime,
       worker,
       workSchedule,
-      status: createAttendanceInput.status || AttendanceStatus.ABSENT,
-      hoursWorked: createAttendanceInput.hoursWorked || 0,
-      isHoliday: createAttendanceInput.isHoliday || false,
+      status: this.statusFor(rest.status, AttendanceStatus.ABSENT, checkInTime),
+      hoursWorked: this.hoursFor(rest.hoursWorked, checkInTime, checkOutTime),
+      isHoliday: rest.isHoliday ?? false,
       isPaid: false,
+      // El registro hereda el lugar del trabajador
+      business: worker.business,
+      office: worker.office,
+      department: worker.department,
+      team: worker.team,
     } as Attendance;
 
     return super.baseCreate({
@@ -150,21 +142,14 @@ export class AttendanceService extends BaseService<Attendance> {
     return super.baseFindOne({
       id,
       relationsToLoad: {
-        worker: {
-          user: true,
-          business: true,
-          office: true,
-          department: true,
-          team: true,
-        },
+        worker: { user: true },
         workSchedule: true,
-        business: { offices: true },
+        business: true,
         office: true,
         department: true,
         team: true,
         createdBy: true,
         updatedBy: true,
-        deletedBy: true,
       },
       cu,
       scopes,
@@ -178,32 +163,17 @@ export class AttendanceService extends BaseService<Attendance> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Attendance[]> {
-    const dateString = this.getLocalDateString(date);
-    const startOfDay = `${dateString} 00:00:00`;
-    const endOfDay = `${dateString} 23:59:59.999`;
-
+    const day = this.getLocalDateString(new Date(date));
     const result = await super.baseFind({
       options: {
-        filters: [
-          {
-            property: 'attendanceDate',
-            operator: ConditionalOperator.GREATER_EQUAL_THAN,
-            value: startOfDay,
-          },
-          {
-            property: 'attendanceDate',
-            operator: ConditionalOperator.LESS_EQUAL_THAN,
-            value: endOfDay,
-          },
-        ],
-        skip: 0, // Get all records
+        filters: this.dayFilters(day, day),
+        skip: 0,
       },
       relationsToLoad: ['worker', 'workSchedule'],
       cu,
       scopes,
       manager,
     });
-
     return result.data as Attendance[];
   }
 
@@ -215,20 +185,11 @@ export class AttendanceService extends BaseService<Attendance> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Attendance[]> {
-    // Validar que el worker existe
-    const worker = await this.workerService.findOne(
-      workerId,
-      cu,
-      scopes,
-      manager,
-    );
-    if (!worker) {
-      throw new NotFoundError('Worker not found');
-    }
-
-    // Validar fechas
-    if (startDate > endDate) {
-      throw new BadRequestError('Start date cannot be after end date');
+    await this.workerService.findOne(workerId, cu, scopes, manager);
+    if (new Date(startDate) > new Date(endDate)) {
+      throw new BadRequestError(
+        'La fecha de inicio no puede ser posterior a la de fin',
+      );
     }
 
     const result = await super.baseFind({
@@ -239,205 +200,36 @@ export class AttendanceService extends BaseService<Attendance> {
             operator: ConditionalOperator.EQUAL,
             value: workerId.toString(),
           },
-          {
-            property: 'attendanceDate',
-            operator: ConditionalOperator.GREATER_EQUAL_THAN,
-            value: this.getLocalDateString(startDate),
-          },
-          {
-            property: 'attendanceDate',
-            operator: ConditionalOperator.LESS_EQUAL_THAN,
-            value: this.getLocalDateString(endDate),
-          },
+          // Hasta el final del último día, no hasta su medianoche
+          ...this.dayFilters(
+            this.getLocalDateString(new Date(startDate)),
+            this.getLocalDateString(new Date(endDate)),
+          ),
         ],
-        skip: 0, // Get all records
+        skip: 0,
       },
       relationsToLoad: ['worker', 'workSchedule'],
       cu,
       scopes,
       manager,
     });
-
     return result.data as Attendance[];
   }
 
-  async checkIn(
-    checkInInput: CheckInInput,
-    cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
-    manager?: EntityManager,
-  ): Promise<Attendance> {
-    // Validaciones
-    if (!checkInInput.workerId || checkInInput.workerId <= 0) {
-      throw new BadRequestError('Invalid worker ID');
-    }
-
-    const today = new Date();
-
-    // Verificar si el worker existe
-    const worker = await this.workerService.findOne(
-      checkInInput.workerId,
-      cu,
-      scopes,
-      manager,
-    );
-    if (!worker) {
-      throw new NotFoundError('Worker not found');
-    }
-
-    // Buscar asistencia existente para hoy
-    const existingAttendance = await this.findDailyAttendanceForWorker(
-      checkInInput.workerId,
-      today,
-      cu,
-      scopes,
-      manager,
-    );
-
-    const checkInTime = checkInInput.time || this.getCurrentTimeString();
-
-    if (existingAttendance) {
-      // Si ya existe registro, actualizarlo
-      if (existingAttendance.checkInTime) {
-        throw new BadRequestError('Already checked in for today');
-      }
-
-      return super.baseUpdate({
-        id: existingAttendance.id as number,
-        data: {
-          ...existingAttendance,
-          checkInTime,
-          status: await this.calculateStatus(
-            checkInInput.workerId,
-            today,
-            checkInTime,
-            cu,
-            scopes,
-            manager,
-          ),
-          notes: checkInInput.notes || existingAttendance.notes,
-        },
-        cu,
-        scopes,
-        manager,
-      });
-    }
-
-    // Crear nuevo registro de asistencia
-    const workSchedule = await this.getWorkerSchedule(
-      checkInInput.workerId,
-      today,
-      cu,
-      scopes,
-      manager,
-    );
-
-    const isHoliday = this.isHoliday(today, cu, scopes, manager);
-    const shouldWork = await this.shouldWorkToday(
-      checkInInput.workerId,
-      today,
-      cu,
-      scopes,
-      manager,
-    );
-
-    const status = shouldWork
-      ? await this.calculateStatus(
-          checkInInput.workerId,
-          today,
-          checkInTime,
-          cu,
-          scopes,
-          manager,
-        )
-      : AttendanceStatus.ABSENT;
-
-    const attendanceData: CreateAttendanceInput = {
-      workerId: checkInInput.workerId,
-      attendanceDate: today,
-      checkInTime,
-      status,
-      notes: checkInInput.notes,
-      hoursWorked: 0,
-      isHoliday,
-      workScheduleId: workSchedule?.id,
-    };
-
-    return this.create(attendanceData, cu, scopes, manager);
-  }
-
-  async checkOut(
-    checkOutInput: CheckOutInput,
-    cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
-    manager?: EntityManager,
-  ): Promise<Attendance> {
-    // Validaciones
-    if (!checkOutInput.workerId || checkOutInput.workerId <= 0) {
-      throw new BadRequestError('Invalid worker ID');
-    }
-
-    const today = new Date();
-
-    // Buscar registro de asistencia de hoy
-    const attendance = await this.findDailyAttendanceForWorker(
-      checkOutInput.workerId,
-      today,
-      cu,
-      scopes,
-      manager,
-    );
-
-    if (!attendance) {
-      throw new NotFoundError('No attendance record found for today');
-    }
-
-    if (!attendance.checkInTime) {
-      throw new BadRequestError('Cannot check out without check-in time');
-    }
-
-    if (attendance.checkOutTime) {
-      throw new BadRequestError('Already checked out for today');
-    }
-
-    const checkOutTime = checkOutInput.time || this.getCurrentTimeString();
-
-    // Calcular horas trabajadas
-    const hoursWorked = this.calculateHoursWorked(
-      attendance.checkInTime,
-      checkOutTime,
-    );
-
-    // Calcular nuevo estado
-    const newStatus = this.calculateCheckOutStatus(
-      attendance.status,
-      checkOutTime,
-      attendance.checkInTime,
-    );
-
-    return super.baseUpdate({
-      id: attendance.id as number,
-      data: {
-        ...attendance,
-        checkOutTime,
-        hoursWorked,
-        status: newStatus,
-        notes: checkOutInput.notes || attendance.notes,
-      },
-      cu,
-      scopes,
-      manager,
-    });
-  }
-
+  /** Marca registros completos como pagados, todos o ninguno */
   async markAsPaid(
     ids: number[],
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Attendance[]> {
-    if (!ids || ids.length === 0) {
-      throw new BadRequestError('No attendance IDs provided');
+    if (!manager) {
+      return this.attendanceRepository.manager.transaction((txManager) =>
+        this.markAsPaid(ids, cu, scopes, txManager),
+      );
+    }
+    if (!ids?.length) {
+      throw new BadRequestError('Indica qué registros marcar como pagados');
     }
 
     const attendances = await super.baseFindByIds({
@@ -446,34 +238,27 @@ export class AttendanceService extends BaseService<Attendance> {
       scopes,
       manager,
     });
-
-    if (attendances.length === 0) {
-      throw new NotFoundError('No attendance records found');
-    }
-
-    // Verificar que todos los registros tengan check-out
-    const incompleteAttendances = attendances.filter(
-      (a) => !a.checkOutTime || a.hoursWorked <= 0,
-    );
-    if (incompleteAttendances.length > 0) {
+    if (
+      attendances.some((a) => !a.checkOutTime || Number(a.hoursWorked) <= 0)
+    ) {
       throw new BadRequestError(
-        'Cannot mark incomplete attendance records as paid',
+        'Solo se pagan registros con entrada, salida y horas trabajadas',
       );
     }
 
-    const updatedAttendances = await Promise.all(
-      attendances.map((attendance) =>
-        super.baseUpdate({
+    const updated: Attendance[] = [];
+    for (const attendance of attendances) {
+      updated.push(
+        await super.baseUpdate({
           id: attendance.id as number,
-          data: { ...attendance, isPaid: true },
+          data: { isPaid: true },
           cu,
           scopes,
           manager,
         }),
-      ),
-    );
-
-    return updatedAttendances;
+      );
+    }
+    return updated;
   }
 
   async update(
@@ -490,57 +275,79 @@ export class AttendanceService extends BaseService<Attendance> {
       scopes,
       manager,
     });
-
-    if (!attendance) {
-      throw new NotFoundError('Attendance record not found');
-    }
-
     if (attendance.isPaid) {
-      throw new BadRequestError('Cannot modify paid attendance record');
+      throw new BadRequestError('Un registro ya pagado no se modifica');
     }
 
-    // Validar y actualizar el trabajador si se proporciona
-    if (updateAttendanceInput.workerId) {
-      const worker = await this.workerService.findOne(
-        updateAttendanceInput.workerId,
+    const {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      id: _id,
+      workerId,
+      workScheduleId,
+      // El lugar viene del trabajador, no se edita aparte
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      businessId,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      officeId,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      departmentId,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      teamId,
+      ...rest
+    } = updateAttendanceInput;
+    const data: Partial<Attendance> = { ...rest };
+
+    let worker = attendance.worker;
+    if (workerId && workerId !== attendance.worker?.id) {
+      worker = await this.workerService.findOne(workerId, cu, scopes, manager);
+      Object.assign(data, {
+        worker,
+        business: worker.business,
+        office: worker.office,
+        department: worker.department,
+        team: worker.team,
+      });
+    }
+    if (workScheduleId === null) {
+      data.workSchedule = null as unknown as WorkSchedule;
+    } else if (workScheduleId !== undefined) {
+      data.workSchedule = await this.workScheduleService.findOne(
+        workScheduleId,
         cu,
         scopes,
         manager,
       );
-      if (!worker) {
-        throw new NotFoundError('Worker not found');
-      }
-      attendance.worker = worker;
     }
 
-    // Validar y actualizar el horario de trabajo si se proporciona
-    if (updateAttendanceInput.workScheduleId) {
-      const workSchedule = await this.workScheduleService.findOne(
-        updateAttendanceInput.workScheduleId,
-        cu,
-        scopes,
-        manager,
-      );
-      if (!workSchedule) {
-        throw new NotFoundError('Work schedule not found');
-      }
-      attendance.workSchedule = workSchedule;
+    const attendanceDate = rest.attendanceDate
+      ? new Date(rest.attendanceDate)
+      : attendance.attendanceDate;
+    if (rest.attendanceDate) this.assertNotFuture(attendanceDate);
+    if (rest.attendanceDate || data.worker) {
+      await this.assertNoOtherRecord(worker, attendanceDate, id, manager);
     }
 
-    // Validar que la fecha de asistencia no sea futura
-    if (
-      updateAttendanceInput.attendanceDate &&
-      new Date(updateAttendanceInput.attendanceDate) > new Date()
-    ) {
-      throw new BadRequestError('Attendance date cannot be in the future');
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { workerId, workScheduleId, ...rest } = updateAttendanceInput;
+    const checkInTime =
+      rest.checkInTime !== undefined
+        ? this.normalizeTime(rest.checkInTime, 'entrada')
+        : attendance.checkInTime;
+    const checkOutTime =
+      rest.checkOutTime !== undefined
+        ? this.normalizeTime(rest.checkOutTime, 'salida')
+        : attendance.checkOutTime;
+    data.checkInTime = (checkInTime ?? null) as string;
+    data.checkOutTime = (checkOutTime ?? null) as string;
+    data.status = this.statusFor(rest.status, attendance.status, checkInTime);
+    // Las horas salen de entrada y salida; a mano solo si faltan ambas
+    data.hoursWorked = this.hoursFor(
+      rest.hoursWorked ?? Number(attendance.hoursWorked),
+      checkInTime,
+      checkOutTime,
+    );
 
     return super.baseUpdate({
       id,
-      data: { ...attendance, ...rest },
+      data,
       cu,
       scopes,
       manager,
@@ -553,25 +360,14 @@ export class AttendanceService extends BaseService<Attendance> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Attendance[]> {
-    if (!ids || ids.length === 0) {
-      throw new BadRequestError('No attendance IDs provided');
-    }
-
     const attendances = await super.baseFindByIds({
       ids,
       cu,
       scopes,
       manager,
     });
-
-    if (attendances.length === 0) {
-      throw new NotFoundError('No attendance records found');
-    }
-
-    // Check if any attendance is already paid
-    const paidAttendances = attendances.filter((a) => a.isPaid);
-    if (paidAttendances.length > 0) {
-      throw new BadRequestError('Cannot delete paid attendance records');
+    if (attendances.some((a) => a.isPaid)) {
+      throw new BadRequestError('Un registro ya pagado no se elimina');
     }
 
     return super.baseDeleteMany({
@@ -589,10 +385,6 @@ export class AttendanceService extends BaseService<Attendance> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<number> {
-    if (!ids || ids.length === 0) {
-      throw new BadRequestError('No attendance IDs provided');
-    }
-
     return super.baseRestoreDeletedMany({
       ids,
       cu,
@@ -601,7 +393,7 @@ export class AttendanceService extends BaseService<Attendance> {
     });
   }
 
-  // ========== MÉTODOS AUXILIARES ==========
+  // ========== Apoyo ==========
 
   public async findDailyAttendanceForWorker(
     workerId: number,
@@ -610,10 +402,7 @@ export class AttendanceService extends BaseService<Attendance> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Attendance | null> {
-    const dateString = this.getLocalDateString(date);
-    const startOfDay = `${dateString} 00:00:00`;
-    const endOfDay = `${dateString} 23:59:59.999`;
-
+    const day = this.getLocalDateString(date);
     const result = await super.baseFind({
       options: {
         filters: [
@@ -622,16 +411,7 @@ export class AttendanceService extends BaseService<Attendance> {
             operator: ConditionalOperator.EQUAL,
             value: workerId.toString(),
           },
-          {
-            property: 'attendanceDate',
-            operator: ConditionalOperator.GREATER_EQUAL_THAN,
-            value: startOfDay,
-          },
-          {
-            property: 'attendanceDate',
-            operator: ConditionalOperator.LESS_EQUAL_THAN,
-            value: endOfDay,
-          },
+          ...this.dayFilters(day, day),
         ],
         take: 1,
       },
@@ -645,144 +425,7 @@ export class AttendanceService extends BaseService<Attendance> {
     return attendances.length > 0 ? attendances[0] : null;
   }
 
-  private async calculateStatus(
-    workerId: number,
-    date: Date,
-    checkInTime: string,
-    cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
-    manager?: EntityManager,
-  ): Promise<AttendanceStatus> {
-    // Obtener horario del worker
-    const workSchedule = await this.getWorkerSchedule(
-      workerId,
-      date,
-      cu,
-      scopes,
-      manager,
-    );
-
-    if (!workSchedule) {
-      return AttendanceStatus.PRESENT;
-    }
-
-    // Verificar si es día festivo
-    const isHoliday = this.isHoliday(date, cu, scopes, manager);
-    if (isHoliday) {
-      return AttendanceStatus.PRESENT; // O podría ser un estado especial para festivos
-    }
-
-    // Obtener hora de entrada esperada del horario
-    // Esto depende de cómo esté estructurado tu WorkSchedule
-    // Por ahora, usamos una lógica simple
-    const [hours, minutes] = checkInTime.split(':').map(Number);
-    const checkInTotalMinutes = hours * 60 + minutes;
-
-    // Hora de entrada esperada (ej: 8:00 AM = 480 minutos)
-    const expectedStartTime = 8 * 60; // 8:00 AM en minutos
-
-    if (checkInTotalMinutes > expectedStartTime + 15) {
-      // 15 minutos de tolerancia
-      return AttendanceStatus.LATE;
-    }
-
-    return AttendanceStatus.PRESENT;
-  }
-
-  private calculateCheckOutStatus(
-    currentStatus: AttendanceStatus,
-    checkOutTime: string,
-    checkInTime: string,
-  ): AttendanceStatus {
-    const [outHours, outMinutes] = checkOutTime.split(':').map(Number);
-    const [inHours, inMinutes] = checkInTime.split(':').map(Number);
-
-    const checkOutTotalMinutes = outHours * 60 + outMinutes;
-    const checkInTotalMinutes = inHours * 60 + inMinutes;
-
-    // Jornada laboral mínima esperada (8 horas = 480 minutos)
-    const minWorkMinutes = 480;
-    const actualWorkMinutes = checkOutTotalMinutes - checkInTotalMinutes;
-
-    if (
-      actualWorkMinutes < minWorkMinutes &&
-      currentStatus === AttendanceStatus.PRESENT
-    ) {
-      return AttendanceStatus.EARLY_DEPARTURE;
-    }
-
-    return currentStatus;
-  }
-
-  private calculateHoursWorked(
-    checkInTime: string, // Formato: '08:30:00'
-    checkOutTime: string, // Formato: '17:45:00'
-  ): number {
-    if (!checkInTime || !checkOutTime) return 0;
-
-    const [inHours, inMinutes, inSeconds] = checkInTime.split(':').map(Number);
-    const [outHours, outMinutes, outSeconds] = checkOutTime
-      .split(':')
-      .map(Number);
-
-    let totalSeconds =
-      outHours * 3600 +
-      outMinutes * 60 +
-      outSeconds -
-      (inHours * 3600 + inMinutes * 60 + inSeconds);
-
-    // Manejar turnos nocturnos
-    if (totalSeconds < 0) {
-      totalSeconds += 24 * 3600; // Agregar 24 horas en segundos
-    }
-
-    // Convertir a horas con 2 decimales
-    const hours = totalSeconds / 3600;
-    return Math.round(hours * 100) / 100;
-  }
-
-  public getLocalDateString(date: Date): string {
-    const year = date.getFullYear();
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const day = date.getDate().toString().padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
-
-  private getCurrentTimeString(): string {
-    const now = new Date();
-    const hours = now.getHours().toString().padStart(2, '0');
-    const minutes = now.getMinutes().toString().padStart(2, '0');
-    const seconds = now.getSeconds().toString().padStart(2, '0');
-    return `${hours}:${minutes}:${seconds}`; // ✅ Formato HH:MM:SS
-  }
-
-  private async getWorkerSchedule(
-    workerId: number,
-    date: Date,
-    cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
-    manager?: EntityManager,
-  ): Promise<WorkSchedule | null> {
-    // Implementar lógica para obtener el horario del worker para la fecha específica
-    // Esto puede involucrar buscar en workSchedules activos para el worker
-    try {
-      // Ejemplo simplificado - deberías implementar la lógica real según tu estructura
-      const worker = await this.workerService.findOne(
-        workerId,
-        cu,
-        scopes,
-        manager,
-      );
-      if (worker && worker.paymentRule) {
-        // Buscar horarios asociados al worker
-        return null; // Implementar lógica real
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  }
-
+  /** Si al trabajador le toca trabajar ese día según su horario */
   public async shouldWorkToday(
     workerId: number,
     date: Date,
@@ -790,61 +433,20 @@ export class AttendanceService extends BaseService<Attendance> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<boolean> {
-    // Verificar si el worker debería trabajar hoy según su horario
-    const workSchedule = await this.getWorkerSchedule(
+    const worker = await this.workerService.findOne(
       workerId,
-      date,
       cu,
       scopes,
       manager,
     );
-
-    if (!workSchedule) {
-      return true; // Asumir que trabaja si no tiene horario definido
-    }
-
-    const dayOfWeek = date.getDay(); // 0 = Domingo, 1 = Lunes, etc.
-    const workingDays = workSchedule.workingDays;
-
-    switch (dayOfWeek) {
-      case 0:
-        return workingDays.sunday;
-      case 1:
-        return workingDays.monday;
-      case 2:
-        return workingDays.tuesday;
-      case 3:
-        return workingDays.wednesday;
-      case 4:
-        return workingDays.thursday;
-      case 5:
-        return workingDays.friday;
-      case 6:
-        return workingDays.saturday;
-      default:
-        return false;
-    }
+    const schedule = await this.scheduleFor(worker, date, manager);
+    // Sin horario se asume que trabaja (salvo el domingo, que no se genera)
+    return schedule ? !!schedule.workingDays[WEEK_DAYS[date.getDay()]] : true;
   }
 
   /**
-   * Determina si un trabajador debe contar para la repartición de ganancias del día
-   * basado en su registro de asistencia y reglas de negocio configuradas.
-   *
-   * @param workerId - ID del trabajador a evaluar
-   * @param date - Fecha para la cual se verifica la elegibilidad
-   * @param cu - Payload del usuario autenticado (opcional)
-   * @param scopes - Scopes de acceso (opcional)
-   * @param manager - EntityManager para transacciones (opcional)
-   * @returns Promise<boolean> - true si el trabajador cuenta para repartición, false en caso contrario
-   *
-   * @example
-   * // Verificar si un worker cuenta para repartición hoy
-   * const shouldCount = await attendanceService.shouldCountForProfitSharing(123, new Date());
-   *
-   * @businessRules
-   * - Solo trabajadores con estado PRESENTE cuentan
-   * - Debe tener un registro de asistencia válido para la fecha
-   *
+   * Si el trabajador cuenta para el reparto de ese día: solo con un registro
+   * en estado presente (o tarde: vino igualmente).
    */
   public async shouldCountForProfitSharing(
     workerId: number,
@@ -854,20 +456,6 @@ export class AttendanceService extends BaseService<Attendance> {
     manager?: EntityManager,
   ): Promise<boolean> {
     try {
-      // 1. Verificar que el worker existe y está activo
-      const worker = await this.workerService.findOne(
-        workerId,
-        cu,
-        scopes,
-        manager,
-      );
-
-      if (!worker) {
-        console.warn(`Worker with ID ${workerId} not found`);
-        return false;
-      }
-
-      // 2. Buscar el registro de asistencia para la fecha especificada
       const attendance = await this.findDailyAttendanceForWorker(
         workerId,
         date,
@@ -875,106 +463,166 @@ export class AttendanceService extends BaseService<Attendance> {
         scopes,
         manager,
       );
-
-      if (!attendance) {
-        console.warn(
-          `No attendance record found for worker ${workerId} on date ${date.toISOString()}`,
-        );
-        return false;
-      }
-
-      // 3. Solo cuentan asistencias con estado PRESENTE
-      if (attendance.status !== AttendanceStatus.PRESENT) {
-        console.log(
-          `Worker ${workerId} has status ${attendance.status}, not eligible for profit sharing`,
-        );
-        return false;
-      }
-
-      // 4. Verificar que tenga horas trabajadas (después del checkout)
-      // (FUTURO) Puede requerirse un mínimo de horas
-      // if (attendance.hoursWorked < MIN_HOURS_FOR_PROFIT_SHARING) {
-      //   return false;
-      // }
-
-      // 5. (FUTURO) Verificar tipo de worker - solo algunos tipos pueden contar
-      // if (worker.workerType !== WorkerType.AGENT && worker.workerType !== WorkerType.MANAGER) {
-      //   return false;
-      // }
-
-      // 6. (FUTURO) Verificar si es día festivo y reglas especiales aplican
-      // if (attendance.isHoliday && !ALLOW_PROFIT_SHARING_ON_HOLIDAYS) {
-      //   return false;
-      // }
-
-      // 7. (FUTURO) Verificar si el worker ya fue pagado para este período
-      // if (attendance.isPaid) {
-      //   return false;
-      // }
-
-      // 8. (FUTURO) Otras reglas de negocio personalizadas
-      // const customRulesResult = await this.checkCustomProfitSharingRules(workerId, date, attendance);
-      // if (!customRulesResult) {
-      //   return false;
-      // }
-
-      console.log(
-        `Worker ${workerId} is eligible for profit sharing on ${date.toISOString()}`,
+      return (
+        !!attendance &&
+        attendance.countsForProfitSharing &&
+        [AttendanceStatus.PRESENT, AttendanceStatus.LATE].includes(
+          attendance.status,
+        )
       );
-      return true;
-    } catch (error) {
-      console.error('Error determining profit sharing eligibility:', error);
-      // En caso de error, por seguridad no contar para repartición
+    } catch {
+      // Ante la duda, no cuenta
       return false;
     }
   }
 
-  public isHoliday(
-    date: Date,
-    cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
-    manager?: EntityManager,
-  ): boolean {
-    // Implementar lógica para verificar si es día festivo
-    // Esto podría consultar una base de datos de días festivos
-    // Por ahora, retornamos false
+  /** Aún no hay calendario de festivos */
+  public isHoliday(date: Date): boolean {
+    void date;
     return false;
   }
 
-  // ========== MÉTODOS ADICIONALES PARA FUNCIONALIDAD EXTENDIDA ==========
+  public getLocalDateString(date: Date): string {
+    const year = date.getFullYear();
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const day = date.getDate().toString().padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
 
-  //   async generateDailyAttendances(
-  //     date: Date,
-  //     cu?: JWTPayload,
-  //     scopes?: ScopedAccessEnum[],
-  //     manager?: EntityManager,
-  //   ): Promise<number> {
-  //     // Obtener todos los workers activos
-  //     // Para cada worker, crear registro de asistencia con status ABSENT
-  //     // Retornar número de registros creados
-  //     // (Implementación pendiente según estructura de tu aplicación)
-  //     return 0;
-  //   }
+  /** Horario que cubre esa fecha: el de su oficina o, si no, el de la empresa */
+  private async scheduleFor(
+    worker: Worker,
+    date: Date,
+    manager?: EntityManager,
+  ): Promise<WorkSchedule | null> {
+    const repository =
+      manager?.getRepository(WorkSchedule) ??
+      this.workScheduleService.getRepository();
+    const day = this.getLocalDateString(date);
+    const covering = {
+      startDate: LessThanOrEqual(new Date(`${day}T23:59:59`)),
+      endDate: MoreThanOrEqual(new Date(`${day}T00:00:00`)),
+    };
+    if (worker.office?.id) {
+      const own = await repository.findOne({
+        where: { ...covering, office: { id: worker.office.id } },
+        order: { startDate: 'DESC' },
+      });
+      if (own) return own;
+    }
+    if (!worker.business?.id) return null;
+    return repository.findOne({
+      where: {
+        ...covering,
+        office: IsNull(),
+        business: { id: worker.business.id },
+      },
+      order: { startDate: 'DESC' },
+    });
+  }
 
-  //   async getAttendanceSummary(
-  //     startDate: Date,
-  //     endDate: Date,
-  //     cu?: JWTPayload,
-  //     scopes?: ScopedAccessEnum[],
-  //     manager?: EntityManager,
-  //   ): Promise<{
-  //     totalWorkers: number;
-  //     totalDays: number;
-  //     averageAttendance: number;
-  //     absencesByReason: Record<AttendanceStatus, number>;
-  //   }> {
-  //     // Generar reporte consolidado de asistencia
-  //     // (Implementación pendiente según estructura de la aplicación)
-  //     return {
-  //       totalWorkers: 0,
-  //       totalDays: 0,
-  //       averageAttendance: 0,
-  //       absencesByReason: {} as Record<AttendanceStatus, number>,
-  //     };
-  //   }
+  /** Filtros de un rango de días completos (del primero al último) */
+  private dayFilters(fromDay: string, toDay: string) {
+    return [
+      {
+        property: 'attendanceDate',
+        operator: ConditionalOperator.GREATER_EQUAL_THAN,
+        value: `${fromDay} 00:00:00`,
+      },
+      {
+        property: 'attendanceDate',
+        operator: ConditionalOperator.LESS_EQUAL_THAN,
+        value: `${toDay} 23:59:59.999`,
+      },
+    ];
+  }
+
+  private assertNotFuture(date: Date): void {
+    if (this.getLocalDateString(date) > this.getLocalDateString(new Date())) {
+      throw new BadRequestError('La fecha no puede ser futura');
+    }
+  }
+
+  /** Un solo registro por trabajador y día */
+  private async assertNoOtherRecord(
+    worker: Worker,
+    date: Date,
+    exceptId: number | undefined,
+    manager?: EntityManager,
+  ): Promise<void> {
+    const day = this.getLocalDateString(date);
+    const repository =
+      manager?.getRepository(Attendance) ?? this.attendanceRepository;
+    const query = repository
+      .createQueryBuilder('attendance')
+      .where('"attendance"."workerId" = :workerId', { workerId: worker.id })
+      .andWhere(
+        new Brackets((qb) =>
+          qb
+            .where('attendance.attendanceDate >= :from', {
+              from: `${day} 00:00:00`,
+            })
+            .andWhere('attendance.attendanceDate <= :to', {
+              to: `${day} 23:59:59.999`,
+            }),
+        ),
+      );
+    if (exceptId) query.andWhere('attendance.id != :exceptId', { exceptId });
+    if (await query.getCount()) {
+      throw new ConflictError(
+        'Ese trabajador ya tiene un registro de asistencia ese día',
+      );
+    }
+  }
+
+  /** «8:5», «08:05» o «08:05:00» → «08:05:00»; vacío → sin hora */
+  private normalizeTime(
+    value: string | null | undefined,
+    label: string,
+  ): string | undefined {
+    if (value === undefined || value === null || value.trim() === '') {
+      return undefined;
+    }
+    const match = /^(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?$/.exec(value.trim());
+    const [hours, minutes, seconds] = match
+      ? [Number(match[1]), Number(match[2]), Number(match[3] ?? 0)]
+      : [NaN, NaN, NaN];
+    if (!(hours < 24 && minutes < 60 && seconds < 60)) {
+      throw new BadRequestError(
+        `La hora de ${label} no es válida: usa el formato 08:30`,
+      );
+    }
+    const two = (n: number) => n.toString().padStart(2, '0');
+    return `${two(hours)}:${two(minutes)}:${two(seconds)}`;
+  }
+
+  /** Con hora de entrada, un registro «ausente» pasa a «presente» */
+  private statusFor(
+    requested: AttendanceStatus | undefined,
+    current: AttendanceStatus,
+    checkInTime: string | undefined,
+  ): AttendanceStatus {
+    const status = requested ?? current;
+    return checkInTime && status === AttendanceStatus.ABSENT
+      ? AttendanceStatus.PRESENT
+      : status;
+  }
+
+  /** Horas entre entrada y salida (turnos que pasan la medianoche incluidos) */
+  private hoursFor(
+    manual: number | undefined,
+    checkInTime: string | undefined,
+    checkOutTime: string | undefined,
+  ): number {
+    if (!checkInTime || !checkOutTime) {
+      return checkInTime || checkOutTime ? 0 : Math.max(manual ?? 0, 0);
+    }
+    const seconds = (time: string) => {
+      const [h, m, s] = time.split(':').map(Number);
+      return h * 3600 + m * 60 + (s || 0);
+    };
+    let total = seconds(checkOutTime) - seconds(checkInTime);
+    if (total < 0) total += 24 * 3600;
+    return Math.round((total / 3600) * 100) / 100;
+  }
 }

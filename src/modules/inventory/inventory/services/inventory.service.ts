@@ -1,5 +1,5 @@
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
-import { EntityManager, Repository } from 'typeorm';
+import { EntityManager, IsNull, Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CreateInventoryInput } from '../dto/create-inventory.input';
 import { UpdateInventoryInput } from '../dto/update-inventory.input';
@@ -9,13 +9,13 @@ import {
   ListOptions,
   ListSummary,
 } from '../../../../core/graphql/remote-operations';
-import { NotFoundError } from '../../../../core/errors/appErrors/NotFoundError.error';
 import { JWTPayload } from '../../../auth/dto/jwt-payload.dto';
 import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
 import { ScopedAccessService } from '../../../scoped-access/services/scoped-access.service';
 import { ProductService } from '../../product/services/product.service';
 import { InventoryMovementService } from '../../inventory-movement/services/inventory-movement.service';
 import { ConflictError } from '../../../../core/errors/appErrors/ConflictError.error';
+import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
 import { Business } from '../../../company/business/entities/co_business.entity';
 import { Office } from '../../../company/office/entities/co_office.entity';
 import { Department } from '../../../company/department/entities/co_department.entity';
@@ -28,50 +28,56 @@ export class InventoryService extends BaseService<Inventory> {
     private inventoryRepository: Repository<Inventory>,
     @Inject(forwardRef(() => ProductService))
     private productService: ProductService,
+    @Inject(forwardRef(() => InventoryMovementService))
     private movementService: InventoryMovementService,
     protected scopedAccessService: ScopedAccessService,
   ) {
     super(inventoryRepository);
   }
 
+  /**
+   * Abre el inventario de un producto en una oficina. Las existencias
+   * iniciales entran como un movimiento `INITIAL_INVENTORY`, en la misma
+   * transacción.
+   */
   async create(
     createInventoryInput: CreateInventoryInput,
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Inventory> {
-    const { productId, currentStock, ...rest } = createInventoryInput;
+    if (!manager) {
+      return this.inventoryRepository.manager.transaction((txManager) =>
+        this.create(createInventoryInput, cu, scopes, txManager),
+      );
+    }
 
-    // 1. Obtener el producto
+    const { productId, currentStock, ...rest } = createInventoryInput;
+    const location = rest.location?.trim() || undefined;
+
     const product = await this.productService.findOne(
       productId,
       cu,
       scopes,
       manager,
     );
-    if (!product) {
-      throw new NotFoundError('Product not found');
-    }
 
-    // 2. Validar que los scopes del producto coincidan con el usuario actual
+    // El inventario hereda el lugar del producto; lo que el producto deja
+    // libre lo pone el usuario (su propio lugar o el que eligió).
     const validateScope = (
-      scopeName: string,
+      label: string,
       entityId?: number,
       userScopeId?: number,
     ) => {
       if (entityId && userScopeId && entityId !== userScopeId) {
-        throw new ConflictError(
-          `Product ${scopeName} does not match user ${scopeName}`,
-        );
+        throw new ConflictError(`El producto no pertenece a ${label}`);
       }
     };
+    validateScope('tu empresa', product.business?.id, cu?.businessId);
+    validateScope('tu oficina', product.office?.id, cu?.officeId);
+    validateScope('tu departamento', product.department?.id, cu?.departmentId);
+    validateScope('tu equipo', product.team?.id, cu?.teamId);
 
-    validateScope('business', product.business?.id, cu?.businessId);
-    validateScope('office', product.office?.id, cu?.officeId);
-    validateScope('department', product.department?.id, cu?.departmentId);
-    validateScope('team', product.team?.id, cu?.teamId);
-
-    // 3. Función para determinar el scope
     const getScopeEntity = <T extends { id?: number | null }>(
       productEntity: T | undefined | null,
       userScopeId: number | undefined,
@@ -82,9 +88,9 @@ export class InventoryService extends BaseService<Inventory> {
       return id ? ({ id } as T) : undefined;
     };
 
-    // 4. Crear el objeto de inventario
     const inventory: Inventory = {
-      ...rest,
+      minStock: rest.minStock,
+      location,
       product,
       business: getScopeEntity<Business>(
         product.business,
@@ -105,7 +111,17 @@ export class InventoryService extends BaseService<Inventory> {
       currentStock: 0,
     };
 
-    // 5. Crear el inventario
+    if (!inventory.office?.id) {
+      throw new BadRequestError('Indica la oficina donde está el inventario');
+    }
+    await this.assertNotDuplicated(
+      productId,
+      inventory.office.id,
+      location,
+      undefined,
+      manager,
+    );
+
     const invCreated = await super.baseCreate({
       data: inventory,
       cu,
@@ -113,7 +129,6 @@ export class InventoryService extends BaseService<Inventory> {
       manager,
     });
 
-    // 6. Registrar movimiento inicial si corresponde
     if (currentStock > 0) {
       await this.movementService.create(
         {
@@ -126,9 +141,39 @@ export class InventoryService extends BaseService<Inventory> {
         scopes,
         manager,
       );
+      invCreated.currentStock = currentStock;
     }
 
     return invCreated;
+  }
+
+  /**
+   * Un producto tiene un solo inventario por ubicación dentro de cada
+   * oficina; si no, las existencias se reparten sin que nadie sepa dónde.
+   */
+  private async assertNotDuplicated(
+    productId: number,
+    officeId: number,
+    location: string | undefined,
+    exceptId: number | undefined,
+    manager: EntityManager,
+  ): Promise<void> {
+    const sameOffice = await manager.getRepository(Inventory).find({
+      where: { product: { id: productId }, office: { id: officeId } },
+    });
+    const normalize = (value?: string) => (value ?? '').trim().toLowerCase();
+    const duplicated = sameOffice.find(
+      (other) =>
+        other.id !== exceptId &&
+        normalize(other.location) === normalize(location),
+    );
+    if (duplicated) {
+      throw new ConflictError(
+        location
+          ? `Este producto ya tiene un inventario en «${location}» de esa oficina`
+          : 'Este producto ya tiene un inventario sin ubicación en esa oficina: indica una ubicación distinta',
+      );
+    }
   }
 
   async find(
@@ -142,7 +187,7 @@ export class InventoryService extends BaseService<Inventory> {
       relationsToLoad: [
         'product',
         'product.category',
-        'inventoryMovements',
+        'product.unitOfMeasure',
         'business',
         'office',
         'department',
@@ -163,8 +208,7 @@ export class InventoryService extends BaseService<Inventory> {
     return super.baseFindOne({
       id,
       relationsToLoad: {
-        product: { category: true },
-        //inventoryMovements: { user: true },
+        product: { category: true, unitOfMeasure: true },
         business: true,
         office: true,
         department: true,
@@ -190,25 +234,31 @@ export class InventoryService extends BaseService<Inventory> {
       manager?.getRepository(Inventory) ?? this.inventoryRepository;
     return repository.find({
       where: { product: { id: productId } },
-      relations: ['product', 'inventoryMovements'],
+      relations: { product: true, office: true },
+      order: { createdAt: 'ASC' },
     });
   }
 
+  /**
+   * Suma (o resta) existencias. El stock se suma en la propia sentencia:
+   * leerlo y escribirlo por separado pierde unidades cuando dos ventas tocan
+   * el mismo producto.
+   */
   async adjust(
     id: number,
     adjustment: number,
-    reason: string,
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Inventory> {
-    const inventory = await super.baseFindOne({ id, cu, scopes, manager });
-    if (!inventory) {
-      throw new NotFoundError();
-    }
+    const inventory = await super.baseFindOne({
+      id,
+      relationsToLoad: { product: true },
+      cu,
+      scopes,
+      manager,
+    });
 
-    // El stock se suma en la propia sentencia: leerlo y escribirlo por
-    // separado pierde unidades cuando dos ventas tocan el mismo producto.
     const repository =
       manager?.getRepository(Inventory) ?? this.inventoryRepository;
     const result = await repository
@@ -222,7 +272,10 @@ export class InventoryService extends BaseService<Inventory> {
       .execute();
 
     if (!result.affected) {
-      throw new ConflictError('Cannot adjust inventory below zero');
+      const where = inventory.location ? ` en «${inventory.location}»` : '';
+      throw new ConflictError(
+        `No hay existencias suficientes de "${inventory.product?.name}"${where}: hay ${inventory.currentStock} y se quieren sacar ${-adjustment}`,
+      );
     }
 
     return { ...inventory, currentStock: inventory.currentStock + adjustment };
@@ -235,38 +288,46 @@ export class InventoryService extends BaseService<Inventory> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Inventory> {
-    const inventory = await super.baseFindOne({ id, cu, scopes, manager });
-    if (!inventory) {
-      throw new NotFoundError();
+    const inventory = await super.baseFindOne({
+      id,
+      relationsToLoad: { product: true, office: true },
+      cu,
+      scopes,
+      manager,
+    });
+
+    // `null` vacía un dato; si no llega, se queda como estaba
+    const data: Partial<Inventory> = {};
+    if (updateInventoryInput.minStock !== undefined) {
+      data.minStock = updateInventoryInput.minStock as number;
+    }
+    if (updateInventoryInput.location !== undefined) {
+      const location = updateInventoryInput.location?.trim() || undefined;
+      if (inventory.office?.id) {
+        await this.assertNotDuplicated(
+          inventory.product.id as number,
+          inventory.office.id,
+          location,
+          id,
+          manager ?? this.inventoryRepository.manager,
+        );
+      }
+      data.location = (location ?? null) as string;
     }
 
-    // if (updateInventoryInput.productId) {
-    //   const product = await this.productService.findOne(
-    //     updateInventoryInput.productId,
-    //     cu,
-    //     scopes,
-    //     manager,
-    //   );
-    //   if (!product) {
-    //     throw new NotFoundError('Product not found');
-    //   }
-    //   inventory.product = product;
-    //   inventory.business = product.business;
-    //   inventory.office = product.office;
-    //   inventory.department = product.department;
-    //   inventory.team = product.team;
-    // }
-
-    const { /*productId,*/ ...rest } = updateInventoryInput;
     return super.baseUpdate({
       id,
-      data: { ...inventory, ...rest },
+      data,
       cu,
       scopes,
       manager,
     });
   }
 
+  /**
+   * Elimina inventarios vacíos. Sus movimientos se conservan: son el
+   * historial de lo que entró y salió, y las ventas apuntan a ellos.
+   */
   async remove(
     ids: number[],
     cu?: JWTPayload,
@@ -275,35 +336,19 @@ export class InventoryService extends BaseService<Inventory> {
   ): Promise<Inventory[]> {
     const inventories = await super.baseFindByIds({
       ids,
-      relationsToLoad: { inventoryMovements: true, product: true },
+      relationsToLoad: { product: true },
       cu,
       scopes,
       manager,
     });
 
-    if (inventories.length === 0) {
-      throw new NotFoundError('No inventories found.');
+    const withStock = inventories.find((inventory) => inventory.currentStock);
+    if (withStock) {
+      const where = withStock.location ? ` en «${withStock.location}»` : '';
+      throw new ConflictError(
+        `No se puede eliminar: quedan ${withStock.currentStock} unidades de "${withStock.product?.name}"${where}. Registra antes su salida.`,
+      );
     }
-
-    await Promise.all(
-      inventories.map((inventory) => {
-        // Check if current stock is not zero
-        if (inventory.currentStock !== 0) {
-          throw new ConflictError(
-            `Cannot proceed with operation. Inventory item ${inventory.product.name} has ${inventory.currentStock} units in stock. Stock must be zero to perform this action.`,
-          );
-        }
-
-        return inventory.inventoryMovements?.length
-          ? this.movementService.remove(
-              inventory.inventoryMovements.map((m) => m.id) as number[],
-              cu,
-              scopes,
-              manager,
-            )
-          : Promise.resolve();
-      }),
-    );
 
     return super.baseDeleteMany({
       ids: inventories.map((i) => i.id) as Array<number>,
@@ -324,7 +369,7 @@ export class InventoryService extends BaseService<Inventory> {
 
     const inventories = await super.baseFindByIds({
       ids,
-      relationsToLoad: { inventoryMovements: true },
+      relationsToLoad: { product: true, office: true },
       cu,
       scopes,
       manager,
@@ -334,20 +379,35 @@ export class InventoryService extends BaseService<Inventory> {
     const deletedInventories = inventories.filter((i) => i.deletedAt);
     if (deletedInventories.length === 0) return 0;
 
-    await Promise.all(
-      deletedInventories.map((inventory) =>
-        inventory.inventoryMovements?.length
-          ? this.movementService.restore(
-              inventory.inventoryMovements
-                .filter((m) => m.deletedAt)
-                .map((m) => m.id) as number[],
-              cu,
-              scopes,
-              manager,
-            )
-          : Promise.resolve(),
-      ),
-    );
+    const orphan = deletedInventories.find((i) => i.product?.deletedAt);
+    if (orphan) {
+      throw new ConflictError(
+        `El producto "${orphan.product.name}" está eliminado: restáuralo primero`,
+      );
+    }
+    const repository =
+      manager?.getRepository(Inventory) ?? this.inventoryRepository;
+    for (const inventory of deletedInventories) {
+      if (!inventory.office?.id) continue;
+      const active = await repository.find({
+        where: {
+          product: { id: inventory.product.id },
+          office: { id: inventory.office.id },
+          deletedAt: IsNull(),
+        },
+      });
+      const normalize = (value?: string) => (value ?? '').trim().toLowerCase();
+      if (
+        active.some(
+          (other) =>
+            normalize(other.location) === normalize(inventory.location),
+        )
+      ) {
+        throw new ConflictError(
+          `Ya hay otro inventario de "${inventory.product.name}" en esa ubicación`,
+        );
+      }
+    }
 
     return super.baseRestoreDeletedMany({
       ids: deletedInventories.map((i) => i.id) as Array<number>,

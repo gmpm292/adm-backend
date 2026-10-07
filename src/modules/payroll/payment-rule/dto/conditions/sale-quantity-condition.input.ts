@@ -6,13 +6,16 @@ import {
   ValidateIf,
   ValidatorConstraint,
   ValidatorConstraintInterface,
+  ValidationArguments,
 } from 'class-validator';
 
 @ValidatorConstraint({ name: 'exclusiveRateFields', async: false })
 export class ExclusiveRateFieldsConstraint
   implements ValidatorConstraintInterface
 {
-  validate(object: any) {
+  validate(_: unknown, args: ValidationArguments) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const object = args.object as any;
     const hasRate =
       object.ratePerProduct !== undefined && object.ratePerProduct !== null;
     const hasPercentage =

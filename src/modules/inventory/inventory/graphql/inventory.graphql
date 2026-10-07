@@ -16,11 +16,12 @@ type Inventory implements SecurityBaseEntity {
   department: Department
   team: Team
 
+  "Existencias: solo cambian con movimientos"
   currentStock: Int!
+  "Por debajo de esta cantidad el inventario se marca para reponer"
   minStock: Int
   location: String
   product: Product!
-  inventoryMovements: [InventoryMovement]!
 }
 
 type InventoriesSummary {
@@ -35,6 +36,7 @@ input CreateInventoryInput {
   teamId: Int
 
   productId: Int!
+  "Existencias iniciales: entran como un movimiento de inventario inicial"
   currentStock: Int!
   minStock: Int
   location: String
@@ -42,8 +44,9 @@ input CreateInventoryInput {
 
 input UpdateInventoryInput {
   id: Int!
-  #  productId: Int
+  "null lo quita"
   minStock: Int
+  "null lo quita"
   location: String
 }
 
@@ -58,7 +61,6 @@ extend type Mutation {
   updateInventory(updateInventoryInput: UpdateInventoryInput!): Inventory!
   removeInventories(ids: [Int!]!): [Inventory]!
   restoreInventories(ids: [Int!]!): Int
-  #adjustInventory(id: Int!, adjustment: Int!, reason: String!): Inventory!
 }
 
 extend type Subscription {

@@ -1,3 +1,4 @@
+import { decimalTransformer } from '../../../../core/transformers/decimal.transformer';
 import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
 import { SecurityBaseEntity } from '../../../../core/entities/security-base.entity';
 import { Worker } from '../../worker/entities/worker.entity';
@@ -21,13 +22,31 @@ export class PaymentAccumulator extends SecurityBaseEntity {
   @Column({ type: 'int', default: 0 })
   productCounter: number;
 
-  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })
+  @Column({
+    type: 'decimal',
+    precision: 15,
+    scale: 2,
+    default: 0,
+    transformer: decimalTransformer,
+  })
   salesTotal: number;
 
-  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })
+  @Column({
+    type: 'decimal',
+    precision: 15,
+    scale: 2,
+    default: 0,
+    transformer: decimalTransformer,
+  })
   accumulatedAmount: number;
 
-  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })
+  @Column({
+    type: 'decimal',
+    precision: 15,
+    scale: 2,
+    default: 0,
+    transformer: decimalTransformer,
+  })
   accumulatedCurrency: number;
 
   @Column({ type: 'json', nullable: true })

@@ -1,5 +1,5 @@
 """
-Description: Defines work schedules for offices with specific working days.
+Description: Semana (o tramo) de trabajo de una oficina con sus días laborables.
 """
 type WorkSchedule implements SecurityBaseEntity {
   id: Int!
@@ -16,10 +16,10 @@ type WorkSchedule implements SecurityBaseEntity {
   department: Department
   team: Team
 
+  name: String!
   startDate: Date!
   endDate: Date!
   workingDays: WorkDays!
-  isRecurring: Boolean!
   notes: String
 }
 
@@ -39,15 +39,16 @@ type WorkSchedulesSummary {
 }
 
 input CreateWorkScheduleInput {
-  businessId: Int!
-  officeId: Int!
+  businessId: Int
+  "Sin oficina, el horario vale para toda la empresa"
+  officeId: Int
   departmentId: Int
   teamId: Int
 
+  name: String!
   startDate: Date!
   endDate: Date!
   workingDays: WorkDaysInput!
-  isRecurring: Boolean
   notes: String
 }
 
@@ -63,11 +64,13 @@ input WorkDaysInput {
 
 input UpdateWorkScheduleInput {
   id: Int!
+  "null lo deja para toda la empresa"
   officeId: Int
+  name: String
   startDate: Date
   endDate: Date
   workingDays: WorkDaysInput
-  isRecurring: Boolean
+  "null la borra"
   notes: String
 }
 
