@@ -59,7 +59,6 @@ extend type Query {
   currencies(options: ListOptions): CurrenciesSummary!
   currency(code: String!): Currency
   currencyById(id: Int!): Currency
-  activeCurrencies: [Currency]!
 }
 
 extend type Mutation {
@@ -67,8 +66,4 @@ extend type Mutation {
   updateCurrency(updateCurrencyInput: UpdateCurrencyInput!): Currency!
   deactivateCurrency(code: String!): Currency!
   activateCurrency(code: String!): Currency!
-}
-
-extend type Subscription {
-  currencyChanged: Boolean
 }

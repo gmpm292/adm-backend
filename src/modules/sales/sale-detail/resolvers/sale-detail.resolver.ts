@@ -30,7 +30,15 @@ export class SaleDetailResolver {
     return this.saleDetailService.create(createSaleDetailInput, user);
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER, Role.SUPERVISOR)
+  // El vendedor (AGENT) también: el servicio le deja ver solo sus ventas
+  @Roles(
+    Role.SUPER,
+    Role.PRINCIPAL,
+    Role.ADMIN,
+    Role.MANAGER,
+    Role.SUPERVISOR,
+    Role.AGENT,
+  )
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Query('saleDetails')
   async findAll(
@@ -41,14 +49,30 @@ export class SaleDetailResolver {
     return this.saleDetailService.find(options, user);
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER, Role.SUPERVISOR)
+  // El vendedor (AGENT) también: el servicio le deja ver solo sus ventas
+  @Roles(
+    Role.SUPER,
+    Role.PRINCIPAL,
+    Role.ADMIN,
+    Role.MANAGER,
+    Role.SUPERVISOR,
+    Role.AGENT,
+  )
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Query('saleDetail')
   async findOne(@CurrentUser() user: JWTPayload, @Args('id') id: number) {
     return this.saleDetailService.findOne(id, user);
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER, Role.SUPERVISOR)
+  // El vendedor (AGENT) también: el servicio le deja ver solo sus ventas
+  @Roles(
+    Role.SUPER,
+    Role.PRINCIPAL,
+    Role.ADMIN,
+    Role.MANAGER,
+    Role.SUPERVISOR,
+    Role.AGENT,
+  )
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Query('saleDetailsBySale')
   async findBySale(

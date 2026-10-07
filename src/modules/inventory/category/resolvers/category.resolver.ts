@@ -30,7 +30,8 @@ export class CategoryResolver {
     return this.categoryService.create(createCategoryInput, user);
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
+  // También MANAGER: elige la categoría al dar de alta productos
+  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Query('categories')
   async findAll(
@@ -41,11 +42,11 @@ export class CategoryResolver {
     return this.categoryService.find(options, user);
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
+  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Query('category')
   async findOne(@CurrentUser() user: JWTPayload, @Args('id') id: number) {
-    return this.categoryService.findOne(id, user);
+    return this.categoryService.findOneView(id, user);
   }
 
   @Roles(Role.SUPER, Role.PRINCIPAL)

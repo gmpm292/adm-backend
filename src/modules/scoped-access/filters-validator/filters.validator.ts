@@ -1,5 +1,4 @@
-import { IsNumberString, IsOptional, IsEnum } from 'class-validator';
-import { EntityStatus } from '../../../core/enums/entity-status.enum';
+import { IsNumberString, IsOptional, IsString } from 'class-validator';
 import { BaseFiltersValidator } from '../../../core/filters-validator/base-filters.validator';
 
 export class ScopedAccessFiltersValidator extends BaseFiltersValidator {
@@ -7,11 +6,23 @@ export class ScopedAccessFiltersValidator extends BaseFiltersValidator {
   @IsOptional()
   'business.id'?: string;
 
+  @IsString()
+  @IsOptional()
+  'business.name'?: string;
+
   @IsNumberString()
   @IsOptional()
   'roleGuard.id'?: string;
 
-  @IsEnum(EntityStatus)
+  @IsString()
   @IsOptional()
-  'entityStatus'?: EntityStatus;
+  'roleGuard.queryOrEndPointURL'?: string;
+
+  @IsString()
+  @IsOptional()
+  'roleGuard.type'?: string;
+
+  @IsNumberString()
+  @IsOptional()
+  'entityStatus'?: string;
 }

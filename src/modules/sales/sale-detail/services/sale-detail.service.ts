@@ -6,9 +6,11 @@ import { UpdateSaleDetailInput } from '../dto/update-sale-detail.input';
 import { BaseService } from '../../../../core/services/base.service';
 import { SaleDetail } from '../entities/sale-detail.entity';
 import {
+  ListFilter,
   ListOptions,
   ListSummary,
 } from '../../../../core/graphql/remote-operations';
+import { ConditionalOperator } from '../../../../core/graphql/remote-operations/enums/conditional-operation.enum';
 import { NotFoundError } from '../../../../core/errors/appErrors/NotFoundError.error';
 import { JWTPayload } from '../../../auth/dto/jwt-payload.dto';
 import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
@@ -21,7 +23,11 @@ import { ReserveReleaseReason } from '../../../inventory/product/enums/reserve-r
 import { Worker } from '../../../payroll/worker/entities/worker.entity';
 import { SaleDetailStatus } from '../enums/sale-detail-status.enum';
 import { SaleStatus } from '../../sale/enums/sale-status.enum';
-import { SALE_SCOPES, STOCK_SCOPES } from '../../sale/helpers/sale-scopes';
+import {
+  SALE_SCOPES,
+  STOCK_SCOPES,
+  isSellerOnly,
+} from '../../sale/helpers/sale-scopes';
 import { lineAmounts } from '../../sale/helpers/sale-payments.helper';
 import { SortDirection } from '../../../../core/graphql/remote-operations/enums/sort-direction.enum';
 
@@ -142,8 +148,14 @@ export class SaleDetailService extends BaseService<SaleDetail> {
       ? options.sorts
       : [{ property: 'id', direction: SortDirection.DESC }];
 
+    // Un vendedor sin mando solo ve las líneas de sus ventas (como en Ventas)
+    const filters = [
+      ...(options?.filters ?? []),
+      ...(await this.ownSalesFilter(cu, manager)),
+    ];
+
     const summary = await super.baseFind({
-      options: { ...(options ?? { skip: 0, take: 10 }), sorts },
+      options: { ...(options ?? { skip: 0, take: 10 }), filters, sorts },
       relationsToLoad: ['sale', 'product', 'publicists'],
       cu,
       scopes: this.scopesFor(cu, scopes),
@@ -153,6 +165,28 @@ export class SaleDetailService extends BaseService<SaleDetail> {
     await this.loadPublicistUsers(details, manager);
     details.forEach((d) => this.withAmounts(d));
     return summary;
+  }
+
+  /** Filtro de las ventas propias de un vendedor sin mando; vacío para el resto */
+  private async ownSalesFilter(
+    cu?: JWTPayload,
+    manager?: EntityManager,
+  ): Promise<ListFilter[]> {
+    if (!isSellerOnly(cu)) return [];
+    const ownWorker = await this.saleService.findOwnWorker(cu, manager);
+    return [
+      ownWorker
+        ? {
+            property: 'sale.salesWorkerId',
+            operator: ConditionalOperator.EQUAL,
+            value: String(ownWorker.id),
+          }
+        : {
+            property: 'sale.createdById',
+            operator: ConditionalOperator.EQUAL,
+            value: String(cu?.sub),
+          },
+    ];
   }
 
   /** Completa los publicistas con su usuario, en una sola consulta. */
@@ -207,6 +241,10 @@ export class SaleDetailService extends BaseService<SaleDetail> {
       scopes: this.scopesFor(cu, scopes),
       manager,
     });
+    // La venta comprueba que un vendedor sin mando solo vea las suyas
+    if (isSellerOnly(cu) && detail.sale?.id) {
+      await this.saleService.findOne(detail.sale.id, cu, scopes, manager);
+    }
     return this.withAmounts(detail);
   }
 

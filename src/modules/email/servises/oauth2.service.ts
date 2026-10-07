@@ -10,6 +10,7 @@ import { EmailOAuth2Token } from '../../email/entities/email-oauth2-token.entity
 import { EmailTransportService } from './email.transport';
 import { EmailService } from './email.service';
 import { EmailHealthService } from './email-health.service';
+import { BadRequestError } from '../../../core/errors/appErrors/BadRequestError.error';
 
 @Injectable()
 export class OAuth2Service {
@@ -29,7 +30,7 @@ export class OAuth2Service {
   async reload() {
     try {
       this.logger.log('Initializing Email module...');
-      this.emailTransportService.initializeOAuth2Client();
+      this.emailTransportService.reset();
       this.initializeOAuth2Client();
       await this.emailService.init();
       await this.healthService.checkEmailStatus();
@@ -56,8 +57,12 @@ export class OAuth2Service {
   }
 
   async generateAuthUrl(): Promise<string> {
+    // Con los datos actuales: pueden haber cambiado en Configuración
+    this.initializeOAuth2Client();
     if (!this.oauth2Client) {
-      throw new Error('OAuth2 client not initialized');
+      throw new BadRequestError(
+        'Falta configurar EMAIL_CLIENT_ID y EMAIL_SECRET_KEY en el grupo Email-OAuth2',
+      );
     }
 
     //const SCOPES = ['https://mail.google.com/'];
@@ -77,8 +82,11 @@ export class OAuth2Service {
   async handleCallback(
     code: string,
   ): Promise<{ success: boolean; message: string }> {
+    this.initializeOAuth2Client();
     if (!this.oauth2Client) {
-      throw new Error('OAuth2 client not initialized');
+      throw new BadRequestError(
+        'Falta configurar EMAIL_CLIENT_ID y EMAIL_SECRET_KEY en el grupo Email-OAuth2',
+      );
     }
 
     try {
@@ -98,6 +106,14 @@ export class OAuth2Service {
       if (!email) {
         throw new Error('Could not retrieve email from token');
       }
+      // El envío busca el token por EMAIL_USER: otra cuenta no serviría
+      const expected = this.configService.get<string>('EMAIL_USER');
+      if (email.toLowerCase() !== expected?.toLowerCase()) {
+        return {
+          success: false,
+          message: `Autorizaste ${email}, pero el correo se envía desde ${expected ?? '(EMAIL_USER sin configurar)'}. Entra con esa cuenta o cambia EMAIL_USER en Configuración.`,
+        };
+      }
 
       await this.emailTransportService.saveNewRefreshToken(
         email,
@@ -108,13 +124,13 @@ export class OAuth2Service {
 
       return {
         success: true,
-        message: 'Authentication successful. Email service is now configured.',
+        message: `Cuenta ${email} autorizada: ya se pueden enviar correos.`,
       };
     } catch (error) {
       this.logger.error('OAuth2 callback error', error);
       return {
         success: false,
-        message: 'Authentication failed. Please try again.',
+        message: 'Google no aceptó la autorización. Inténtalo de nuevo.',
       };
     }
   }

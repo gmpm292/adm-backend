@@ -1,12 +1,13 @@
 import {
+  ArrayNotEmpty,
   IsArray,
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsPositive,
 } from 'class-validator';
 import { ScopedAccessEnum } from '../../../core/enums/scoped-access.enum';
-import { EntityStatus } from '../../../core/enums/entity-status.enum';
 
 export class CreateScopedAccessInput {
   @IsPositive()
@@ -18,10 +19,11 @@ export class CreateScopedAccessInput {
   roleGuardId: number;
 
   @IsArray()
+  @ArrayNotEmpty()
   @IsEnum(ScopedAccessEnum, { each: true })
   accessLevels: ScopedAccessEnum[];
 
   @IsOptional()
-  //@IsEnum(EntityStatus)
+  @IsIn(['ENABLED', 'DISABLED'])
   entityStatus?: string;
 }

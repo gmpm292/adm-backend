@@ -6,13 +6,11 @@ import { MaterialCost } from './entities/material-cost.entity';
 import { User } from '../../users/entities/user.entity';
 
 import { CurrencyModule } from '../currency/currency.module';
-import { ProductModule } from '../../inventory/product/product.module';
 import { UnitOfMeasureModule } from '../../inventory/unit-of-measure/unit-of-measure.module';
 @Global()
 @Module({
   imports: [
     TypeOrmModule.forFeature([MaterialCost, User]),
-    forwardRef(() => ProductModule),
     forwardRef(() => UnitOfMeasureModule),
     forwardRef(() => CurrencyModule),
   ],

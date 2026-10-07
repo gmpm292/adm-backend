@@ -1,4 +1,4 @@
-import { IsString } from 'class-validator';
+import { IsNumberString, IsString } from 'class-validator';
 import { BaseFiltersValidator } from '../../../../core/filters-validator/base-filters.validator';
 
 export class CategoryFiltersValidator extends BaseFiltersValidator {
@@ -7,4 +7,10 @@ export class CategoryFiltersValidator extends BaseFiltersValidator {
 
   @IsString()
   description: string;
+
+  @IsNumberString()
+  'business.id': string;
+
+  @IsString()
+  'business.name': string;
 }

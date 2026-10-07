@@ -22,9 +22,6 @@ type UnitOfMeasure implements SecurityBaseEntity {
   category: String
   description: String
   isActive: Boolean!
-
-  # Relationships
-  materialCosts: [MaterialCost]
 }
 
 type UnitsOfMeasureSummary {
@@ -62,10 +59,6 @@ input UpdateUnitOfMeasureInput {
 extend type Query {
   unitOfMeasures(options: ListOptions): UnitsOfMeasureSummary!
   unitOfMeasure(id: Int!): UnitOfMeasure
-  unitsOfMeasureByCategory(
-    category: String!
-    options: ListOptions
-  ): UnitsOfMeasureSummary!
 }
 
 extend type Mutation {

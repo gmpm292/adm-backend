@@ -14,6 +14,8 @@ import * as crypto from 'crypto';
 @Injectable()
 export class EmailTransportService {
   private transporter: Transporter | undefined;
+  // Versión de la configuración con la que se creó `transporter`
+  private transporterVersion = -1;
   private readonly logger = new Logger(EmailTransportService.name);
   private oauth2Client: OAuth2Client | undefined;
 
@@ -33,16 +35,31 @@ export class EmailTransportService {
         clientSecret,
       });
     } else {
-      this.logger.warn('OAuth2 client not initialized - missing configuration');
+      this.oauth2Client = undefined;
     }
   }
 
+  /** Olvida el transporte: el siguiente envío lo crea con la configuración actual */
+  reset(): void {
+    this.transporter = undefined;
+    this.transporterVersion = -1;
+  }
+
   async getTransporter(): Promise<Transporter | undefined> {
-    if (this.transporter) {
+    const version = this.configService.getConfigVersion();
+    if (this.transporter && this.transporterVersion === version) {
       return this.transporter;
     }
+    this.transporter = undefined;
+    this.transporterVersion = version;
+    this.initializeOAuth2Client();
 
     const provider = this.configService.get<EmailProvider>('EMAIL_PROVIDER');
+    if (!provider) {
+      // Grupos de correo inactivos: no es un error, simplemente no se envía
+      this.logger.warn('Correo sin configurar: falta EMAIL_PROVIDER');
+      return undefined;
+    }
 
     try {
       switch (provider) {
@@ -236,6 +253,8 @@ export class EmailTransportService {
     email?: string;
   }> {
     try {
+      // Con los datos actuales: pueden haber cambiado en Configuración
+      this.initializeOAuth2Client();
       if (!this.oauth2Client) {
         return { configured: false };
       }

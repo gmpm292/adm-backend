@@ -39,6 +39,11 @@ export class ConfigService extends NestConfigService<EnvironmentVariables> {
     return (val as T) ?? super.get(propertyPath);
   }
 
+  /** Cambia cada vez que se guarda la configuración */
+  getConfigVersion(): number {
+    return this.configResourceService.version;
+  }
+
   getVarsGroup(group: string) {
     return this.configResourceService.getGroup(group);
   }

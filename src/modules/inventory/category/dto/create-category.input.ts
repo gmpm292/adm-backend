@@ -7,10 +7,11 @@ import { CreateSecurityBaseInput } from '../../../../core/dtos/create-security-b
  */
 export class CreateCategoryInput extends CreateSecurityBaseInput {
   @IsString()
-  @Length(1, 100)
+  @Length(1, 100, { message: 'El nombre debe tener entre 1 y 100 caracteres' })
   name: string;
 
   @IsString()
   @IsOptional()
+  @Length(0, 500)
   description?: string;
 }

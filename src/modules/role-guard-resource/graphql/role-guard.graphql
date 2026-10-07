@@ -4,7 +4,12 @@ type RoleGuard {
   updatedAt: Date
   deletedAt: Date
   queryOrEndPointURL: String
+  "Roles guardados; si es nulo mandan los del código (codeRoles)"
   roles: [Role]
+  "Roles que fija el código con @Roles"
+  codeRoles: [Role]
+  "Si la operación comprueba roles; si no, cambiarlos no tiene efecto"
+  usesRoleGuard: Boolean
   description: String
   type: String
 }
@@ -21,7 +26,7 @@ type PermissionResponse {
 
 input UpdateRoleGuardInput {
   id: Int!
-  roles: [Role]
+  roles: [Role!]
   description: String
 }
 
@@ -33,5 +38,4 @@ type Query {
 
 type Mutation {
   updateRoleGuard(updateRoleGuardInput: UpdateRoleGuardInput!): RoleGuard!
-  #  removeRoleGuards(ids: [Int!]!): [RoleGuard]!
 }

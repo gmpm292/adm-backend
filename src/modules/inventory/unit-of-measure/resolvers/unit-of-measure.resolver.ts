@@ -15,13 +15,13 @@ import {
 import { Opts } from '../../../../core/graphql/remote-operations/decorators/opts.decorator';
 import { UnitOfMeasureService } from '../services/unit-of-measure.service';
 import { UnitOfMeasureFiltersValidator } from '../filters-validator/unit-of-measure.filters.validator';
-import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
 
+// Catálogo común a todas las empresas: todos lo leen, SUPER lo mantiene
 @Resolver('UnitOfMeasure')
 export class UnitOfMeasureResolver {
   constructor(private readonly unitOfMeasureService: UnitOfMeasureService) {}
 
-  @Roles(Role.SUPER, Role.PRINCIPAL)
+  @Roles(Role.SUPER)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('createUnitOfMeasure')
   async create(
@@ -47,9 +47,7 @@ export class UnitOfMeasureResolver {
     @Opts({ arg: 'options', dto: UnitOfMeasureFiltersValidator })
     options?: ListOptions,
   ): Promise<ListSummary> {
-    return this.unitOfMeasureService.find(options, user, [
-      ScopedAccessEnum.GENERAL,
-    ]);
+    return this.unitOfMeasureService.find(options, user);
   }
 
   @Roles(
@@ -66,7 +64,7 @@ export class UnitOfMeasureResolver {
     return this.unitOfMeasureService.findOne(id, user);
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL)
+  @Roles(Role.SUPER)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('updateUnitOfMeasure')
   async update(
@@ -81,28 +79,21 @@ export class UnitOfMeasureResolver {
     );
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL)
+  @Roles(Role.SUPER)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('removeUnitsOfMeasure')
   async remove(@CurrentUser() user: JWTPayload, @Args('ids') ids: number[]) {
     return this.unitOfMeasureService.remove(ids, user);
   }
 
-  @Roles(Role.SUPER, Role.PRINCIPAL)
+  @Roles(Role.SUPER)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('restoreUnitsOfMeasure')
   async restore(@CurrentUser() user: JWTPayload, @Args('ids') ids: number[]) {
     return this.unitOfMeasureService.restore(ids, user);
   }
 
-  @Roles(
-    Role.SUPER,
-    Role.PRINCIPAL,
-    Role.ADMIN,
-    Role.MANAGER,
-    Role.SUPERVISOR,
-    Role.AGENT,
-  )
+  @Roles(Role.SUPER)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('toggleUnitOfMeasureActive')
   async toggleActive(@CurrentUser() user: JWTPayload, @Args('id') id: number) {

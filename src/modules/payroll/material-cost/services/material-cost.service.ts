@@ -1,4 +1,4 @@
-import { forwardRef, Inject, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { EntityManager, Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CreateMaterialCostInput } from '../dto/create-material-cost.input';
@@ -12,7 +12,6 @@ import { ScopedAccessService } from '../../../scoped-access/services/scoped-acce
 
 import { CurrencyService } from '../../currency/services/currency.service';
 import { BaseService } from '../../../../core/services/base.service';
-import { ProductService } from '../../../inventory/product/services/product.service';
 import { UnitOfMeasureService } from '../../../inventory/unit-of-measure/services/unit-of-measure.service';
 import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
 import {
@@ -20,23 +19,25 @@ import {
   ListSummary,
 } from '../../../../core/graphql/remote-operations';
 import { NotFoundError } from '../../../../core/errors/appErrors/NotFoundError.error';
+import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
+import { ConflictError } from '../../../../core/errors/appErrors/ConflictError.error';
 import { UnitOfMeasure } from '../../../inventory/unit-of-measure/entities/unit-of-measure.entity';
 import { Currency } from '../../currency/entities/currency.entity';
-import { ConditionalOperator } from '../../../../core/graphql/remote-operations/enums/conditional-operation.enum';
-import { SystemUtilsService } from '../../../../core/services/system-utils.service';
-import { Role } from '../../../../core/enums/role.enum';
 
+export type MaterialCostView = MaterialCost & { productCount: number };
+
+/**
+ * Costo de un material por unidad (oro por gramo, tela por metro...). Es de
+ * cada empresa: el nombre no se repite dentro de ella.
+ */
 @Injectable()
 export class MaterialCostService extends BaseService<MaterialCost> {
   constructor(
     @InjectRepository(MaterialCost)
     private materialCostRepository: Repository<MaterialCost>,
-    @Inject(forwardRef(() => ProductService))
-    private productService: ProductService,
     private unitOfMeasureService: UnitOfMeasureService,
     private currencyService: CurrencyService,
     protected scopedAccessService: ScopedAccessService,
-    private readonly utils: SystemUtilsService,
   ) {
     super(materialCostRepository);
   }
@@ -48,30 +49,27 @@ export class MaterialCostService extends BaseService<MaterialCost> {
     manager?: EntityManager,
   ): Promise<MaterialCost> {
     const { unitOfMeasureId, currency, ...rest } = createMaterialCostInput;
-
-    // Validate that unitOfMeasure exists
-    await this.validateUnitOfMeasure(
-      createMaterialCostInput.unitOfMeasureId,
-      manager,
-    );
-
-    // Validate that currency exists
+    const name = rest.name.trim();
+    await this.checkUniqueName(name, rest.businessId ?? cu?.businessId);
+    await this.validateUnitOfMeasure(unitOfMeasureId, manager);
     const curr = await this.validateCurrency(currency, manager);
 
     const materialCost: MaterialCost = {
       ...rest,
-      isActive: createMaterialCostInput.isActive ?? true,
+      name,
+      description: rest.description?.trim() || undefined,
+      isActive: rest.isActive ?? true,
       unitOfMeasure: { id: unitOfMeasureId } as UnitOfMeasure,
       currency: { id: curr.id } as Currency,
     };
 
-    return super.baseCreate({
+    const created = await super.baseCreate({
       data: materialCost,
-      uniqueFields: ['name'],
       cu,
       scopes,
       manager,
     });
+    return this.findOne(created.id as number, cu, scopes, manager);
   }
 
   async find(
@@ -80,23 +78,17 @@ export class MaterialCostService extends BaseService<MaterialCost> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<ListSummary> {
-    const relationsToLoad = [
-      'products',
-      'business',
-      'office',
-      'department',
-      'team',
-      'unitOfMeasure',
-      'currency',
-    ];
-
-    return await super.baseFind({
+    const result = await super.baseFind({
       options,
-      relationsToLoad,
+      relationsToLoad: ['business', 'unitOfMeasure', 'currency'],
       cu,
       scopes,
       manager,
     });
+    return {
+      ...result,
+      data: await this.withProductCount(result.data as MaterialCost[], manager),
+    };
   }
 
   async findOne(
@@ -104,24 +96,18 @@ export class MaterialCostService extends BaseService<MaterialCost> {
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
-  ): Promise<MaterialCost> {
-    return super.baseFindOne({
+  ): Promise<MaterialCostView> {
+    const materialCost = await super.baseFindOne({
       id,
-      relationsToLoad: {
-        products: true,
-        business: true,
-        office: true,
-        department: true,
-        team: true,
-        unitOfMeasure: true,
-        currency: true,
-      },
+      relationsToLoad: { business: true, unitOfMeasure: true, currency: true },
       cu,
       scopes,
       manager,
     });
+    return (await this.withProductCount([materialCost], manager))[0];
   }
 
+  /** La empresa no cambia; unidad y moneda sí */
   async update(
     id: number,
     updateMaterialCostInput: UpdateMaterialCostInput,
@@ -129,44 +115,48 @@ export class MaterialCostService extends BaseService<MaterialCost> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<MaterialCost> {
-    const materialCost = await super.baseFindOne({ id, cu, scopes, manager });
-    if (!materialCost) {
-      throw new NotFoundError('Material cost not found');
+    const current = await this.findOne(id, cu, scopes, manager);
+    const {
+      name,
+      description,
+      unitOfMeasureId,
+      costPrice,
+      currency,
+      isActive,
+    } = updateMaterialCostInput;
+
+    if (name !== undefined) {
+      await this.checkUniqueName(name.trim(), current.business?.id, id);
     }
-
-    // Validate unitOfMeasure if it's being updated
-    if (updateMaterialCostInput.unitOfMeasureId) {
-      await this.validateUnitOfMeasure(
-        updateMaterialCostInput.unitOfMeasureId,
-        manager,
-      );
+    if (unitOfMeasureId !== undefined) {
+      await this.validateUnitOfMeasure(unitOfMeasureId, manager);
     }
+    const curr = currency
+      ? await this.validateCurrency(currency, manager)
+      : undefined;
 
-    // Validate currency if it's being updated
-    let curr: Currency | undefined = undefined;
-    if (updateMaterialCostInput.currency) {
-      curr = await this.validateCurrency(
-        updateMaterialCostInput.currency,
-        manager,
-      );
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { currency, ...rest } = updateMaterialCostInput;
-
-    return super.baseUpdate({
+    await super.baseUpdate({
       id,
       data: {
-        ...materialCost,
-        currency: curr ?? materialCost.currency,
-        ...rest,
+        ...(name !== undefined && { name: name.trim() }),
+        ...(description !== undefined && {
+          description: (description.trim() || null) as string,
+        }),
+        ...(costPrice !== undefined && { costPrice }),
+        ...(isActive !== undefined && { isActive }),
+        ...(unitOfMeasureId !== undefined && {
+          unitOfMeasure: { id: unitOfMeasureId } as UnitOfMeasure,
+        }),
+        ...(curr && { currency: { id: curr.id } as Currency }),
       },
       cu,
       scopes,
       manager,
     });
+    return this.findOne(id, cu, scopes, manager);
   }
 
+  /** Solo los que no usa ningún producto */
   async remove(
     ids: number[],
     cu?: JWTPayload,
@@ -175,24 +165,20 @@ export class MaterialCostService extends BaseService<MaterialCost> {
   ): Promise<MaterialCost[]> {
     const materialCosts = await super.baseFindByIds({
       ids,
-      relationsToLoad: { products: true },
       cu,
       scopes,
       manager,
     });
-
     if (materialCosts.length === 0) {
-      throw new NotFoundError('No material costs found.');
+      throw new NotFoundError('No se encontraron los materiales');
     }
 
-    // Check if any material cost is being used by products
-    const materialCostsInUse = materialCosts.filter(
-      (mc) => mc.products && mc.products.length > 0,
+    const inUse = (await this.withProductCount(materialCosts, manager)).filter(
+      (mc) => mc.productCount > 0,
     );
-
-    if (materialCostsInUse.length > 0) {
-      throw new Error(
-        `Cannot delete material costs that are in use by products: ${materialCostsInUse.map((mc) => mc.name).join(', ')}`,
+    if (inUse.length > 0) {
+      throw new BadRequestError(
+        `${inUse.map((mc) => mc.name).join(', ')}: lo usan productos. Desactívalo en su lugar`,
       );
     }
 
@@ -205,6 +191,7 @@ export class MaterialCostService extends BaseService<MaterialCost> {
     });
   }
 
+  /** Recupera solo el material, si su nombre sigue libre en la empresa */
   async restore(
     ids: number[],
     cu?: JWTPayload,
@@ -215,7 +202,7 @@ export class MaterialCostService extends BaseService<MaterialCost> {
 
     const materialCosts = await super.baseFindByIds({
       ids,
-      relationsToLoad: { products: true },
+      relationsToLoad: { business: true },
       cu,
       scopes,
       manager,
@@ -224,22 +211,14 @@ export class MaterialCostService extends BaseService<MaterialCost> {
 
     const deletedMaterialCosts = materialCosts.filter((mc) => mc.deletedAt);
     if (deletedMaterialCosts.length === 0) return 0;
-
-    // Restore associated products if they were deleted with the material cost
-    await Promise.all(
-      deletedMaterialCosts.map((materialCost) =>
-        materialCost.products?.length
-          ? this.productService.restore(
-              materialCost.products
-                .filter((p) => p.deletedAt)
-                .map((p) => p.id) as number[],
-              cu,
-              scopes,
-              manager,
-            )
-          : Promise.resolve(),
-      ),
-    );
+    for (const materialCost of deletedMaterialCosts) {
+      await this.checkUniqueName(
+        materialCost.name,
+        materialCost.business?.id,
+        materialCost.id,
+        false,
+      );
+    }
 
     return super.baseRestoreDeletedMany({
       ids: deletedMaterialCosts.map((mc) => mc.id) as Array<number>,
@@ -255,84 +234,29 @@ export class MaterialCostService extends BaseService<MaterialCost> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<MaterialCost> {
-    const materialCost = await super.baseFindOne({ id, cu, scopes, manager });
-    if (!materialCost) {
-      throw new NotFoundError('Material cost not found');
-    }
-
-    return super.baseUpdate({
+    const materialCost = await this.findOne(id, cu, scopes, manager);
+    await super.baseUpdate({
       id,
-      data: { ...materialCost, isActive: !materialCost.isActive },
+      data: { isActive: !materialCost.isActive },
       cu,
       scopes,
       manager,
     });
-  }
-
-  async findByUnitOfMeasure(
-    unitOfMeasureId: number,
-    options?: ListOptions,
-    cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
-    manager?: EntityManager,
-  ): Promise<ListSummary> {
-    const findOptions: ListOptions = {
-      ...options,
-      filters: [
-        ...(options?.filters || []),
-        {
-          property: 'unitOfMeasureId',
-          operator: ConditionalOperator.EQUAL,
-          value: String(unitOfMeasureId),
-        },
-      ],
-    };
-
-    return await this.find(findOptions, cu, scopes, manager);
-  }
-
-  async findByCurrency(
-    currencyId: number,
-    options?: ListOptions,
-    cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
-    manager?: EntityManager,
-  ): Promise<ListSummary> {
-    const findOptions: ListOptions = {
-      ...options,
-      filters: [
-        ...(options?.filters || []),
-        {
-          property: 'currencyId',
-          operator: ConditionalOperator.EQUAL,
-          value: String(currencyId),
-        },
-      ],
-    };
-
-    return await this.find(findOptions, cu, scopes, manager);
+    return this.findOne(id, cu, scopes, manager);
   }
 
   private async validateUnitOfMeasure(
     unitOfMeasureId: number,
     manager?: EntityManager,
   ): Promise<void> {
-    const systemUser = this.utils.getSystemUser();
-    const unitOfMeasure = await this.unitOfMeasureService.findOne(
-      unitOfMeasureId,
-      { sub: systemUser.id as number, role: systemUser.role as Array<Role> },
-      [],
-      manager,
-    );
-
-    if (!unitOfMeasure) {
-      throw new NotFoundError(
-        `Unit of measure with ID ${unitOfMeasureId} not found`,
-      );
+    const unit = await this.unitOfMeasureService
+      .findOne(unitOfMeasureId, undefined, undefined, manager)
+      .catch(() => null);
+    if (!unit) {
+      throw new NotFoundError('No se encontró la unidad de medida');
     }
-
-    if (!unitOfMeasure.isActive) {
-      throw new Error(`Unit of measure "${unitOfMeasure.name}" is not active`);
+    if (!unit.isActive) {
+      throw new BadRequestError(`La unidad «${unit.name}» está desactivada`);
     }
   }
 
@@ -340,22 +264,60 @@ export class MaterialCostService extends BaseService<MaterialCost> {
     currencyCode: string,
     manager?: EntityManager,
   ): Promise<Currency> {
-    const systemUser = this.utils.getSystemUser();
-    const currency = await this.currencyService.findByCode(
-      currencyCode,
-      { sub: systemUser.id as number, role: systemUser.role as Array<Role> },
-      [],
-      manager,
-    );
-
+    const currency = await this.currencyService
+      .findByCode(currencyCode, undefined, undefined, manager)
+      .catch(() => null);
     if (!currency) {
-      throw new NotFoundError(`Currency with ID ${currencyCode} not found`);
+      throw new NotFoundError(`No existe la moneda ${currencyCode}`);
     }
-
     if (!currency.isActive) {
-      throw new Error(`Currency "${currency.code}" is not active`);
+      throw new BadRequestError(`La moneda ${currency.code} está desactivada`);
     }
-
     return currency;
+  }
+
+  private async checkUniqueName(
+    name: string,
+    businessId?: number,
+    exceptId?: number,
+    includeDeleted = true,
+  ) {
+    const query = this.materialCostRepository
+      .createQueryBuilder('m')
+      .where('lower(m.name) = lower(:name)', { name })
+      .andWhere(
+        businessId ? 'm.businessId = :businessId' : 'm.businessId IS NULL',
+        { businessId },
+      );
+    if (exceptId) query.andWhere('m.id <> :exceptId', { exceptId });
+    if (includeDeleted) query.withDeleted();
+    const existing = await query.getOne();
+    if (!existing) return;
+    throw new ConflictError(
+      existing.deletedAt
+        ? `Hay un material eliminado llamado «${existing.name}»: restáuralo`
+        : `Ya existe el material «${existing.name}»`,
+    );
+  }
+
+  private async withProductCount(
+    materialCosts: MaterialCost[],
+    manager?: EntityManager,
+  ): Promise<MaterialCostView[]> {
+    if (!materialCosts.length) return [];
+    const counts = await (manager ?? this.materialCostRepository.manager).query<
+      Array<{ materialCostId: number; count: string }>
+    >(
+      `SELECT "materialCostId", count(*) AS count FROM in_products
+       WHERE "deletedAt" IS NULL AND "materialCostId" = ANY($1)
+       GROUP BY "materialCostId"`,
+      [materialCosts.map((mc) => mc.id)],
+    );
+    return materialCosts.map((mc) => ({
+      ...mc,
+      productCount: Number(
+        counts.find((row) => row.materialCostId === mc.id)?.count ?? 0,
+      ),
+    }));
   }
 }

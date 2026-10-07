@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { UseGuards } from '@nestjs/common';
@@ -25,16 +24,12 @@ export class EmailOAuthResolver {
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Query('oauth2InitEmailAuth')
   async initAuth(@CurrentUser() user: JWTPayload) {
-    try {
-      const authUrl = await this.oauth2Service.generateAuthUrl();
-      return {
-        url: authUrl,
-        clientId: this.configService.get('EMAIL_CLIENT_ID'),
-        redirectUri: this.configService.get('EMAIL_REDIRECT_URI'),
-      };
-    } catch (error) {
-      throw new Error(`Failed to generate auth URL: ${error.message}`);
-    }
+    const authUrl = await this.oauth2Service.generateAuthUrl();
+    return {
+      url: authUrl,
+      clientId: this.configService.get('EMAIL_CLIENT_ID'),
+      redirectUri: this.configService.get('EMAIL_REDIRECT_URI'),
+    };
   }
 
   @Roles(Role.SUPER)

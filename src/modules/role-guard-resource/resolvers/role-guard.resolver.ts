@@ -1,7 +1,6 @@
 import { UseGuards } from '@nestjs/common';
 import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
 
-import { CreateRoleGuardInput } from '../dto/create-role-guard.input';
 import { UpdateRoleGuardInput } from '../dto/update-role-guard.input';
 import { RoleGuardService } from '../services/role-guard.service';
 
@@ -21,14 +20,6 @@ import { JWTPayload } from '../../auth/dto/jwt-payload.dto';
 @Resolver('RoleGuard')
 export class RoleGuardResolver {
   constructor(private readonly roleGuardService: RoleGuardService) {}
-
-  // @UseGuards(AccessTokenAuthGuard, RoleGuard)
-  // @Mutation('createRoleGuard')
-  create(
-    @Args('createRoleGuardInput') createRoleGuardInput: CreateRoleGuardInput,
-  ) {
-    return this.roleGuardService.create(createRoleGuardInput);
-  }
 
   @Roles(Role.SUPER)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
@@ -59,33 +50,22 @@ export class RoleGuardResolver {
     );
   }
 
-  // @UseGuards(AccessTokenAuthGuard, RoleGuard)
-  // @Mutation('removeRoleGuards')
-  remove(@Args('ids') ids: number[]) {
-    return this.roleGuardService.remove(ids);
-  }
-
-  @UseGuards(AccessTokenAuthGuard, RoleGuard)
+  /** Si el usuario pasaría el control de roles de la operación */
+  @UseGuards(AccessTokenAuthGuard)
   @Query('checkPermissions')
   checkPermissions(
     @Args('operationName') operationName: string,
     @CurrentUser() user: JWTPayload,
   ): { allowed: boolean; requiredRoles: Array<Role> } {
-    const roleGuard = this.roleGuardService.getRoleGuard(operationName);
-
-    if (!roleGuard) {
-      // Si no existe roleGuard para esta operación, permitir acceso
-      return { allowed: false, requiredRoles: [] };
+    const { usesRoleGuard, roles } =
+      this.roleGuardService.getEffectiveRoles(operationName);
+    if (!usesRoleGuard || !roles) {
+      return { allowed: true, requiredRoles: [] };
     }
-
-    // Verificar si el usuario tiene alguno de los roles permitidos
     const userRoles = user.role || [];
-    const hasAccess =
-      roleGuard.roles?.some((role) => userRoles.includes(role)) || false;
-
     return {
-      allowed: hasAccess,
-      requiredRoles: roleGuard.roles || [],
+      allowed: roles.some((role) => userRoles.includes(role)),
+      requiredRoles: roles,
     };
   }
 }

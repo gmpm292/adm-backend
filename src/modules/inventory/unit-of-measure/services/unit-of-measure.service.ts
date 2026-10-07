@@ -15,7 +15,16 @@ import {
   ListSummary,
 } from '../../../../core/graphql/remote-operations';
 import { NotFoundError } from '../../../../core/errors/appErrors/NotFoundError.error';
+import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
+import { ConflictError } from '../../../../core/errors/appErrors/ConflictError.error';
 
+// Catálogo común a todas las empresas: siempre en alcance general
+const GLOBAL = [ScopedAccessEnum.GENERAL];
+
+/**
+ * Unidades de medida. Nombre y símbolo son únicos en todo el sistema (también
+ * entre las eliminadas), por eso las unidades no pertenecen a una empresa.
+ */
 @Injectable()
 export class UnitOfMeasureService extends BaseService<UnitOfMeasure> {
   constructor(
@@ -29,116 +38,103 @@ export class UnitOfMeasureService extends BaseService<UnitOfMeasure> {
   async create(
     createUnitOfMeasureInput: CreateUnitOfMeasureInput,
     cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
+    _scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<UnitOfMeasure> {
-    const unitOfMeasure = {
-      ...createUnitOfMeasureInput,
-      isActive: createUnitOfMeasureInput.isActive ?? true,
-    } as UnitOfMeasure;
+    const { name, symbol, category, description, isActive } =
+      createUnitOfMeasureInput;
+    const data = {
+      name: name.trim(),
+      symbol: symbol.trim(),
+      category: category || undefined,
+      description: description?.trim() || undefined,
+      isActive: isActive ?? true,
+    };
+    await this.checkUnique(data);
 
-    return super.baseCreate({
-      data: unitOfMeasure,
-      uniqueFields: ['name', 'symbol'],
-      cu,
-      scopes,
-      manager,
-    });
+    return super.baseCreate({ data, cu, scopes: GLOBAL, manager });
   }
 
   async find(
     options?: ListOptions,
     cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
+    _scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<ListSummary> {
-    scopes = [ScopedAccessEnum.GENERAL];
-    return await super.baseFind({
-      options,
-      relationsToLoad: ['business', 'office', 'department', 'team'],
-      cu,
-      scopes,
-      manager,
-    });
+    return await super.baseFind({ options, cu, scopes: GLOBAL, manager });
   }
 
   async findOne(
     id: number,
     cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
+    _scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<UnitOfMeasure> {
-    scopes = [ScopedAccessEnum.GENERAL];
-    return super.baseFindOne({
-      id,
-      relationsToLoad: {
-        business: true,
-        office: true,
-        department: true,
-        team: true,
-        //materialCosts: true,
-      },
-      cu,
-      scopes,
-      manager,
-    });
+    return super.baseFindOne({ id, cu, scopes: GLOBAL, manager });
   }
 
   async update(
     id: number,
     updateUnitOfMeasureInput: UpdateUnitOfMeasureInput,
     cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
+    _scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<UnitOfMeasure> {
-    const { ...rest } = updateUnitOfMeasureInput;
-    const unitOfMeasure = await super.baseFindOne({ id, cu, scopes, manager });
-    if (!unitOfMeasure) {
-      throw new NotFoundError('Unit of measure not found');
-    }
+    await this.findOne(id, cu, GLOBAL, manager);
+    const { name, symbol, category, description, isActive } =
+      updateUnitOfMeasureInput;
+    const data = {
+      // Una cadena vacía borra la categoría o la descripción
+      ...(name !== undefined && { name: name.trim() }),
+      ...(symbol !== undefined && { symbol: symbol.trim() }),
+      ...(category !== undefined && { category: (category || null) as string }),
+      ...(description !== undefined && {
+        description: (description.trim() || null) as string,
+      }),
+      ...(isActive !== undefined && { isActive }),
+    };
+    await this.checkUnique(data, id);
 
-    return super.baseUpdate({
-      id,
-      data: { ...unitOfMeasure, ...rest },
-      cu,
-      scopes,
-      manager,
-    });
+    return super.baseUpdate({ id, data, cu, scopes: GLOBAL, manager });
   }
 
+  /** Solo las que no usa ningún producto ni costo de material */
   async remove(
     ids: number[],
     cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
+    _scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<UnitOfMeasure[]> {
-    const unitsOfMeasure = await super.baseFindByIds({
+    const units = await super.baseFindByIds({
       ids,
-      //relationsToLoad: { materialCosts: true },
       cu,
-      scopes,
+      scopes: GLOBAL,
       manager,
     });
-
-    if (unitsOfMeasure.length === 0) {
-      throw new NotFoundError('No units of measure found.');
+    if (units.length === 0) {
+      throw new NotFoundError('No se encontraron las unidades');
     }
 
-    // // Check if any unit is being used by material costs
-    // const unitsInUse = unitsOfMeasure.filter(
-    //   (unit) => unit.materialCosts && unit.materialCosts.length > 0,
-    // );
-
-    // if (unitsInUse.length > 0) {
-    //   throw new Error(
-    //     `Cannot delete units of measure that are in use: ${unitsInUse.map((u) => u.name).join(', ')}`,
-    //   );
-    // }
+    const repository = manager ?? this.unitOfMeasureRepository.manager;
+    const inUse = await repository.query<Array<{ name: string }>>(
+      `SELECT u.name FROM in_units_of_measure u
+       WHERE u.id = ANY($1) AND (
+         EXISTS (SELECT 1 FROM in_products p
+                 WHERE p."unitOfMeasureId" = u.id AND p."deletedAt" IS NULL)
+         OR EXISTS (SELECT 1 FROM material_costs m
+                    WHERE m."unitOfMeasureId" = u.id AND m."deletedAt" IS NULL))`,
+      [units.map((u) => u.id)],
+    );
+    if (inUse.length) {
+      throw new BadRequestError(
+        `${inUse.map((u) => u.name).join(', ')}: la usan productos o costos de materiales. Desactívala en su lugar`,
+      );
+    }
 
     return super.baseDeleteMany({
-      ids: unitsOfMeasure.map((uom) => uom.id) as Array<number>,
+      ids: units.map((uom) => uom.id) as Array<number>,
       cu,
-      scopes,
+      scopes: GLOBAL,
       manager,
       softRemove: true,
     });
@@ -147,7 +143,7 @@ export class UnitOfMeasureService extends BaseService<UnitOfMeasure> {
   async restore(
     ids: number[],
     cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
+    _scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<number> {
     if (ids.length === 0) return 0;
@@ -155,7 +151,7 @@ export class UnitOfMeasureService extends BaseService<UnitOfMeasure> {
     const unitsOfMeasure = await super.baseFindByIds({
       ids,
       cu,
-      scopes,
+      scopes: GLOBAL,
       manager,
       withDeleted: true,
     });
@@ -166,7 +162,7 @@ export class UnitOfMeasureService extends BaseService<UnitOfMeasure> {
     return super.baseRestoreDeletedMany({
       ids: deletedUnits.map((uom) => uom.id) as Array<number>,
       cu,
-      scopes,
+      scopes: GLOBAL,
       manager,
     });
   }
@@ -174,20 +170,47 @@ export class UnitOfMeasureService extends BaseService<UnitOfMeasure> {
   async toggleActive(
     id: number,
     cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
+    _scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<UnitOfMeasure> {
-    const unitOfMeasure = await super.baseFindOne({ id, cu, scopes, manager });
-    if (!unitOfMeasure) {
-      throw new NotFoundError('Unit of measure not found');
-    }
-
+    const unit = await this.findOne(id, cu, GLOBAL, manager);
     return super.baseUpdate({
       id,
-      data: { ...unitOfMeasure, isActive: !unitOfMeasure.isActive },
+      data: { isActive: !unit.isActive },
       cu,
-      scopes,
+      scopes: GLOBAL,
       manager,
     });
+  }
+
+  /** La base no admite repetir nombre ni símbolo, aunque la otra esté eliminada */
+  private async checkUnique(
+    data: { name?: string; symbol?: string },
+    exceptId?: number,
+  ) {
+    for (const field of ['name', 'symbol'] as const) {
+      const value = data[field];
+      if (!value) continue;
+      const existing = await this.unitOfMeasureRepository
+        .createQueryBuilder('u')
+        .withDeleted()
+        // El símbolo distingue mayúsculas (m y M son unidades distintas)
+        .where(
+          field === 'name'
+            ? 'lower(u.name) = lower(:value)'
+            : 'u.symbol = :value',
+          { value },
+        )
+        .andWhere(exceptId ? 'u.id <> :exceptId' : '1=1', { exceptId })
+        .getOne();
+      if (existing) {
+        const what = field === 'name' ? 'ese nombre' : 'ese símbolo';
+        throw new ConflictError(
+          existing.deletedAt
+            ? `Ya hay una unidad eliminada con ${what} (${existing.name}): restáurala`
+            : `Ya existe una unidad con ${what}: ${existing.name}`,
+        );
+      }
+    }
   }
 }
