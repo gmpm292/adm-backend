@@ -38,6 +38,8 @@ import { Role } from '../../../core/enums/role.enum';
  * were already on their way (another tab, a retry) are not logged out
  */
 const REFRESH_TOKEN_GRACE_PERIOD = 30;
+const MAX_TWO_FACTOR_ATTEMPTS = 5;
+const TWO_FACTOR_LOCKOUT_SECONDS = 15 * 60;
 
 @Injectable()
 export class AuthService {
@@ -457,10 +459,24 @@ export class AuthService {
       throw new UnauthorizedError(`You don't have a secret code`);
     }
 
+    const attemptsKey = `TwoFactorAttempts${id}`;
+    const attempts = (await this.cacheManager.get<number>(attemptsKey)) ?? 0;
+    if (attempts >= MAX_TWO_FACTOR_ATTEMPTS) {
+      throw new UnauthorizedError(
+        'Too many 2FA attempts. Try again in a few minutes.',
+      );
+    }
+
     const is2FAVerified = authenticator.check(token2fa ?? '', user.twoFASecret);
     if (!is2FAVerified) {
+      // cache-manager-redis-store only honours the TTL passed as { ttl } (seconds)
+      await this.cacheManager.set(attemptsKey, attempts + 1, {
+        ttl: TWO_FACTOR_LOCKOUT_SECONDS,
+      } as any);
       throw new UnauthorizedError('Invalid 2FA code');
     }
+
+    await this.cacheManager.del(attemptsKey);
     return user;
   }
 
