@@ -7,7 +7,7 @@ import { PriceRangeProcessor } from './services/payment-processors/price-range-p
 import { RealTimePaymentService } from './services/real-time-payment.service';
 import { PaymentPeriodService } from './services/payment-period.service';
 import { PaymentProcessingResolver } from './resolvers/payment-processing.resolver';
-import { PaymentRollbackService } from './services/payment-rollback.service';
+import { PaymentRollbackModule } from './payment-rollback.module';
 import { WorkerModule } from '../worker/worker.module';
 import { PaymentRuleModule } from '../payment-rule/payment-rule.module';
 import { PayrollPeriodModule } from '../payroll-period/payroll-period.module';
@@ -29,6 +29,7 @@ import { TeamModule } from '../../company/team/team.module';
     WorkerPaymentModule,
     PaymentAccumulatorModule,
     AttendanceModule,
+    PaymentRollbackModule,
 
     // Módulo de ventas
     SaleModule,
@@ -44,7 +45,6 @@ import { TeamModule } from '../../company/team/team.module';
     PaymentProcessingService,
     RealTimePaymentService,
     PaymentPeriodService,
-    PaymentRollbackService,
 
     //Processors
     FixedAmountProcessor,

@@ -14,6 +14,7 @@ import { ProductModule } from '../../inventory/product/product.module';
 import { WorkerModule } from '../../payroll/worker/worker.module';
 import { InventoryModule } from '../../inventory/inventory/inventory.module';
 import { InventoryMovementModule } from '../../inventory/inventory-movement/inventory-movement.module';
+import { PaymentRollbackModule } from '../../payroll/payment-processing/payment-rollback.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { InventoryMovementModule } from '../../inventory/inventory-movement/inve
     forwardRef(() => WorkerModule),
     forwardRef(() => InventoryModule),
     forwardRef(() => InventoryMovementModule),
+    PaymentRollbackModule,
   ],
   providers: [SaleResolver, SaleService, SaleCatalogService],
   exports: [SaleResolver, SaleService],
