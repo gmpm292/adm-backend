@@ -37,6 +37,8 @@ type Sale implements SecurityBaseEntity {
   salesUser: User @deprecated(reason: "Siempre nulo: usar salesWorker")
   salesWorker: Worker
   totalAmountCurrency: String
+  # Suma, en totalAmountCurrency, de lo devuelto por refundSale.
+  refundedAmount: Float
   # Pagos recibidos: [{ amount, currency, paymentMethod }]
   payments: JSON
   customer: Customer
@@ -262,6 +264,3 @@ extend type Mutation {
   refundSale(refundSaleInput: RefundSaleInput!): Sale!
 }
 
-extend type Subscription {
-  saleChanged: Boolean
-}

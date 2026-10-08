@@ -112,6 +112,3 @@ extend type Mutation {
   restoreWorkers(ids: [Int!]!): Int
 }
 
-extend type Subscription {
-  workerChanged: Boolean
-}

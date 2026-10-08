@@ -35,6 +35,12 @@ export class Sale extends SecurityBaseEntity {
   @Column({ type: 'varchar', length: 3, nullable: true })
   totalAmountCurrency?: string; // Moneda base para reportes
 
+  // Suma, en totalAmountCurrency, de lo devuelto en refundSale. Las
+  // estadísticas deben restarlo de totalAmount para no contar como ingreso
+  // lo que ya se devolvió en una devolución parcial.
+  @Column({ type: 'decimal', precision: 12, scale: 2, nullable: true })
+  refundedAmount?: number;
+
   @Column({ type: 'timestamp', nullable: true })
   effectiveDate?: Date;
 

@@ -91,6 +91,3 @@ extend type Mutation {
   restoreProducts(ids: [Int!]!): Int
 }
 
-extend type Subscription {
-  productChanged: Boolean
-}

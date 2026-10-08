@@ -27,6 +27,7 @@ import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestErr
 import { SaleStatus } from '../enums/sale-status.enum';
 import { SaleDetailStatus } from '../../sale-detail/enums/sale-detail-status.enum';
 import { ProductService } from '../../../inventory/product/services/product.service';
+import { PaymentRollbackService } from '../../../payroll/payment-processing/services/payment-rollback.service';
 import {
   SALE_SCOPES,
   STOCK_SCOPES,
@@ -77,6 +78,7 @@ export class SaleService extends BaseService<Sale> {
     @Inject(forwardRef(() => SaleDetailService))
     private saleDetailService: SaleDetailService,
     private productService: ProductService,
+    private paymentRollbackService: PaymentRollbackService,
 
     protected scopedAccessService: ScopedAccessService,
   ) {
@@ -915,12 +917,13 @@ export class SaleService extends BaseService<Sale> {
       }
     }
 
-    const { saleId } = await this.saleDetailService.refundSaleDetails(
-      detailIds,
-      cu,
-      scopes,
-      manager,
-    );
+    const { saleId, totalRefundAmount } =
+      await this.saleDetailService.refundSaleDetails(
+        detailIds,
+        cu,
+        scopes,
+        manager,
+      );
 
     // Queda devuelta por completo cuando no le queda ninguna línea vendida.
     const sale = await this.findOne(saleId, cu, scopes, manager);
@@ -932,8 +935,28 @@ export class SaleService extends BaseService<Sale> {
       saleStatus: hasSoldDetails
         ? SaleStatus.PARTIALLY_REFUNDED
         : SaleStatus.FULLY_REFUNDED,
+      // Se acumula: una venta puede devolverse en varias tandas (línea a
+      // línea). Las estadísticas restan esto de totalAmount para no contar
+      // como ingreso lo ya devuelto.
+      refundedAmount: Number(sale.refundedAmount || 0) + totalRefundAmount,
       ...(cu && { updatedBy: { id: cu.sub } }),
     });
+
+    // Las comisiones ya pagadas por las líneas devueltas no deben quedar
+    // cobradas: se reversan (o se compensan en el próximo período si ya se
+    // pagaron) en la misma transacción que la devolución.
+    await this.paymentRollbackService.rollbackSalePayments(
+      {
+        saleId,
+        reason: hasSoldDetails
+          ? 'Devolución parcial de venta'
+          : 'Devolución total de venta',
+        compensateInNextPeriod: true,
+      },
+      cu,
+      scopes,
+      manager,
+    );
 
     return this.findOne(saleId, cu, scopes, manager);
   }

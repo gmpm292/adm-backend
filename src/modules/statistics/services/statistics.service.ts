@@ -360,7 +360,7 @@ export class StatisticsService {
   ) {
     const params = new QueryParams();
     const [row] = await this.query(
-      `SELECT COALESCE(sum(s."totalAmount"), 0) AS revenue, count(*) AS sales
+      `SELECT COALESCE(sum(s."totalAmount" - COALESCE(s."refundedAmount", 0)), 0) AS revenue, count(*) AS sales
          FROM sl_sales s
         WHERE ${this.revenueSalesSql(scope, period, currency, params)}`,
       params,
@@ -413,7 +413,7 @@ export class StatisticsService {
                 ('1 ' || ${unit})::interval
               ) AS bucket(start)
          LEFT JOIN (
-               SELECT s.id, s."totalAmount" AS amount,
+               SELECT s.id, s."totalAmount" - COALESCE(s."refundedAmount", 0) AS amount,
                       date_trunc(${unit}, ${moment}) AS start
                  FROM sl_sales s
                 WHERE ${this.revenueSalesSql(scope, period, currency, params)}
@@ -503,7 +503,7 @@ export class StatisticsService {
                 'Sin vendedor'
               ) AS name,
               NULL AS detail,
-              COALESCE(sum(s."totalAmount"), 0) AS amount,
+              COALESCE(sum(s."totalAmount" - COALESCE(s."refundedAmount", 0)), 0) AS amount,
               0 AS quantity,
               count(*) AS count
          FROM sl_sales s
@@ -531,7 +531,7 @@ export class StatisticsService {
                 NULLIF(trim(concat(c.name, ' ', c."lastName")), '')
               ) AS name,
               c.phone AS detail,
-              COALESCE(sum(s."totalAmount"), 0) AS amount,
+              COALESCE(sum(s."totalAmount" - COALESCE(s."refundedAmount", 0)), 0) AS amount,
               0 AS quantity,
               count(*) AS count
          FROM sl_sales s

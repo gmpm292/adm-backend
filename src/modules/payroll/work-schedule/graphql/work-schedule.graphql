@@ -91,6 +91,3 @@ extend type Mutation {
   restoreWorkSchedules(ids: [Int!]!): Int
 }
 
-extend type Subscription {
-  workScheduleChanged: Boolean
-}

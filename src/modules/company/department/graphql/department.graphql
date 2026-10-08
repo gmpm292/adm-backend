@@ -51,6 +51,3 @@ type Mutation {
   restoreDepartments(ids: [Int!]!): Int
 }
 
-extend type Subscription {
-  departmentChanged: Boolean
-}

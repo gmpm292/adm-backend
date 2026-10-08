@@ -49,6 +49,3 @@ type Mutation {
   restoreOffices(ids: [Int!]!): Int
 }
 
-extend type Subscription {
-  officeChanged: Boolean
-}
