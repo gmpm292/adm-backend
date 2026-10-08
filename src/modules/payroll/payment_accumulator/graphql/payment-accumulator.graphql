@@ -65,6 +65,3 @@ extend type Mutation {
   restorePaymentAccumulators(ids: [Int!]!): Int
 }
 
-extend type Subscription {
-  paymentAccumulatorChanged: Boolean
-}

@@ -93,6 +93,3 @@ extend type Mutation {
   restoreAttendances(ids: [Int!]!): Int
 }
 
-extend type Subscription {
-  attendanceChanged: Boolean
-}

@@ -81,6 +81,3 @@ extend type Mutation {
   restoreSaleDetails(ids: [Int!]!): Int
 }
 
-extend type Subscription {
-  saleDetailChanged: Boolean
-}

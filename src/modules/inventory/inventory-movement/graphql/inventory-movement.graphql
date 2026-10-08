@@ -59,6 +59,3 @@ extend type Mutation {
   ): InventoryMovement!
 }
 
-extend type Subscription {
-  inventoryMovementChanged: Boolean
-}

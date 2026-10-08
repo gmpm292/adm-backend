@@ -45,6 +45,3 @@ extend type Mutation {
   restoreBusinesses(ids: [Int!]!): Int
 }
 
-extend type Subscription {
-  businessChanged: Boolean
-}

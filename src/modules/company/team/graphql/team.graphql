@@ -44,6 +44,3 @@ type Mutation {
   removeTeams(ids: [Int!]!): [Team]!
   restoreTeams(ids: [Int!]!): Int
 }
-extend type Subscription {
-  teamChanged: Boolean
-}

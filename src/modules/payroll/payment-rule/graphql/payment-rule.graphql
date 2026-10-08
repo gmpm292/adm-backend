@@ -5,15 +5,6 @@ enum PaymentType {
   PERCENTAGE
 }
 
-enum ScopedAccessEnum {
-  BUSINESS
-  OFFICE
-  DEPARTMENT
-  TEAM
-  PERSONAL
-  RELATED
-}
-
 type Conditions {
   priceRanges: [PriceRangeCondition]
   saleQuantity: [SaleQuantityCondition]

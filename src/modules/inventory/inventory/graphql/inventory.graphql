@@ -63,6 +63,3 @@ extend type Mutation {
   restoreInventories(ids: [Int!]!): Int
 }
 
-extend type Subscription {
-  inventoryChanged: Boolean
-}

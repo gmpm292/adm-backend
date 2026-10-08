@@ -64,6 +64,3 @@ extend type Mutation {
   restorePayrollPeriods(ids: [Int!]!): Int
 }
 
-extend type Subscription {
-  payrollPeriodChanged: Boolean
-}
