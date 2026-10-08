@@ -249,7 +249,7 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
   ): Promise<ListSummary> {
     return await super.baseFind({
       options,
-      relationsToLoad: ['product', 'category'],
+      relationsToLoad: ['product', 'category', 'specificWorkers'],
       cu,
       scopes,
       manager,
@@ -270,6 +270,7 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
         business: true,
         createdBy: true,
         updatedBy: true,
+        specificWorkers: true,
       },
       cu,
       scopes,
