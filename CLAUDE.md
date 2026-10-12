@@ -18,7 +18,8 @@ estructura de empresa). El cliente es `../adm-frontend`.
 2. `.env` en la raíz (no se versiona). Las variables obligatorias están en
    `src/common/config/environment-variables.ts`: `TYPEORM_*`,
    `ACCESS_TOKEN_SECRET`, `REFRESH_TOKEN_SECRET`, `CORS_ORIGIN`, `NODE_ENV`,
-   `PORT`, `CACHE_REDIS_*`, `SUBSCRIPTION_REDIS_*`.
+   `PORT`, `CACHE_REDIS_*`, `SUBSCRIPTION_REDIS_*`. Si llegan `DATABASE_URL`
+   o `REDIS_URL`, mandan y las sueltas dejan de exigirse.
 3. `npm run start:dev` → `http://localhost:3000/graphql`. Las migraciones se
    ejecutan solas al iniciar (`migrationsRun: true`).
 
@@ -32,6 +33,13 @@ conectado al repositorio de GitHub (app `adm-backend`,
 `adm-backend-8ed317c515c9.herokuapp.com`). Arranca con `Procfile`
 (`npm run start:prod`), compila en `postinstall` y aplica las migraciones
 pendientes al iniciar. Cualquier otra rama no despliega.
+
+- **Conexiones**: Heroku cambia host, puerto y contraseña de Postgres y Redis
+  cuando quiere (mantenimiento, failover, rotación) y solo actualiza
+  `DATABASE_URL` y `REDIS_URL`, reiniciando la app. El backend lee esas dos
+  (`config/helpers/connection.helper.ts`); `TYPEORM_*` y `*_REDIS_*` son
+  solo para local. No copiar valores de las URLs a otras variables: se quedan
+  viejos y el login cae con 503.
 
 ## Estructura
 

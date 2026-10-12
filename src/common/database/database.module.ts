@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
 
-import { isRemote } from './helpers/isDBRemote.helper';
+import { getDatabaseConnection } from '../config/helpers/connection.helper';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
 @Module({
@@ -11,12 +11,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
       useFactory: (configService: ConfigService) => {
         const bd: TypeOrmModuleOptions = {
           type: 'postgres',
-          host: configService.get<string>('TYPEORM_HOST'),
-          port: configService.get<number>('TYPEORM_PORT'),
-          username: configService.get<string>('TYPEORM_USERNAME'),
-          password: configService.get<string>('TYPEORM_PASSWORD'),
-          database: configService.get<string>('TYPEORM_DATABASE'),
-          ssl: isRemote() ? { rejectUnauthorized: false } : false,
+          ...getDatabaseConnection((key) => configService.get<string>(key)),
 
           entities: ['dist/**/*.entity{.ts,.js}'],
           subscribers: ['dist/**/*.subscriber{.ts,.js}'],
