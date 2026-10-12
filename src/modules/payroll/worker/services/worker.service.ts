@@ -6,7 +6,6 @@ import { UpdateWorkerInput } from '../dto/update-worker.input';
 import { BaseService } from '../../../../core/services/base.service';
 import { Worker } from '../entities/worker.entity';
 import {
-  ListFilter,
   ListOptions,
   ListSummary,
 } from '../../../../core/graphql/remote-operations';
@@ -20,8 +19,6 @@ import { User } from '../../../users/entities/user.entity';
 import { Role } from '../../../../core/enums/role.enum';
 import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
 import { ConflictError } from '../../../../core/errors/appErrors/ConflictError.error';
-import { ConditionalOperator } from '../../../../core/graphql/remote-operations/enums/conditional-operation.enum';
-import { LogicalOperator } from '../../../../core/graphql/remote-operations/enums/logical-operator.enum';
 import { Business } from '../../../company/business/entities/co_business.entity';
 import { Department } from '../../../company/department/entities/co_department.entity';
 import { Team } from '../../../company/team/entities/co_team.entity';
@@ -161,66 +158,6 @@ export class WorkerService extends BaseService<Worker> {
       scopes,
       manager,
     });
-  }
-
-  /**
-   * Todos los trabajadores (sin paginar) de la empresa, oficina, departamento
-   * o equipo indicados, y opcionalmente solo los de `workerIds`. Hoy no lo
-   * llama nadie.
-   */
-  async findWorkersByScope(
-    filters: {
-      businessId?: number;
-      officeId?: number;
-      departmentId?: number;
-      teamId?: number;
-      workerIds?: number[];
-    },
-    cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
-    manager?: EntityManager,
-  ): Promise<ListSummary> {
-    const fltrs = new Array<ListFilter>();
-    const byId = (property: string, value?: number) => {
-      if (value) {
-        fltrs.push({
-          property,
-          operator: ConditionalOperator.EQUAL,
-          value: value.toString(),
-        });
-      }
-    };
-    byId('businessId', filters.businessId);
-    byId('officeId', filters.officeId);
-    byId('departmentId', filters.departmentId);
-    byId('teamId', filters.teamId);
-
-    if (filters.workerIds && filters.workerIds.length > 0) {
-      fltrs.push({
-        property: '',
-        operator: ConditionalOperator.EQUAL,
-        value: '',
-        filters: filters.workerIds.map((workerId) => ({
-          property: 'id',
-          operator: ConditionalOperator.EQUAL,
-          value: workerId.toString(),
-          logicalOperator: LogicalOperator.OR,
-        })),
-      });
-    }
-
-    return this.find({ filters: fltrs, take: 0 }, cu, scopes, manager).then(
-      async (summary) =>
-        // `take: 0` solo cuenta; aquí hacen falta todos
-        summary.totalCount
-          ? this.find(
-              { filters: fltrs, skip: 0, take: summary.totalCount },
-              cu,
-              scopes,
-              manager,
-            )
-          : summary,
-    );
   }
 
   /**
@@ -382,7 +319,8 @@ export class WorkerService extends BaseService<Worker> {
 
   /**
    * Empresa, oficina, departamento y equipo coherentes entre sí: la oficina
-   * manda sobre la empresa y debe pertenecer a ella.
+   * manda sobre la empresa y debe pertenecer a ella; el departamento, a esa
+   * empresa y oficina; el equipo, a esa empresa, oficina y departamento.
    */
   private async placementOf(
     ids: {
@@ -402,15 +340,47 @@ export class WorkerService extends BaseService<Worker> {
     if (office && ids.businessId && office.business?.id !== ids.businessId) {
       throw new BadRequestError('La oficina no pertenece a esa empresa');
     }
+
+    const db = manager ?? this.workerRepository.manager;
+    const department = ids.departmentId
+      ? await db.getRepository(Department).findOne({
+          where: { id: ids.departmentId },
+          relations: { business: true, office: true },
+        })
+      : undefined;
+    if (ids.departmentId) {
+      if (!department || department.business?.id !== businessId) {
+        throw new BadRequestError('El departamento no es de esa empresa');
+      }
+      if (office && department.office?.id !== office.id) {
+        throw new BadRequestError('El departamento no es de esa oficina');
+      }
+    }
+    const team = ids.teamId
+      ? await db.getRepository(Team).findOne({
+          where: { id: ids.teamId },
+          relations: { business: true, office: true, department: true },
+        })
+      : undefined;
+    if (ids.teamId) {
+      if (!team || team.business?.id !== businessId) {
+        throw new BadRequestError('El equipo no es de esa empresa');
+      }
+      if (office && team.office?.id !== office.id) {
+        throw new BadRequestError('El equipo no es de esa oficina');
+      }
+      if (department && team.department?.id !== department.id) {
+        throw new BadRequestError('El equipo no es de ese departamento');
+      }
+    }
+
     return {
       business: businessId ? ({ id: businessId } as Business) : undefined,
       office: office ?? (null as unknown as Worker['office']),
-      department: ids.departmentId
-        ? ({ id: ids.departmentId } as Department)
+      department: department
+        ? ({ id: department.id } as Department)
         : (null as unknown as Department),
-      team: ids.teamId
-        ? ({ id: ids.teamId } as Team)
-        : (null as unknown as Team),
+      team: team ? ({ id: team.id } as Team) : (null as unknown as Team),
     };
   }
 

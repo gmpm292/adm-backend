@@ -18,6 +18,10 @@ import { ConditionalOperator } from '../../../../core/graphql/remote-operations/
 import { PeriodSalesProcessingResult } from '../types/period-sales-processing-result.type';
 import { Sale } from '../../../sales/sale/entities/sale.entity';
 import { PayrollPeriod } from '../../payroll-period/entities/payroll-period.entity';
+import { SortDirection } from '../../../../core/graphql/remote-operations/enums/sort-direction.enum';
+
+/** Ventas que se leen de cada vez al calcular un período */
+const SALES_PAGE_SIZE = 200;
 
 /**
  * Punto de entrada del cálculo de nómina que usa el resolver: delega en
@@ -203,7 +207,7 @@ export class PaymentProcessingService {
   /**
    * Recalcula las comisiones de las ventas cobradas del período (por
    * `effectiveDate`, de la empresa del período) y las imputa a ese período.
-   * Toma como mucho 1000 ventas. No lanza: los errores van en `results`.
+   * Las lee todas, por lotes. No lanza: los errores van en `results`.
    */
   async processPeriodSales(
     payrollPeriodId: number,
@@ -253,26 +257,33 @@ export class PaymentProcessingService {
         });
       }
 
-      // 3. Obtener todas las ventas del período
+      // 3. Obtener todas las ventas del período, por lotes
       console.log(
         `[PaymentProcessing] Buscando ventas confirmadas del período ${payrollPeriodId}`,
       );
 
-      const sales = (
-        await this.saleService.find(
-          {
-            filters,
-            take: 1000, // Límite razonable, podríamos hacer paginación si es necesario
-          },
-          cu,
-          scopes,
-          manager,
-        )
-      ).data as Array<Sale>;
-
-      const saleIds: Array<number> = sales
-        .map((sale) => sale.id)
-        .filter((id): id is number => id !== undefined);
+      const saleIds: Array<number> = [];
+      for (let skip = 0; ; skip += SALES_PAGE_SIZE) {
+        const page = (
+          await this.saleService.find(
+            {
+              filters,
+              skip,
+              take: SALES_PAGE_SIZE,
+              sorts: [{ property: 'id', direction: SortDirection.ASC }],
+            },
+            cu,
+            scopes,
+            manager,
+          )
+        ).data as Array<Sale>;
+        saleIds.push(
+          ...page
+            .map((sale) => sale.id)
+            .filter((id): id is number => id !== undefined),
+        );
+        if (page.length < SALES_PAGE_SIZE) break;
+      }
 
       console.log(
         `[PaymentProcessing] Encontradas ${saleIds.length} ventas confirmadas en el período ${payrollPeriodId}`,

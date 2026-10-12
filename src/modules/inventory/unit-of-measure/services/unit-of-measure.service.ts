@@ -51,7 +51,7 @@ export class UnitOfMeasureService extends BaseService<UnitOfMeasure> {
       description: description?.trim() || undefined,
       isActive: isActive ?? true,
     };
-    await this.checkUnique(data);
+    await this.checkUnique(data, undefined, manager);
 
     return super.baseCreate({ data, cu, scopes: GLOBAL, manager });
   }
@@ -95,7 +95,7 @@ export class UnitOfMeasureService extends BaseService<UnitOfMeasure> {
       }),
       ...(isActive !== undefined && { isActive }),
     };
-    await this.checkUnique(data, id);
+    await this.checkUnique(data, id, manager);
 
     return super.baseUpdate({ id, data, cu, scopes: GLOBAL, manager });
   }
@@ -191,11 +191,14 @@ export class UnitOfMeasureService extends BaseService<UnitOfMeasure> {
   private async checkUnique(
     data: { name?: string; symbol?: string },
     exceptId?: number,
+    manager?: EntityManager,
   ) {
+    const repository =
+      manager?.getRepository(UnitOfMeasure) ?? this.unitOfMeasureRepository;
     for (const field of ['name', 'symbol'] as const) {
       const value = data[field];
       if (!value) continue;
-      const existing = await this.unitOfMeasureRepository
+      const existing = await repository
         .createQueryBuilder('u')
         .withDeleted()
         // El símbolo distingue mayúsculas (m y M son unidades distintas)

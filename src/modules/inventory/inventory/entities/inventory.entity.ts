@@ -11,9 +11,6 @@ export class Inventory extends SecurityBaseEntity {
   @ManyToOne(() => Product, (product) => product.id)
   product: Product;
 
-  //   @ManyToOne(() => Office, (office) => office.id)
-  //   office: Office;
-
   @Column({ type: 'integer' })
   currentStock: number;
 

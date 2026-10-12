@@ -103,10 +103,14 @@ export class ListOptionsTypeOrmQueryBuilderMapper {
 
   /**
    * Pasa a hora local del servidor los valores de fecha que terminan en `z`
-   * minúscula. Las fechas ISO normales (con `Z`) no entran aquí.
+   * minúscula. Las fechas ISO normales (con `Z`) no entran aquí y llegan tal
+   * cual a la consulta; del cliente no puede llegar otra cosa, porque
+   * `CheckIsIsoUTCDate` exige `toISOString()`. En el servidor (UTC) cuadran
+   * con las columnas `timestamp`.
    */
   protected convertDatesToLocalTime(filters: ListFilter[]) {
     filters.map((filter) => {
+      if (filter.filters) this.convertDatesToLocalTime(filter.filters);
       const beginWithDate = (val) => {
         const regex =
           /^(\d{4}-\d{2}-\d{2})|(0?[1-9]|1[0-2])\/(0?[1-9]|[12]\d|3[01])\/(19|20)?\d{2}/;
@@ -130,7 +134,8 @@ export class ListOptionsTypeOrmQueryBuilderMapper {
   /**
    * Los filtros `principal` van sueltos con AND y el resto, entre paréntesis,
    * para que un OR no los anule. Si no hay ninguno principal, todos van
-   * sueltos: `A OR B AND C` se evalúa como `A OR (B AND C)`.
+   * sueltos: `A OR B AND C` se evalúa como `A OR (B AND C)`. Por eso `@Opts`
+   * entrega los filtros del cliente ya agrupados en uno solo.
    */
   protected addFiltersToQueryBuilder<Entity extends ObjectLiteral>(
     filters: ListFilter[],

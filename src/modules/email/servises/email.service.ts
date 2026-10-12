@@ -4,7 +4,7 @@
 
 import { forwardRef, Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThan, MoreThanOrEqual, Repository } from 'typeorm';
+import { LessThan, Repository } from 'typeorm';
 import { Email } from '../entities/email.entity';
 import { EmailTemplate } from '../entities/email-template.entity';
 import { EmailStatus } from '../enums/email-status.enum';
@@ -130,6 +130,17 @@ export class EmailService {
 
     await this.emailRepository.save(emailRecord);
 
+    return this.deliver(emailRecord, data);
+  }
+
+  /**
+   * Hace el envío de un registro ya guardado (nuevo o reintento) y lo pasa a
+   * SENT o FAILED; si falla, vuelve a lanzar el error.
+   */
+  private async deliver(
+    emailRecord: Email,
+    data: SendEmailInput,
+  ): Promise<Email> {
     try {
       if (data.templateId) {
         await this.applyTemplate(data, emailRecord);
@@ -282,9 +293,8 @@ export class EmailService {
   }
 
   /**
-   * Reintenta los envíos FAILED con menos de `maxRetries` intentos. Cada
-   * reintento pasa por `sendEmail`, que guarda un registro nuevo; el original
-   * solo suma `retryCount` (y queda en RETRYING si el reintento sale bien).
+   * Reintenta los envíos FAILED con menos de `maxRetries` intentos sobre el
+   * mismo registro: suma `retryCount` y queda como SENT o FAILED.
    */
   async retryFailedEmails(maxRetries = 3): Promise<void> {
     const failedEmails = await this.emailRepository.find({
@@ -295,11 +305,13 @@ export class EmailService {
     });
 
     for (const email of failedEmails) {
-      try {
-        email.status = EmailStatus.RETRYING;
-        await this.emailRepository.save(email);
+      email.status = EmailStatus.RETRYING;
+      email.retryCount += 1;
+      email.lastRetryAt = new Date();
+      await this.emailRepository.save(email);
 
-        await this.sendEmail({
+      try {
+        await this.deliver(email, {
           to: email.to,
           subject: email.subject,
           body: email.body,
@@ -309,20 +321,8 @@ export class EmailService {
           templateId: email.templateId,
           attachments: email.attachments,
         });
-
-        email.retryCount += 1;
-        email.lastRetryAt = new Date();
-        await this.emailRepository.save(email);
-      } catch (error) {
-        const err = error as Error;
-        email.retryCount += 1;
-        email.lastRetryAt = new Date();
-        email.error = {
-          message: err.message,
-          stack: err.stack,
-          code: (error as any)?.code,
-        };
-        await this.emailRepository.save(email);
+      } catch {
+        // `deliver` ya lo dejó como FAILED con el error.
       }
     }
   }
@@ -343,26 +343,5 @@ export class EmailService {
       pending,
       successRate: total > 0 ? (sent / total) * 100 : 0,
     };
-  }
-
-  /**
-   * Correos enviados con Gmail en las últimas 24 h frente a un límite fijo de
-   * 2000 (no se consulta a Google). Hoy no lo usa ningún resolver.
-   */
-  async checkGoogleQuota(): Promise<{ limit: number; usage: number }> {
-    try {
-      return {
-        limit: 2000,
-        usage: await this.emailRepository.count({
-          where: {
-            provider: EmailProvider.GMAIL_OAUTH2,
-            sentAt: MoreThanOrEqual(new Date(Date.now() - 24 * 60 * 60 * 1000)),
-          },
-        }),
-      };
-    } catch (error) {
-      this.logger.error('Error checking Google quota', error);
-      return { limit: 0, usage: 0 };
-    }
   }
 }

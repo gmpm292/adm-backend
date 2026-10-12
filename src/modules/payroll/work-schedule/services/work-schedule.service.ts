@@ -145,8 +145,9 @@ export class WorkScheduleService extends BaseService<WorkSchedule> {
   }
 
   /**
-   * Cambia los campos que llegan; la oficina puede cambiarse o quitarse, pero
-   * la empresa no se toca. Valida el rango con las fechas resultantes.
+   * Cambia los campos que llegan; la oficina puede cambiarse (el horario
+   * pasa a la empresa de la nueva) o quitarse (se queda en su empresa).
+   * Valida el rango con las fechas resultantes.
    */
   async update(
     id: number,
@@ -180,6 +181,8 @@ export class WorkScheduleService extends BaseService<WorkSchedule> {
         scopes,
         manager,
       );
+      // El horario pasa a la empresa de su oficina, como al crearlo
+      if (data.office.business) data.business = data.office.business;
     }
 
     this.assertValidRange(

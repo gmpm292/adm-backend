@@ -146,7 +146,7 @@ export class ProductService extends BaseService<Product> {
       id,
       relationsToLoad: {
         category: true,
-        inventories: true,
+        inventories: { office: true },
         unitOfMeasure: true,
         materialCost: { currency: true, unitOfMeasure: true },
         business: true,
@@ -171,7 +171,9 @@ export class ProductService extends BaseService<Product> {
     manager?: EntityManager,
   ): Promise<Product[]> {
     await this.categoryService.findOne(categoryId, cu, scopes, manager);
-    return this.productRepository.find({
+    const repository =
+      manager?.getRepository(Product) ?? this.productRepository;
+    return repository.find({
       where: { category: { id: categoryId } },
       relations: ['category', 'inventories', 'unitOfMeasure', 'materialCost'],
     });
@@ -569,7 +571,8 @@ export class ProductService extends BaseService<Product> {
 
   /**
    * Reserva existencias para una venta: crea salidas marcadas como reserva,
-   * sacando primero de los inventarios más antiguos del producto. Devuelve el
+   * sacando primero de los inventarios más antiguos del producto (solo los de
+   * la oficina `officeId`, la tienda de la venta, si llega). Devuelve el
    * `reservationId` que agrupa esas salidas. Lanza si no hay stock suficiente.
    */
   public async validateAndReserveStock(
@@ -581,6 +584,7 @@ export class ProductService extends BaseService<Product> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
     reservationId = uuidv4(), // Si existe es un ajuste a una reserva anterior, sino generar un UUID único para esta reserva
+    officeId?: number,
   ): Promise<string> {
     // El inventario se lleva en unidades enteras.
     if (!Number.isInteger(quantity) || quantity <= 0) {
@@ -594,6 +598,7 @@ export class ProductService extends BaseService<Product> {
       cu,
       scopes,
       manager,
+      officeId,
     );
 
     const availableStock = inventory.reduce(
@@ -670,6 +675,8 @@ export class ProductService extends BaseService<Product> {
     const movements = (
       await this.inventoryMovementService.find(
         {
+          // Sin límite de página: hacen falta todos los de la reserva
+          take: undefined,
           filters: [
             {
               property: 'reservationId',
@@ -799,6 +806,8 @@ export class ProductService extends BaseService<Product> {
     const reservations = (
       await this.inventoryMovementService.find(
         {
+          // Sin límite de página: hacen falta todas las salidas de la reserva
+          take: undefined,
           filters: [
             {
               property: 'reservationId',
@@ -840,65 +849,3 @@ export class ProductService extends BaseService<Product> {
     );
   }
 }
-
-/** 
-
-Pasos para el calculo (calculatePaymentOptions).
-
-1- La conversión de moneda
-
-2- Un margen adicional (si existe)
-
-3- El redondeo a un número específico de decimales
-
-Vamos a desglosarlo paso a paso:
-1. Cálculo del multiplicador de margen:
-typescript
-
-const marginMultiplier = 1 + (product.pricingConfig.exchangeRateMargin || 0) / 100;
-
-product.pricingConfig.exchangeRateMargin es un porcentaje de margen que se quiere añadir al precio
-
-Si no existe (undefined), se usa 0 por defecto (|| 0)
-
-Se divide entre 100 para convertirlo de porcentaje a decimal (ej: 5% → 0.05)
-
-Se suma 1 para crear un multiplicador (ej: si el margen es 5%, el multiplicador será 1.05)
-
-2. Cálculo del precio convertido:
-typescript
-
-const convertedPrice = product.basePrice * exchangeRate * marginMultiplier;
-
-product.basePrice: Precio base del producto en su moneda original
-
-exchangeRate: Tasa de conversión entre la moneda base y la moneda objetivo
-
-marginMultiplier: El factor de margen calculado anteriormente
-
-Multiplicando estos tres valores obtenemos el precio final en la moneda objetivo con el margen aplicado
-
-3. Redondeo del precio:
-typescript
-
-const decimalPlaces = product.pricingConfig.decimalPlaces ?? 2;
-const roundedPrice = parseFloat(convertedPrice.toFixed(decimalPlaces));
-
-decimalPlaces: Número de decimales a usar (tomado de la configuración del producto, con 2 como valor por defecto si no está especificado)
-
-toFixed(): Redondea el número al número de decimales especificado (pero devuelve un string)
-
-parseFloat(): Convierte el string resultante de vuelta a número
-
-4. Retorno del resultado:
-typescript
-
-return {
-currency,                // Moneda objetivo
-unitPrice: roundedPrice, // Precio por unidad después de conversión y margen
-total: roundedPrice * quantity, // Precio total (unidad x cantidad)
-isFixedPrice: false,     // Indica si es un precio fijo o calculado
-exchangeRate,            // Tasa de cambio usada
-};
-
- */

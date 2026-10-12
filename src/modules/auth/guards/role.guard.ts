@@ -6,9 +6,6 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { GqlExecutionContext } from '@nestjs/graphql';
-// import { haveAccess } from '@app/domain/core/utils/full-access.roles';
-import { InjectEntityManager } from '@nestjs/typeorm';
-import { EntityManager } from 'typeorm';
 import { JWTPayload } from '../dto/jwt-payload.dto';
 
 import { Role } from '../../../core/enums/role.enum';
@@ -25,8 +22,6 @@ export class RoleGuard implements CanActivate {
   constructor(
     private reflector: Reflector,
     private readonly roleGuardService: RoleGuardService,
-    @InjectEntityManager()
-    private readonly entitiManger: EntityManager,
   ) {}
 
   private matchRoles(roles: string[], userRoles: string[]): boolean {
@@ -52,10 +47,7 @@ export class RoleGuard implements CanActivate {
     }
     if (contextType == 'http') {
       const request = context.switchToHttp().getRequest();
-      const urlWithoutParams = request.baseUrl + request.route.path;
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const url = request.url;
-      return urlWithoutParams;
+      return request.baseUrl + request.route.path;
     }
     return null;
   }

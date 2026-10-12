@@ -13,6 +13,7 @@ import {
 } from '../../../core/graphql/remote-operations';
 import { ConditionalOperator } from '../../../core/graphql/remote-operations/enums/conditional-operation.enum';
 import { NotFoundError } from '../../../core/errors/appErrors/NotFoundError.error';
+import { ConflictError } from '../../../core/errors/appErrors/ConflictError.error';
 import { UpdateScheduledTaskInput } from '../dto/update-scheduled-task.input';
 
 /**
@@ -36,8 +37,6 @@ export class TaskRegistryService extends BaseService<ScheduledTask> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<ScheduledTask> {
-    // Solo avisa si ya hay una tarea con el mismo handlerType y cron: no
-    // impide crearla.
     await this.validateUniqueTask(createTaskInput, cu, scopes, manager);
 
     const task: DeepPartial<ScheduledTask> = {
@@ -139,16 +138,15 @@ export class TaskRegistryService extends BaseService<ScheduledTask> {
   }
 
   /**
-   * Comprueba si ya existe una tarea con el mismo `handlerType` y
-   * `cronExpression`. Si existe solo lo escribe en consola; siempre devuelve
-   * `true`.
+   * Rechaza (Conflict) una tarea con el mismo `handlerType` y `cronExpression`
+   * que otra no eliminada: se ejecutarían las dos a la vez.
    */
   private async validateUniqueTask(
     createTaskInput: CreateScheduledTaskInput,
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
-  ): Promise<boolean> {
+  ): Promise<void> {
     const dataInDB = await this.baseFind({
       options: {
         take: 0,
@@ -171,11 +169,9 @@ export class TaskRegistryService extends BaseService<ScheduledTask> {
     });
 
     if (dataInDB.totalCount > 0) {
-      console.log(
-        `A task with same handlerType and cronExpression already exists`,
+      throw new ConflictError(
+        'A task with same handlerType and cronExpression already exists',
       );
     }
-
-    return true;
   }
 }

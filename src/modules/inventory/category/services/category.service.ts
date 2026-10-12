@@ -49,7 +49,7 @@ export class CategoryService extends BaseService<Category> {
     } as Category;
     // La empresa sale del usuario (o del formulario, si es SUPER)
     const businessId = createCategoryInput.businessId ?? cu?.businessId;
-    await this.checkUniqueName(data.name, businessId);
+    await this.checkUniqueName(data.name, businessId, undefined, true, manager);
 
     return super.baseCreate({ data, cu, scopes, manager });
   }
@@ -106,7 +106,13 @@ export class CategoryService extends BaseService<Category> {
     const category = await this.findOne(id, cu, scopes, manager);
     const { name, description } = updateCategoryInput;
     if (name !== undefined) {
-      await this.checkUniqueName(name.trim(), category.business?.id, id);
+      await this.checkUniqueName(
+        name.trim(),
+        category.business?.id,
+        id,
+        true,
+        manager,
+      );
     }
 
     return super.baseUpdate({
@@ -195,6 +201,7 @@ export class CategoryService extends BaseService<Category> {
         category.business?.id,
         category.id,
         false,
+        manager,
       );
     }
 
@@ -216,8 +223,9 @@ export class CategoryService extends BaseService<Category> {
     businessId?: number,
     exceptId?: number,
     includeDeleted = true,
+    manager?: EntityManager,
   ) {
-    const query = this.categoryRepository
+    const query = (manager?.getRepository(Category) ?? this.categoryRepository)
       .createQueryBuilder('c')
       .where('lower(c.name) = lower(:name)', { name })
       .andWhere(

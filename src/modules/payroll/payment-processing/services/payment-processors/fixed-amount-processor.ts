@@ -9,7 +9,6 @@ import { Worker } from '../../../worker/entities/worker.entity';
 import { WorkerType } from '../../../worker/enums/worker-type.enum';
 import { WorkerService } from '../../../worker/services/worker.service';
 import { ConditionalOperator } from '../../../../../core/graphql/remote-operations/enums/conditional-operation.enum';
-import { BusinessService } from '../../../../company/business/services/business.service';
 import { OfficeService } from '../../../../company/office/services/office.service';
 import { DepartmentService } from '../../../../company/department/services/department.service';
 import { TeamService } from '../../../../company/team/services/team.service';
@@ -18,6 +17,8 @@ import { PayrollPeriod } from '../../../payroll-period/entities/payroll-period.e
 import { PeriodBatchCalculationResult } from '../../types/payment-calculation.types';
 import { ListFilter } from '../../../../../core/graphql/remote-operations';
 import { LogicalOperator } from '../../../../../core/graphql/remote-operations/enums/logical-operator.enum';
+import { BadRequestError } from '../../../../../core/errors/appErrors/BadRequestError.error';
+import { onlyRuleWorkers } from '../../helpers/rule-workers.helper';
 
 /** Cálculo de las reglas de importe fijo (`FIXED_AMOUNT`), por período. */
 @Injectable()
@@ -26,7 +27,6 @@ export class FixedAmountProcessor extends BasePaymentProcessor {
 
   constructor(
     private readonly workerService: WorkerService,
-    private readonly businessService: BusinessService,
     private readonly officeService: OfficeService,
     private readonly departmentService: DepartmentService,
     private readonly teamService: TeamService,
@@ -38,7 +38,9 @@ export class FixedAmountProcessor extends BasePaymentProcessor {
    * A cada trabajador de la regla le toca el importe fijo multiplicado por el
    * número de unidades del ámbito (`scope`): oficinas, departamentos o equipos
    * de la empresa (o solo la indicada en el input); empresa u otro ámbito, ×1.
-   * Lanza `Error` si la regla no tiene importe o no se sabe la empresa.
+   * Solo cuentan los trabajadores de la empresa del período (si la tiene).
+   * Lanza `BadRequestError` si la regla no tiene importe o no se sabe la
+   * empresa.
    */
   async calculateBatchForPeriod(
     rule: PaymentRule,
@@ -52,10 +54,14 @@ export class FixedAmountProcessor extends BasePaymentProcessor {
       `[FixedAmountProcessor] Calculando batch para regla ${rule.name}`,
     );
 
+    const periodBusinessId =
+      payrollPeriod.business?.id ?? input.businessId ?? cu?.businessId;
+
     // 1. Obtener workers que aplican a esta regla
     const applicableWorkers = await this.getWorkersForRule(
       rule,
       input,
+      periodBusinessId,
       cu,
       scopes,
       manager,
@@ -81,7 +87,9 @@ export class FixedAmountProcessor extends BasePaymentProcessor {
     const currency = rule.paymentCurrency || 'CUP';
 
     if (fixedAmount <= 0) {
-      throw new Error(`La regla ${rule.name} no tiene un monto fijo válido`);
+      throw new BadRequestError(
+        `La regla ${rule.name} no tiene un monto fijo válido`,
+      );
     }
 
     // 3. Calcular multiplicador según scope
@@ -89,13 +97,10 @@ export class FixedAmountProcessor extends BasePaymentProcessor {
     let unitType = 'WORKER';
     let scopeDetails = {};
 
-    // Obtener businessId del primer worker o del input
-    const businessId = applicableWorkers[0]?.business?.id || input.businessId;
-
+    // Período sin empresa (lo creó un SUPER sin empresa): la del trabajador
+    const businessId = periodBusinessId ?? applicableWorkers[0]?.business?.id;
     if (!businessId) {
-      throw new Error(
-        'No se pudo determinar el business para cálculo de scope',
-      );
+      throw new BadRequestError('No se pudo determinar la empresa del período');
     }
 
     switch (rule.scope) {
@@ -197,13 +202,15 @@ export class FixedAmountProcessor extends BasePaymentProcessor {
   }
 
   /**
-   * Trabajadores del tipo de la regla (y `otherType`, si es OTHER), filtrados
-   * por la empresa, oficina, departamento, equipo o ids que lleguen en el
-   * input. No mira `specificWorkers` ni la asistencia.
+   * Trabajadores del tipo de la regla (y `otherType`, si es OTHER), de la
+   * empresa si se sabe, filtrados por la oficina, departamento, equipo o ids
+   * que lleguen en el input y, si la regla los tiene, por sus
+   * `specificWorkers`. No mira la asistencia.
    */
   private async getWorkersForRule(
     rule: PaymentRule,
     input: ProcessPeriodPaymentsInput,
+    businessId: number | undefined,
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
@@ -215,6 +222,13 @@ export class FixedAmountProcessor extends BasePaymentProcessor {
         value: rule.workerType,
       },
     ];
+    if (businessId) {
+      filters.push({
+        property: 'business.id',
+        operator: ConditionalOperator.EQUAL,
+        value: String(businessId),
+      });
+    }
 
     // Filtro por otherType si aplica
     if (rule.workerType === WorkerType.OTHER && rule.otherType) {
@@ -226,14 +240,6 @@ export class FixedAmountProcessor extends BasePaymentProcessor {
     }
 
     // Filtros de scope jerárquico
-    if (input.businessId) {
-      filters.push({
-        property: 'business.id',
-        operator: ConditionalOperator.EQUAL,
-        value: String(input.businessId),
-      });
-    }
-
     if (input.officeId) {
       filters.push({
         property: 'office.id',
@@ -279,7 +285,7 @@ export class FixedAmountProcessor extends BasePaymentProcessor {
       manager,
     );
 
-    return workersResult.data as Worker[];
+    return onlyRuleWorkers(rule, workersResult.data as Worker[]);
   }
 
   /**
@@ -323,7 +329,9 @@ export class FixedAmountProcessor extends BasePaymentProcessor {
         service = this.teamService;
         break;
       default:
-        throw new Error(`Tipo de unidad no soportado: ${String(unitType)}`);
+        throw new BadRequestError(
+          `Tipo de unidad no soportado: ${String(unitType)}`,
+        );
     }
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access

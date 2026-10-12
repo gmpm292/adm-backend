@@ -57,11 +57,6 @@ export class TelegramTransportService implements OnModuleInit {
 
     // Configurar webhooks para todos los bots
     await this.setupWebhooks();
-
-    // Solo ejecutar pruebas en desarrollo
-    //if (process.env.NODE_ENV === 'development') {
-    //await this.testSendMessages();
-    //}
   }
 
   /**
@@ -103,49 +98,6 @@ export class TelegramTransportService implements OnModuleInit {
           `Error al configurar webhook para ${botName}: ${error.message}`,
         );
       }
-    }
-  }
-
-  /** Prueba manual con destinos fijos; su llamada en `init` está comentada. */
-  private async testSendMessages(): Promise<void> {
-    try {
-      this.logger.log('=== INICIANDO PRUEBAS DE ENVÍO ===');
-
-      // 1. Prueba de envío a chatId (bot)
-      const botTestResult = await this.sendMessage({
-        //chatId: 'TU_CHAT_ID_AQUI', // Reemplazar con un chatId real
-        chatId: '1243966185',
-        message: 'Este es un mensaje de prueba del bot',
-        messageType: TelegramMessageType.TEXT,
-        botTokenKey: 'casa',
-      });
-
-      this.logger.log(
-        'Prueba bot:',
-        botTestResult.success ? '✅ Éxito' : '❌ Fallo',
-      );
-
-      // 2. Prueba de envío a número de teléfono (client)
-      if (this.client) {
-        const phoneTestResult = await this.sendMessage({
-          phoneNumber: '+1234567890', // Reemplazar con un número real
-          message: 'Este es un mensaje de prueba por teléfono',
-          messageType: TelegramMessageType.TEXT,
-        });
-
-        this.logger.log(
-          'Prueba teléfono:',
-          phoneTestResult.success ? '✅ Éxito' : '❌ Fallo',
-        );
-      } else {
-        this.logger.warn(
-          'Cliente no configurado, omitiendo prueba de teléfono',
-        );
-      }
-
-      this.logger.log('=== PRUEBAS COMPLETADAS ===');
-    } catch (error) {
-      this.logger.error('Error en pruebas:', error);
     }
   }
 

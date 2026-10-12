@@ -47,11 +47,6 @@ const TWO_FACTOR_LOCKOUT_SECONDS = 15 * 60;
  */
 @Injectable()
 export class AuthService {
-  private accessTokensMap: Map<
-    number,
-    Array<{ accessToken: string; reason: AccessTokenReason; metadata: any }>
-  > = new Map();
-
   public constructor(
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
@@ -393,9 +388,7 @@ export class AuthService {
         userAgent: req.header('user-agent'),
       },
     });
-    const expiredIn = this.configService.get('ACCESS_TOKEN_EXPIRE_IN') * 1000;
-    await this.cacheManager.set(`AccessTokenUser${user.id}`, values, expiredIn);
-    const a = await this.cacheManager.get(`AccessTokenUser${user.id}`);
+    await this.saveAccessTokenList(user.id as number, values);
   }
 
   /**
@@ -427,8 +420,21 @@ export class AuthService {
         return false;
       });
     }
-    const expiredIn = this.configService.get('ACCESS_TOKEN_EXPIRE_IN') * 1000;
-    await this.cacheManager.set(`AccessTokenUser${user.id}`, values, expiredIn);
+    await this.saveAccessTokenList(user.id as number, values);
+  }
+
+  /**
+   * Guarda en Redis la lista de tokens de acceso del usuario hasta que caduque
+   * el último emitido (todos duran `ACCESS_TOKEN_EXPIRE_IN`).
+   */
+  private async saveAccessTokenList(
+    userId: number,
+    values: AccessTokenInfo[],
+  ): Promise<void> {
+    // cache-manager-redis-store only honours the TTL passed as { ttl } (seconds)
+    await this.cacheManager.set(`AccessTokenUser${userId}`, values, {
+      ttl: Number(this.configService.get('ACCESS_TOKEN_EXPIRE_IN')),
+    } as any);
   }
 
   /**
@@ -501,6 +507,37 @@ export class AuthService {
       throw new UnauthorizedError(`You don't have a secret code`);
     }
 
+    await this.checkTwoFactorCode(id, token2fa, user.twoFASecret);
+    return user;
+  }
+
+  /**
+   * Confirma el emparejamiento con un código válido del secreto generado y
+   * deja el 2FA configurado y activo. Mismo límite de intentos que
+   * `verify2FACode`.
+   */
+  async finishConfigure2FA(id: number, token2fa: string): Promise<User> {
+    const user = await this.usersService.findOne(id);
+
+    if (!user.twoFASecret) {
+      throw new UnauthorizedError(`You don't have a secret code`);
+    }
+    await this.checkTwoFactorCode(id, token2fa, user.twoFASecret);
+    await this.usersService.finishConfigure2FA(id);
+
+    return user;
+  }
+
+  /**
+   * Comprueba un código TOTP contra `secret`. Tras `MAX_TWO_FACTOR_ATTEMPTS`
+   * fallos bloquea los intentos durante `TWO_FACTOR_LOCKOUT_SECONDS`; un
+   * acierto reinicia el contador.
+   */
+  private async checkTwoFactorCode(
+    id: number,
+    token2fa: string,
+    secret: string,
+  ): Promise<void> {
     const attemptsKey = `TwoFactorAttempts${id}`;
     const attempts = (await this.cacheManager.get<number>(attemptsKey)) ?? 0;
     if (attempts >= MAX_TWO_FACTOR_ATTEMPTS) {
@@ -509,7 +546,7 @@ export class AuthService {
       );
     }
 
-    const is2FAVerified = authenticator.check(token2fa ?? '', user.twoFASecret);
+    const is2FAVerified = authenticator.check(token2fa ?? '', secret);
     if (!is2FAVerified) {
       // cache-manager-redis-store only honours the TTL passed as { ttl } (seconds)
       await this.cacheManager.set(attemptsKey, attempts + 1, {
@@ -519,26 +556,6 @@ export class AuthService {
     }
 
     await this.cacheManager.del(attemptsKey);
-    return user;
-  }
-
-  /**
-   * Confirma el emparejamiento con un código válido del secreto generado y
-   * deja el 2FA configurado y activo. Aquí no hay límite de intentos.
-   */
-  async finishConfigure2FA(id: number, token2fa: string): Promise<User> {
-    const user = await this.usersService.findOne(id);
-
-    if (!user.twoFASecret) {
-      throw new UnauthorizedError(`You don't have a secret code`);
-    }
-    const is2FAVerified = authenticator.check(token2fa ?? '', user.twoFASecret);
-    if (!is2FAVerified) {
-      throw new UnauthorizedError('Invalid 2FA code');
-    }
-    await this.usersService.finishConfigure2FA(id);
-
-    return user;
   }
 
   // Operaciones de administrador (SUPER, lo exige el resolver): delegan en

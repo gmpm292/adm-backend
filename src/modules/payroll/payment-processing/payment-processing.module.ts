@@ -15,7 +15,6 @@ import { WorkerPaymentModule } from '../worker-payment/worker-payment.module';
 import { PaymentAccumulatorModule } from '../payment_accumulator/payment-accumulator.module';
 import { AttendanceModule } from '../attendance/attendance.module';
 import { SaleModule } from '../../sales/sale/sale.module';
-import { BusinessModule } from '../../company/business/business.module';
 import { OfficeModule } from '../../company/office/office.module';
 import { DepartmentModule } from '../../company/department/department.module';
 import { TeamModule } from '../../company/team/team.module';
@@ -35,7 +34,6 @@ import { TeamModule } from '../../company/team/team.module';
     SaleModule,
 
     // Módulos de estructura organizativa (para scope calculations)
-    BusinessModule,
     OfficeModule,
     DepartmentModule,
     TeamModule,

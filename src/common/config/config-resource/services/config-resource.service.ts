@@ -137,8 +137,7 @@ export class ConfigResourceService
           JSON.stringify(storageKeys) != JSON.stringify(configKeys) ||
           data.configVisibility != config.configVisibility ||
           data.description != config.description ||
-          data.category != config.category ||
-          data.configStatus != config.configStatus
+          data.category != config.category
         ) {
           //delete from storageConf the keys that not in new configKeys
           storageKeys.forEach((e) => {
@@ -153,7 +152,6 @@ export class ConfigResourceService
               category: config.category,
               description: config.description,
               configVisibility: config.configVisibility,
-              //configStatus: config.configStatus,
             });
           }
         }
@@ -187,19 +185,20 @@ export class ConfigResourceService
     return this._version;
   }
 
-  getGroup(group: string) {
-    return this._Map_Vars.get(group);
-  }
-
-  getKeyInGroup(group: string, key: string) {
-    return this._Map_Vars.get(group)?.values[key];
-  }
-
-  /** Primer valor no vacío de la clave en cualquier grupo activo, o null. */
+  /**
+   * Primer valor de la clave en cualquier grupo activo, o null. Vacío o nulo
+   * cuenta como ausente; `false` y `0` son valores.
+   */
   getVal(key: string) {
     for (const val of this._Map_Vars.values()) {
-      if (val.configStatus == ConfigStatus.ENABLED && val.values[key])
-        return val.values[key];
+      const value = val.values?.[key];
+      if (
+        val.configStatus == ConfigStatus.ENABLED &&
+        value !== undefined &&
+        value !== null &&
+        value !== ''
+      )
+        return value;
     }
     return null;
   }

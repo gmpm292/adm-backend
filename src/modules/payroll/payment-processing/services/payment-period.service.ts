@@ -76,6 +76,7 @@ export class PaymentPeriodService {
             cu,
             scopes,
             manager,
+            cu?.businessId ?? input.businessId,
           );
       }
 
@@ -184,8 +185,8 @@ export class PaymentPeriodService {
   }
 
   /**
-   * Reglas activas cuyo tipo está en `FOR_PERIOD_PAYMENT_TYPES`, dentro del
-   * alcance del usuario. No filtra por empresa ni usa el período.
+   * Reglas activas cuyo tipo está en `FOR_PERIOD_PAYMENT_TYPES`, de la
+   * empresa del período (o sin empresa) y dentro del alcance del usuario.
    */
   private async getApplicableBatchRules(
     input: ProcessPeriodPaymentsInput,
@@ -201,12 +202,29 @@ export class PaymentPeriodService {
         operator: ConditionalOperator.EQUAL,
         value: 'true',
       },
-      // {
-      //   property: 'business.id',
-      //   operator: ConditionalOperator.EQUAL,
-      //   value: String(cu?.businessId),
-      // },
     ];
+    // Un SUPER ve las reglas de todas las empresas: solo las del período y
+    // las que no tienen empresa (las crea un SUPER sin empresa)
+    const businessId =
+      payrollPeriod.business?.id ?? input.businessId ?? cu?.businessId;
+    if (businessId) {
+      filters.push({
+        filters: [
+          {
+            property: 'businessId',
+            operator: ConditionalOperator.EQUAL,
+            value: String(businessId),
+            logicalOperator: LogicalOperator.OR,
+          },
+          {
+            property: 'businessId',
+            operator: ConditionalOperator.IS_NULL,
+            value: '',
+            logicalOperator: LogicalOperator.OR,
+          },
+        ],
+      });
+    }
 
     // Filtro para tipos de pago por periodo
     const typeFilters: ListFilter[] = [];
@@ -233,8 +251,8 @@ export class PaymentPeriodService {
   /**
    * Calcula con el procesador del tipo de la regla y crea un pago `SALARY` por
    * trabajador. Si ya hay pago de esa regla, trabajador y período, se omite
-   * (`SKIPPED`); con `force` se elimina y se rehace (`remove` rechaza los ya
-   * pagados o de un período cerrado, y ese trabajador queda en `ERROR`).
+   * (`SKIPPED`); con `force` se elimina y se rehace, salvo que ya esté
+   * pagado: lo pagado no se recalcula y también queda `SKIPPED`.
    */
   private async processRuleForPeriod(
     rule: PaymentRule,
@@ -289,95 +307,68 @@ export class PaymentPeriodService {
       if (workerPayment.amount <= 0) continue;
 
       try {
-        // Verificar si ya existe pago para este worker, regla y período
-        if (!input.force) {
-          const existingPayment = (
-            await this.workerPaymentService.find(
-              {
-                filters: [
-                  {
-                    property: 'worker.id',
-                    operator: ConditionalOperator.EQUAL,
-                    value: String(workerPayment.workerId),
-                  },
-                  {
-                    property: 'payrollPeriod.id',
-                    operator: ConditionalOperator.EQUAL,
-                    value: String(payrollPeriod.id),
-                  },
-                  {
-                    property: 'paymentRule.id',
-                    operator: ConditionalOperator.EQUAL,
-                    value: String(rule.id),
-                  },
-                ],
-              },
-              cu,
-              scopes,
-              manager,
-            )
-          ).data as WorkerPayment[];
+        // Pagos que ya hay de este worker, regla y período
+        const existingPayments = (
+          await this.workerPaymentService.find(
+            {
+              filters: [
+                {
+                  property: 'worker.id',
+                  operator: ConditionalOperator.EQUAL,
+                  value: String(workerPayment.workerId),
+                },
+                {
+                  property: 'payrollPeriod.id',
+                  operator: ConditionalOperator.EQUAL,
+                  value: String(payrollPeriod.id),
+                },
+                {
+                  property: 'paymentRule.id',
+                  operator: ConditionalOperator.EQUAL,
+                  value: String(rule.id),
+                },
+              ],
+            },
+            cu,
+            scopes,
+            manager,
+          )
+        ).data as WorkerPayment[];
 
-          if (existingPayment.length > 0) {
-            // SKIP: Ya existe pago
-            results.push({
-              workerId: workerPayment.workerId,
-              workerName: workerPayment.workerName,
-              amount: workerPayment.amount,
-              currency: workerPayment.currency,
-              paymentConcept: PaymentConcept.SALARY,
-              status: 'SKIPPED',
-              details: {
-                existingPaymentId: existingPayment[0].id,
-                ruleId: rule.id,
-                ruleName: rule.name,
-                note: 'Pago ya existente, force=false',
-              },
-            });
-            continue;
-          }
+        // Lo pagado no se toca ni con `force`; sin `force`, nada se rehace
+        const paidPayment = existingPayments.find((p) => !!p.paidDate);
+        if (paidPayment || (existingPayments.length > 0 && !input.force)) {
+          const existing = paidPayment ?? existingPayments[0];
+          results.push({
+            workerId: workerPayment.workerId,
+            workerName: workerPayment.workerName,
+            amount: workerPayment.amount,
+            currency: workerPayment.currency,
+            paymentConcept: PaymentConcept.SALARY,
+            status: 'SKIPPED',
+            details: {
+              existingPaymentId: existing.id,
+              ruleId: rule.id,
+              ruleName: rule.name,
+              note: paidPayment
+                ? 'Pago ya hecho: no se recalcula'
+                : 'Pago ya existente, force=false',
+            },
+          });
+          continue;
         }
 
-        // Si force=true y existe pago, eliminarlo primero
-        if (input.force) {
-          const existingPayments = (
-            await this.workerPaymentService.find(
-              {
-                filters: [
-                  {
-                    property: 'worker.id',
-                    operator: ConditionalOperator.EQUAL,
-                    value: String(workerPayment.workerId),
-                  },
-                  {
-                    property: 'payrollPeriod.id',
-                    operator: ConditionalOperator.EQUAL,
-                    value: String(payrollPeriod.id),
-                  },
-                  {
-                    property: 'paymentRule.id',
-                    operator: ConditionalOperator.EQUAL,
-                    value: String(rule.id),
-                  },
-                ],
-              },
-              cu,
-              scopes,
-              manager,
-            )
-          ).data as WorkerPayment[];
-
-          if (existingPayments.length > 0) {
-            await this.workerPaymentService.remove(
-              existingPayments.map((p) => p.id as number),
-              cu,
-              scopes,
-              manager,
-            );
-            console.log(
-              `[PaymentBatch] Eliminados ${existingPayments.length} pagos existentes para worker ${workerPayment.workerId}`,
-            );
-          }
+        // Con force se rehacen los pendientes
+        if (existingPayments.length > 0) {
+          await this.workerPaymentService.remove(
+            existingPayments.map((p) => p.id as number),
+            cu,
+            scopes,
+            manager,
+          );
+          console.log(
+            `[PaymentBatch] Eliminados ${existingPayments.length} pagos existentes para worker ${workerPayment.workerId}`,
+          );
         }
 
         // Crear nuevo pago
@@ -402,17 +393,7 @@ export class PaymentPeriodService {
               bonuses: 0,
               deductions: 0,
 
-              // Propiedades de trazabilidad
-              //scope: rule.scope,
-              //workerId: workerPayment.workerId,
-              //workerName: workerPayment.workerName,
-              //payrollPeriodId: payrollPeriod.id,
-              //periodStart: payrollPeriod.startDate,
-              //periodEnd: payrollPeriod.endDate,
-              //batchProcessed: true,
-              //forceApplied: input.force || false,
-
-              // Todos los detalles de cálculo van aquí
+              // Detalles del cálculo (ámbito, multiplicador, período...)
               // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
               calculationSummary: workerPayment.calculationDetails,
             },

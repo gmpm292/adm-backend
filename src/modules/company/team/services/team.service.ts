@@ -12,6 +12,7 @@ import {
 import { SortDirection } from '../../../../core/graphql/remote-operations/enums/sort-direction.enum';
 import { NotFoundError } from '../../../../core/errors/appErrors/NotFoundError.error';
 import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
+import { ForbiddenResourceError } from '../../../../core/errors/appErrors/ForbiddenResourceError';
 import { JWTPayload } from '../../../../modules/auth/dto/jwt-payload.dto';
 import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
 import { ScopedAccessService } from '../../../scoped-access/services/scoped-access.service';
@@ -74,6 +75,12 @@ export class TeamService extends BaseService<Team> {
       createTeamInput.departmentId,
       manager,
     );
+    // Quien pertenece a una empresa solo crea equipos en la suya.
+    if (cu?.businessId && department.business?.id !== cu.businessId) {
+      throw new ForbiddenResourceError(
+        'Solo puedes crear equipos en tu empresa',
+      );
+    }
 
     await assertUniqueName(
       this.managerOf(manager),

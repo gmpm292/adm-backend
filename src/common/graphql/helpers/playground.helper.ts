@@ -1,11 +1,7 @@
-/* eslint-disable no-constant-condition */
 import { ConfigService, Environment } from '../../config';
 import { AppLoggerService } from '../../logger/logger.service';
 
-/**
- * Playground activo salvo en producción. Hoy no se usa: `graphql.module`
- * fija `playground: true`.
- */
+/** Playground activo salvo con `NODE_ENV=production`. */
 export function playground(
   loggerService: AppLoggerService,
   configService: ConfigService,

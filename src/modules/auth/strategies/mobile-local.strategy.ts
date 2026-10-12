@@ -1,10 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
-import { Request } from 'express';
 import { Strategy } from 'passport-local';
 
-import { ClassicLoginInput } from '../dto/classic-login.input';
-import { getQueryArgumentsFromRequest } from '../helpers/request-body-variables.helper';
 import { AuthService } from '../services/auth.service';
 import { Role } from '../../../core/enums/role.enum';
 import { UnauthorizedError } from '../../../core/errors/appErrors/UnauthorizedError.error';
@@ -19,17 +16,18 @@ export class MobileLocalStrategy extends PassportStrategy(
   mobileLocalStrategyName,
 ) {
   public constructor(private authService: AuthService) {
-    super();
+    super({
+      usernameField: 'email',
+      passwordField: 'password',
+      passReqToCallback: true,
+    });
   }
 
   /**
-   * Toma las credenciales de la primera variable de la petición GraphQL y
-   * exige el rol USER.
+   * Recibe las credenciales que `MobileLocalAuthGuard` copia al cuerpo de la
+   * petición y exige el rol USER.
    */
-  public async validate(request: Request): Promise<User> {
-    const { email, password } =
-      getQueryArgumentsFromRequest<ClassicLoginInput>(request);
-
+  public async validate(req, email: string, password: string): Promise<User> {
     const user = await this.authService.validateUserWithEmailAndPassword(
       email,
       password,

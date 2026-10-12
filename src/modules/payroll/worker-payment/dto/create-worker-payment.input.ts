@@ -64,6 +64,7 @@ export class CreateWorkerPaymentInput extends CreateSecurityBaseInput {
     reversed?: boolean;
     reversalReason?: string;
     reversalDate?: Date;
+    compensationFor?: number; // Pago que anula una compensación
   };
 
   @IsOptional()

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-floating-promises */
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ArrayContains, FindOptionsWhere, Repository } from 'typeorm';
@@ -119,31 +118,6 @@ export class NotificationService extends BaseService<Notification> {
       },
     );
     return notifications;
-
-    /* TODO QUITAR if (
-      !currentUser.role.some((r) => r === Role.SUPER || r === Role.PRINCIPAL)
-    ) {
-      if (!options || !options.filters) {
-        options = { ...options, filters: [] } as ListOptions;
-      }
-      options.filters.push({
-        property: 'notification.createById',
-        operator: ConditionalOperator.EQUAL,
-        value: currentUser.sub.toString(),
-        logicalOperator: LogicalOperator.AND,
-      } as ListFilter);
-    }
-
-    const notificationLogs = await this.notificationLogService.baseFind(
-      options,
-      ['notification'],
-    );
-
-    notificationLogs.data = (
-      notificationLogs.data as Array<NotificationLog>
-    ).map((n) => n.notification);
-
-    return notificationLogs; */
   }
 
   /**
@@ -176,16 +150,10 @@ export class NotificationService extends BaseService<Notification> {
       logicalOperator: LogicalOperator.AND,
     } as ListFilter);
 
-    const notificationLogs = await this.notificationLogService.baseFind({
+    return this.notificationLogService.baseFind({
       options,
       relationsToLoad: ['notification', 'user'],
     });
-
-    /* notificationLogs.data = (
-      notificationLogs.data as Array<NotificationLog>
-    ).map((n) => n.notification); */
-
-    return notificationLogs;
   }
 
   async findOne(id: number): Promise<Notification> {
@@ -242,8 +210,8 @@ export class NotificationService extends BaseService<Notification> {
   }
 
   /**
-   * Marca como leída la entrada del usuario actual para esa notificación. El
-   * guardado no se espera: la respuesta sale antes de escribirse.
+   * Marca como leída la entrada del usuario actual para esa notificación
+   * (NotFound si no es suya).
    */
   async markNotificationAsRead(
     currentUser: JWTPayload,
@@ -254,12 +222,9 @@ export class NotificationService extends BaseService<Notification> {
         filters: { user: { id: currentUser.sub }, notification: { id } },
         relationsToLoad: { user: true, notification: true },
       });
-    if (!notificationLog) {
-      throw new NotFoundError();
-    }
 
     notificationLog.read = true;
-    this.notificationLogService.baseUpdate({
+    await this.notificationLogService.baseUpdate({
       id: notificationLog.id as number,
       data: notificationLog,
     });
@@ -268,7 +233,7 @@ export class NotificationService extends BaseService<Notification> {
 
   /**
    * Oculta la notificación de la bandeja del usuario actual (`erased`); no
-   * la elimina para los demás. Como en leída, el guardado no se espera.
+   * la elimina para los demás. NotFound si no es suya.
    */
   async markNotificationAsDeleted(
     currentUser: JWTPayload,
@@ -279,12 +244,9 @@ export class NotificationService extends BaseService<Notification> {
         filters: { user: { id: currentUser.sub }, notification: { id } },
         relationsToLoad: { user: true, notification: true },
       });
-    if (!notificationLog) {
-      throw new NotFoundError();
-    }
 
     notificationLog.erased = true;
-    this.notificationLogService.baseUpdate({
+    await this.notificationLogService.baseUpdate({
       id: notificationLog.id as number,
       data: notificationLog,
     });
@@ -298,18 +260,22 @@ export class NotificationService extends BaseService<Notification> {
   ): Promise<Array<NotificationLog>> {
     const notificationLogs: Array<NotificationLog> = [];
     for (const id of ids) {
-      const notificationLog =
-        await this.notificationLogService.baseFindOneByFilters({
+      const notificationLog = await this.notificationLogService
+        .baseFindOneByFilters({
           filters: { user: { id: currentUser.sub }, notification: { id } },
           relationsToLoad: { user: true, notification: true },
+        })
+        .catch((error: unknown) => {
+          if (error instanceof NotFoundError) return null;
+          throw error;
         });
       if (notificationLog) {
-        notificationLogs.push(notificationLog);
         notificationLog.erased = true;
-        this.notificationLogService.baseUpdate({
+        await this.notificationLogService.baseUpdate({
           id: notificationLog.id as number,
           data: notificationLog,
         });
+        notificationLogs.push(notificationLog);
       }
     }
     return notificationLogs;
@@ -317,7 +283,7 @@ export class NotificationService extends BaseService<Notification> {
 
   /**
    * Marca la notificación como enviada y la emite por `appEvents` a sus
-   * destinatarios (ids de usuario en `notify`). No espera al guardado.
+   * destinatarios (ids de usuario en `notify`).
    */
   public async publishNotification(
     notificationId: number,
@@ -328,7 +294,7 @@ export class NotificationService extends BaseService<Notification> {
     if (!titulo && !message) {
       throw new NotFoundError('Notification not found');
     }
-    this.baseUpdate({
+    await this.baseUpdate({
       id: id as number,
       data: {
         status: 'sent',
@@ -348,51 +314,13 @@ export class NotificationService extends BaseService<Notification> {
   private async findUsers(
     createNotificationInput: CreateNotificationInput | UpdateNotificationInput,
   ): Promise<User[]> {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { userIds, officeIds, departmentIds, teamIds, roles } =
-      createNotificationInput;
+    const { userIds, roles } = createNotificationInput;
     let notify: User[] = [];
 
     if (Array.isArray(userIds)) {
       for (const id of userIds) {
         const users = await this.userRepository.find({
           where: { id: Number(id) },
-        });
-        notify = notify.concat(users);
-      }
-    }
-
-    // if (Array.isArray(officeIds)) {
-    //   for (const id of officeIds) {
-    //     const users = await this.userRepository.find({
-    //       where: { office: { id: Number(id) } },
-    //     });
-    //     notify = notify.concat(users);
-    //   }
-    // }
-
-    // if (Array.isArray(departmentIds)) {
-    //   for (const id of departmentIds) {
-    //     const users = await this.userRepository.find({
-    //       where: { department: { id: Number(id) } },
-    //     });
-    //     notify = notify.concat(users);
-    //   }
-    // }
-
-    // if (Array.isArray(teamIds)) {
-    //   for (const id of teamIds) {
-    //     const users = await this.userRepository.find({
-    //       where: { team: { id: Number(id) } },
-    //     });
-    //     notify = notify.concat(users);
-    //   }
-    // }
-
-    if (Array.isArray(roles)) {
-      for (const role of roles) {
-        const users = await this.userRepository.find({
-          where: { role: ArrayContains([role]) },
         });
         notify = notify.concat(users);
       }

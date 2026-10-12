@@ -18,6 +18,7 @@ import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
 import { ScopedAccessService } from '../../../scoped-access/services/scoped-access.service';
 import { NotFoundError } from '../../../../core/errors/appErrors/NotFoundError.error';
 import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
+import { ForbiddenResourceError } from '../../../../core/errors/appErrors/ForbiddenResourceError';
 import {
   assertNotInUse,
   assertUniqueName,
@@ -67,6 +68,12 @@ export class DepartmentService extends BaseService<Department> {
   ): Promise<Department> {
     const name = cleanName(dto.name);
     const office = await this.findOffice(dto.officeId, manager);
+    // Quien pertenece a una empresa solo crea departamentos en la suya.
+    if (cu?.businessId && office.business?.id !== cu.businessId) {
+      throw new ForbiddenResourceError(
+        'Solo puedes crear departamentos en tu empresa',
+      );
+    }
 
     await assertUniqueName(
       this.managerOf(manager),
@@ -82,7 +89,7 @@ export class DepartmentService extends BaseService<Department> {
       departmentType: dto.departmentType,
       name,
       description: cleanText(dto.description),
-      address: cleanText((dto as { address?: string }).address),
+      address: cleanText(dto.address),
     } as Department;
 
     const created = await super.baseCreate({
@@ -187,13 +194,9 @@ export class DepartmentService extends BaseService<Department> {
     if (updateDepartmentInput.departmentType) {
       data.departmentType = updateDepartmentInput.departmentType;
     }
-    const texts = updateDepartmentInput as {
-      description?: string | null;
-      address?: string | null;
-    };
     for (const field of ['description', 'address'] as const) {
-      if (texts[field] !== undefined) {
-        data[field] = cleanText(texts[field]) as string;
+      if (updateDepartmentInput[field] !== undefined) {
+        data[field] = cleanText(updateDepartmentInput[field]) as string;
       }
     }
 

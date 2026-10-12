@@ -74,8 +74,8 @@ export class TaskSchedulerResolver {
     @CurrentUser() user: JWTPayload,
     @Args('id') id: number,
   ): Promise<boolean> {
-    this.scheduler.removeTask(String(id));
     await this.taskRegistry.remove([id]);
+    this.scheduler.removeTask(id);
     return true;
   }
 }

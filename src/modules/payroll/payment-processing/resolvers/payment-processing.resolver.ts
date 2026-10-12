@@ -21,33 +21,6 @@ export class PaymentProcessingResolver {
     private readonly paymentProcessingService: PaymentProcessingService,
   ) {}
 
-  // ==================== (Comentadas por ahora) ====================
-
-  // @Roles(Role.PRINCIPAL, Role.ADMIN, Role.MANAGER)
-  // @UseGuards(AccessTokenAuthGuard, RoleGuard)
-  // @Query('paymentProcessingStatus')
-  // async getProcessingStatus(
-  //   @CurrentUser() user: JWTPayload,
-  //   @Args('payrollPeriodId') payrollPeriodId: number,
-  // ): Promise<PaymentProcessingSummary> {
-  //   // TODO: Implementar en PaymentProcessingService
-  //   throw new Error('Not implemented yet');
-  // }
-
-  // @Roles(Role.PRINCIPAL, Role.ADMIN, Role.MANAGER)
-  // @UseGuards(AccessTokenAuthGuard, RoleGuard)
-  // @Query('processedPayments')
-  // async getProcessedPayments(
-  //   @CurrentUser() user: JWTPayload,
-  //   @Args('payrollPeriodId') payrollPeriodId: number,
-  //   @Opts({ arg: 'options' }) options?: ListOptions,
-  // ): Promise<PaymentProcessingSummary> {
-  //   // TODO: Implementar en PaymentProcessingService
-  //   throw new Error('Not implemented yet');
-  // }
-
-  // ==================== MUTATIONS (Implementadas) ====================
-
   @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
   @UseGuards(AccessTokenAuthGuard, RoleGuard)
   @Mutation('processPeriodPayments')
@@ -115,29 +88,4 @@ export class PaymentProcessingResolver {
   }> {
     return this.paymentProcessingService.rollbackSalePayments(input, user);
   }
-
-  // ==================== MUTATIONS (Comentadas por ahora) ====================
-
-  // @Roles(Role.PRINCIPAL, Role.ADMIN)
-  // @UseGuards(AccessTokenAuthGuard, RoleGuard)
-  // @Mutation('approvePayments')
-  // async approvePayments(
-  //   @CurrentUser() user: JWTPayload,
-  //   @Args('paymentIds', { type: () => [Number] }) paymentIds: number[],
-  // ): Promise<number> {
-  //   // TODO: Implementar en PaymentProcessingService
-  //   throw new Error('Not implemented yet');
-  // }
-
-  // @Roles(Role.PRINCIPAL, Role.ADMIN)
-  // @UseGuards(AccessTokenAuthGuard, RoleGuard)
-  // @Mutation('rejectPayments')
-  // async rejectPayments(
-  //   @CurrentUser() user: JWTPayload,
-  //   @Args('paymentIds', { type: () => [Number] }) paymentIds: number[],
-  //   @Args('reason') reason: string,
-  // ): Promise<number> {
-  //   // TODO: Implementar en PaymentProcessingService
-  //   throw new Error('Not implemented yet');
-  // }
 }

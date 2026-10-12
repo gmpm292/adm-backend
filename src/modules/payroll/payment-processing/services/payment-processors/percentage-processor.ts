@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { CurrencyService } from '../../../currency/services/currency.service';
 import { soldLines } from '../../helpers/sold-lines.helper';
+import { onlyRuleWorkers } from '../../helpers/rule-workers.helper';
 import { EntityManager } from 'typeorm';
 import { BasePaymentProcessor } from './base-processor';
 
@@ -47,7 +48,8 @@ export class PercentageProcessor extends BasePaymentProcessor {
    * la venta; con reparto (o si el tipo no es AGENT ni PUBLICIST): entre los
    * trabajadores del tipo y ámbito de la regla (el ámbito se toma del
    * vendedor) presentes o con retraso el día de la venta y que cuentan para el
-   * reparto. Solo calcula: los pagos los crea `RealTimePaymentService`.
+   * reparto. Si la regla tiene `specificWorkers`, solo cuentan ellos. Solo
+   * calcula: los pagos los crea `RealTimePaymentService`.
    */
   async realTimeCalculate(
     rule: PaymentRule,
@@ -98,8 +100,10 @@ export class PercentageProcessor extends BasePaymentProcessor {
 
     // 3. OBTENER WORKERS QUE APLICAN A ESTA REGLA
     let applicableWorkers: Worker[] = [];
+    // Los tipos distintos de AGENT y PUBLICIST siempre reparten
+    let distributeProfits = rule.distributeProfits;
 
-    if (!rule.distributeProfits) {
+    if (!distributeProfits) {
       // DISTRIBUTE_PROFITS = FALSE
       if (rule.workerType === WorkerType.AGENT) {
         // Solo el agente que vendió
@@ -122,12 +126,11 @@ export class PercentageProcessor extends BasePaymentProcessor {
         applicableWorkers = Array.from(publicists.values());
       } else {
         // Otros tipos de workers: forzar distribución
-        // (cambia el objeto `rule` recibido, no la regla guardada)
-        rule.distributeProfits = true;
+        distributeProfits = true;
       }
     }
 
-    if (rule.distributeProfits) {
+    if (distributeProfits) {
       // DISTRIBUTE_PROFITS = TRUE
       // Buscar todos los workers del mismo tipo que tengan asistencia
       const filters: any[] = [
@@ -136,11 +139,6 @@ export class PercentageProcessor extends BasePaymentProcessor {
           operator: ConditionalOperator.EQUAL,
           value: rule.workerType,
         },
-        // {
-        //   property: 'isActive',
-        //   operator: ConditionalOperator.EQUAL,
-        //   value: 'true',
-        // },
       ];
 
       if (rule.workerType === WorkerType.OTHER && rule.otherType) {
@@ -231,6 +229,7 @@ export class PercentageProcessor extends BasePaymentProcessor {
         }
       }
     }
+    applicableWorkers = onlyRuleWorkers(rule, applicableWorkers);
 
     if (applicableWorkers.length === 0) {
       return {
@@ -241,7 +240,7 @@ export class PercentageProcessor extends BasePaymentProcessor {
           ruleType: rule.paymentType,
           totalAmount: 0,
           totalWorkers: 0,
-          distributeProfitsApplied: rule.distributeProfits,
+          distributeProfitsApplied: distributeProfits,
           baseCalculation: {
             amount: baseAmount,
             currency: rule.paymentCurrency,
@@ -326,7 +325,7 @@ export class PercentageProcessor extends BasePaymentProcessor {
         ruleType: rule.paymentType,
         totalAmount: baseAmount,
         totalWorkers: applicableWorkers.length,
-        distributeProfitsApplied: rule.distributeProfits,
+        distributeProfitsApplied: distributeProfits,
         baseCalculation: {
           amount: baseAmount,
           currency: rule.paymentCurrency,

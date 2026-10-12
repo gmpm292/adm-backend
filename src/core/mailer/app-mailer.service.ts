@@ -102,35 +102,6 @@ export class AppMailerService implements IAppMailer {
     }
   }
 
-  /**
-   * Bienvenida a un cliente. Nadie la llama hoy; usa `FRONTEND_URL`, que no
-   * está entre las variables declaradas.
-   */
-  public async notifyCustomerCreation(user: User): Promise<any> {
-    try {
-      const templateId = 'customer-welcome';
-      const loginLink = `${process.env.FRONTEND_URL}/login`;
-
-      const context = {
-        name: user.name,
-        lastName: user.lastName,
-        email: user.email,
-        companyName: user.business?.name || 'Nuestra compañía',
-        loginLink,
-        temporaryPassword: user.password, // Solo si se envía contraseña temporal
-      };
-
-      return await this.emailService.sendEmail({
-        to: user.email,
-        templateId,
-        context,
-      } as SendEmailInput);
-    } catch (error) {
-      console.error('Failed to send customer creation email', error);
-      throw error;
-    }
-  }
-
   /** Correo libre (asunto y texto), sin plantilla. */
   public async notifyUserGeneral(
     email: string,

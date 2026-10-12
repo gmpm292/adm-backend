@@ -86,8 +86,9 @@ export class WorkScheduleGeneratorService {
   /**
    * Verifica y completa la planificación del próximo año si es necesario
    * Se ejecuta mensualmente para asegurar que el próximo año esté planificado
-   * (solo de octubre en adelante). Con menos de 52 semanas borra lo que haya
-   * de ese año (sin filtrar por oficina) y lo regenera sin oficina.
+   * (solo de octubre en adelante). Con menos de 52 semanas borra lo que este
+   * generador creó para ese año y lo regenera; los horarios de una empresa u
+   * oficina no se tocan.
    */
   async verifyAndCompleteNextYearPlanning(): Promise<number> {
     try {
@@ -143,7 +144,9 @@ export class WorkScheduleGeneratorService {
   }
 
   /**
-   * Obtiene los horarios existentes para un año específico
+   * Horarios del año de esa oficina o, sin oficina, los que crea este
+   * generador (sin oficina ni empresa): nunca los que se crearon a mano para
+   * una empresa u oficina.
    */
   private async getExistingSchedulesForYear(
     year: number,
@@ -152,8 +155,6 @@ export class WorkScheduleGeneratorService {
     const startDate = new Date(year, 0, 1); // 1 de enero del año
     const endDate = new Date(year, 11, 31); // 31 de diciembre del año
 
-    // Esta implementación depende de cómo esté implementado tu baseFind
-    // Ajusta según tu implementación específica
     const result = await this.workScheduleService.find({
       filters: [
         {
@@ -174,7 +175,18 @@ export class WorkScheduleGeneratorService {
                 value: officeId.toString(),
               },
             ]
-          : []),
+          : [
+              {
+                property: 'office.id',
+                operator: ConditionalOperator.IS_NULL,
+                value: '',
+              },
+              {
+                property: 'business.id',
+                operator: ConditionalOperator.IS_NULL,
+                value: '',
+              },
+            ]),
       ],
       take: 100, // Suficiente para todas las semanas del año
     });
@@ -226,15 +238,5 @@ export class WorkScheduleGeneratorService {
     }
 
     return weeks;
-  }
-
-  /**
-   * Método para obtener el número de semana de una fecha
-   */
-  private getWeekNumber(date: Date): number {
-    const firstDayOfYear = new Date(date.getFullYear(), 0, 1);
-    const pastDaysOfYear =
-      (date.getTime() - firstDayOfYear.getTime()) / 86400000;
-    return Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
   }
 }

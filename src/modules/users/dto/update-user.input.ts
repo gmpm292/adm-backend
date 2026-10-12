@@ -23,10 +23,6 @@ export class UpdateUserInput extends CreateSecurityBaseInput {
   @IsOptional()
   public confirmationToken?: string;
 
-  // Only used in Typescript. From graphql is not allowed update password using input UpdateUserInput
-  @IsOptional()
-  public password?: string;
-
   @IsOptional()
   @IsString()
   @MinLength(3)

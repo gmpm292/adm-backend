@@ -41,9 +41,19 @@ export const Opts = createParamDecorator(
       assertSafeListOptions(args[data.arg]);
       await validateFilters(data, args, requestedFields);
 
+      // Los filtros del cliente van en un solo grupo (entre paréntesis): los
+      // que añaden después los servicios (alcance, propias...) van con AND y
+      // un OR del cliente no debe saltárselos (`A OR B AND alcance`).
+      const clientFilters = args[data.arg].filters;
+      const filters =
+        Array.isArray(clientFilters) && clientFilters.length > 0
+          ? [{ filters: clientFilters }]
+          : clientFilters;
+
       // Validate obj ListOptions.
       const opts = plainToClass(ListOptions, {
         ...args[data.arg],
+        filters,
         requestedFields,
         requestedFieldsMap,
       });
@@ -81,7 +91,7 @@ async function validateFilters(
   if (data.class) {
     keysNotAllowedByClass = await validateWithClass(data, args);
   }
-  let keysNotAllowed;
+  let keysNotAllowed: string[] = [];
   if (data.dto && data.class) {
     keysNotAllowed = keysNotAllowedByDto.filter((item) =>
       keysNotAllowedByClass.includes(item),

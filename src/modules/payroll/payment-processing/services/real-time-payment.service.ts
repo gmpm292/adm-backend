@@ -103,6 +103,7 @@ export class RealTimePaymentService {
         cu,
         [ScopedAccessEnum.BUSINESS],
         manager,
+        sale.business?.id ?? cu?.businessId,
       ));
 
     // 1. Lo calculado antes: se respeta lo pagado, el resto se rehace

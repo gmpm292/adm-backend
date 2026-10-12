@@ -16,6 +16,7 @@ import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
 import { ScopedAccessService } from '../../../scoped-access/services/scoped-access.service';
 import { UsersService } from '../../../users/services/users.service';
 import { SALE_SCOPES } from '../../sale/helpers/sale-scopes';
+import { Role } from '../../../../core/enums/role.enum';
 
 // Datos que identifican a una persona: no se repiten dentro de una empresa.
 const UNIQUE_FIELDS = [
@@ -76,12 +77,11 @@ export class CustomerService extends BaseService<Customer> {
       loyaltyPoints: input.loyaltyPoints || 0,
     } as unknown as Customer;
 
-    await this.assertUnique(
-      customer,
-      createCustomerInput.businessId,
-      undefined,
-      manager,
-    );
+    // La empresa que tendrá el cliente: la del usuario; SUPER elige la suya.
+    const businessId = cu?.role?.includes(Role.SUPER)
+      ? createCustomerInput.businessId
+      : (cu?.businessId ?? createCustomerInput.businessId);
+    await this.assertUnique(customer, businessId, undefined, manager);
 
     if (userId) {
       customer.user = await this.userService.findOne(

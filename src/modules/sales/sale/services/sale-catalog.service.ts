@@ -102,7 +102,11 @@ export class SaleCatalogService {
     const [products, workers, activeCurrencies] = await Promise.all([
       this.manager.find(Product, {
         where: inStore<Product>(),
-        relations: { category: true, unitOfMeasure: true, inventories: true },
+        relations: {
+          category: true,
+          unitOfMeasure: true,
+          inventories: { office: true },
+        },
         order: { name: 'ASC' },
       }),
       this.manager.find(Worker, {
@@ -127,10 +131,10 @@ export class SaleCatalogService {
         categoryId: product.category?.id ?? null,
         categoryName: product.category?.name ?? null,
         unit: product.unitOfMeasure?.symbol ?? null,
-        stock: (product.inventories ?? []).reduce(
-          (sum, inventory) => sum + inventory.currentStock,
-          0,
-        ),
+        // Solo el stock de la tienda: la venta reserva de sus inventarios.
+        stock: (product.inventories ?? [])
+          .filter((inventory) => inventory.office?.id === office.id)
+          .reduce((sum, inventory) => sum + inventory.currentStock, 0),
         baseCurrency: product.baseCurrency,
         prices: paymentOptions.map((option) => ({
           currency: option.currency,

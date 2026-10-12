@@ -44,7 +44,6 @@ import { saveQuerys } from './helpers/saveQuerys.helper';
         configService: ConfigService,
       ) => ({
         transformSchema: async (schema: GraphQLSchema) => {
-          // eslint-disable-next-line @typescript-eslint/await-thenable
           await saveQuerys(schema, loggerService, configService);
           return schema;
         },
@@ -59,11 +58,7 @@ import { saveQuerys } from './helpers/saveQuerys.helper';
         resolvers: { JSON: new JsonScalar() },
         customScalarTypeMapping: { DateTime: 'Date' },
 
-        //playground: playground(loggerService, configService),
-        playground: true,
-        // plugins: playground(loggerService, configService)
-        //   ? [ApolloServerPluginLandingPageLocalDefault()]
-        //   : [],
+        playground: playground(loggerService, configService),
         introspection: introspection(loggerService, configService),
         cors: {
           credentials: true,

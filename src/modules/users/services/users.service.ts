@@ -410,14 +410,6 @@ export class UsersService extends BaseService<User> {
     }
   }
 
-  /** Listado sin filtros de rol ni de cuenta del sistema. Sin uso. */
-  public findCustomers(options?: ListOptions): Promise<ListSummary> {
-    return super.baseFind({
-      options,
-      relationsToLoad: ['office', 'department', 'team'],
-    });
-  }
-
   /**
    * Usuario por correo (exacto), con su lugar en la empresa y sus tokens de
    * confirmación. Lanza 404 si no existe.
@@ -442,17 +434,10 @@ export class UsersService extends BaseService<User> {
     return user;
   }
 
-  /** Usuarios que tienen el rol. Sin uso. */
-  public async findByRole(role: Role): Promise<User[]> {
-    return await this.usersRepository
-      .createQueryBuilder()
-      .where(`:role = ANY (u.role)`, { role })
-      .getMany();
-  }
-
   /**
    * Usuario por id con su lugar en la empresa y sus tokens de confirmación.
-   * Solo aplica `filters`: `cu`, `scopes` y `manager` no se usan.
+   * Aplica `filters` y, si llega `cu`, su alcance (`scopes`), como
+   * `baseFindOne`.
    */
   public async findOne(
     id: number,
@@ -461,8 +446,25 @@ export class UsersService extends BaseService<User> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<User> {
-    const user = await this.usersRepository.findOne({
-      where: { id, ...filters },
+    const repository = manager?.getRepository(User) ?? this.usersRepository;
+    let where: FindOptionsWhere<User> | FindOptionsWhere<User>[] = {
+      id,
+      ...filters,
+    };
+    if (cu) {
+      // Las alternativas del alcance valen con OR (como en `baseFindOne`)
+      const scopeFilters = this.scopedAccessService.forBaseFindOne(
+        cu,
+        repository,
+        scopes,
+      );
+      if (scopeFilters.length) {
+        const base = where;
+        where = scopeFilters.map((scope) => ({ ...base, ...scope }));
+      }
+    }
+    const user = await repository.findOne({
+      where,
       relations: {
         business: true,
         office: true,
@@ -523,13 +525,6 @@ export class UsersService extends BaseService<User> {
     manager?: EntityManager,
   ): Promise<number> {
     return super.baseRestoreDeletedMany({ ids, manager, cu, scopes });
-  }
-
-  /** Borra físicamente todos los usuarios. Sin uso. */
-  public async removeAll(): Promise<boolean> {
-    const deleteResult = await this.usersRepository.delete({});
-
-    return Boolean(deleteResult.affected);
   }
 
   /** Guarda el SHA-256 del refresh token; con `null` lo anula. */
@@ -775,15 +770,6 @@ export class UsersService extends BaseService<User> {
     } as unknown as User;
 
     user.fullName = this.buildFullName(user.name, user.lastName);
-
-    // if password has value, it must be hashed
-    // Ojo: se cifra en `updateUserInput`, pero lo que se guarda es `user`, que
-    // no lleva contraseña: aquí la contraseña no cambia.
-    if (updateUserInput.password) {
-      Object.assign(updateUserInput, {
-        password: await hash(updateUserInput.password, 10),
-      });
-    }
 
     if (updateUserInput.email && savedUser.email != updateUserInput.email) {
       await this.validateUniqueEmail({ ...savedUser, ...rest });
@@ -1282,24 +1268,5 @@ export class UsersService extends BaseService<User> {
         'The mobile of this user already exists, but this user is deleted',
       );
     }
-  }
-
-  /** Usuario con rol exactamente `{USER}` (cliente de la app). Sin uso. */
-  public async findOneCustomer(id: number): Promise<User> {
-    const user = await this.usersRepository.findOne({
-      where: { id, role: `{USER}` as Role },
-      relations: {
-        office: true,
-        department: true,
-        team: true,
-        notificationLogs: true,
-      },
-    });
-
-    if (!user) {
-      throw new NotFoundError();
-    }
-
-    return user;
   }
 }

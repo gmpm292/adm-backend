@@ -90,11 +90,7 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
     // Apply scope filters if user and scopes are provided.
     const scopeFilters =
       cu && this.scopedAccessService
-        ? await this.scopedAccessService.forBaseFind(
-            cu,
-            this.repository,
-            scopes,
-          )
+        ? this.scopedAccessService.forBaseFind(cu, this.repository, scopes)
         : [];
 
     // Merge scope filters with existing options.
@@ -176,17 +172,16 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
 
     const entityName = this.getEntityName();
 
-    const where: FindOptionsWhere<Entity> = { id } as FindOptionsWhere<Entity>;
+    let where: FindOptionsWhere<Entity> | FindOptionsWhere<Entity>[] = {
+      id,
+    } as FindOptionsWhere<Entity>;
     if (cu && this.scopedAccessService) {
       const scopeFilters = this.scopedAccessService.forBaseFindOne(
         cu,
         repository,
         scopes,
       );
-
-      if (scopeFilters.length > 0) {
-        Object.assign(where, ...scopeFilters);
-      }
+      where = this.withScopeAlternatives(where, scopeFilters);
     }
     const findOptions: FindOneOptions<Entity> = {
       where,
@@ -233,7 +228,9 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
     const entityName = this.getEntityName();
 
     // Start with base filters
-    const where: FindOptionsWhere<Entity> = { ...filters };
+    let where: FindOptionsWhere<Entity> | FindOptionsWhere<Entity>[] = {
+      ...filters,
+    };
 
     if (cu && this.scopedAccessService && scopes?.length) {
       const scopeFilters = this.scopedAccessService.forBaseFindOne(
@@ -241,7 +238,7 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
         repository,
         scopes,
       );
-      Object.assign(where, ...scopeFilters);
+      where = this.withScopeAlternatives(where, scopeFilters);
     }
 
     const data = await repository.findOne({
@@ -288,7 +285,7 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
     const entityName = this.getEntityName();
 
     // Prepare base where condition
-    const where: FindOptionsWhere<Entity> = {
+    let where: FindOptionsWhere<Entity> | FindOptionsWhere<Entity>[] = {
       id: In(ids),
     } as FindOptionsWhere<Entity>;
 
@@ -300,11 +297,7 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
         repository,
         scopes,
       );
-
-      if (scopeFilters.length > 0) {
-        // Merge all scope filters with AND logic
-        Object.assign(where, ...scopeFilters);
-      }
+      where = this.withScopeAlternatives(where, scopeFilters);
     }
 
     // Execute query with combined conditions
@@ -565,5 +558,19 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
 
   public getRepository() {
     return this.repository;
+  }
+
+  /**
+   * `forBaseFindOne` devuelve alternativas (GENERAL, PERSONAL, jerárquico)
+   * que valen con OR, como en `baseFind`: cada una se combina con la
+   * condición base y TypeORM une con OR los elementos del array. Mezclarlas
+   * en un objeto las cruzaba con AND (y una pisaba las claves de otra).
+   */
+  private withScopeAlternatives(
+    where: FindOptionsWhere<Entity>,
+    scopeFilters: FindOptionsWhere<Entity>[],
+  ): FindOptionsWhere<Entity> | FindOptionsWhere<Entity>[] {
+    if (scopeFilters.length === 0) return where;
+    return scopeFilters.map((scope) => ({ ...where, ...scope }));
   }
 }

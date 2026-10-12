@@ -204,7 +204,9 @@ export class InventoryMovementService extends BaseService<InventoryMovement> {
     manager?: EntityManager,
   ): Promise<InventoryMovement[]> {
     await this.inventoryService.findOne(inventoryId, cu, scopes, manager);
-    return this.movementRepository.find({
+    const repository =
+      manager?.getRepository(InventoryMovement) ?? this.movementRepository;
+    return repository.find({
       where: { inventory: { id: inventoryId } },
       relations: ['inventory', 'user'],
       order: { createdAt: 'DESC' },

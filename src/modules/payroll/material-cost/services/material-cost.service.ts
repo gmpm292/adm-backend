@@ -54,7 +54,13 @@ export class MaterialCostService extends BaseService<MaterialCost> {
   ): Promise<MaterialCost> {
     const { unitOfMeasureId, currency, ...rest } = createMaterialCostInput;
     const name = rest.name.trim();
-    await this.checkUniqueName(name, rest.businessId ?? cu?.businessId);
+    await this.checkUniqueName(
+      name,
+      rest.businessId ?? cu?.businessId,
+      undefined,
+      true,
+      manager,
+    );
     await this.validateUnitOfMeasure(unitOfMeasureId, manager);
     const curr = await this.validateCurrency(currency, manager);
 
@@ -131,7 +137,13 @@ export class MaterialCostService extends BaseService<MaterialCost> {
     } = updateMaterialCostInput;
 
     if (name !== undefined) {
-      await this.checkUniqueName(name.trim(), current.business?.id, id);
+      await this.checkUniqueName(
+        name.trim(),
+        current.business?.id,
+        id,
+        true,
+        manager,
+      );
     }
     if (unitOfMeasureId !== undefined) {
       await this.validateUnitOfMeasure(unitOfMeasureId, manager);
@@ -222,6 +234,7 @@ export class MaterialCostService extends BaseService<MaterialCost> {
         materialCost.business?.id,
         materialCost.id,
         false,
+        manager,
       );
     }
 
@@ -293,8 +306,11 @@ export class MaterialCostService extends BaseService<MaterialCost> {
     businessId?: number,
     exceptId?: number,
     includeDeleted = true,
+    manager?: EntityManager,
   ) {
-    const query = this.materialCostRepository
+    const query = (
+      manager?.getRepository(MaterialCost) ?? this.materialCostRepository
+    )
       .createQueryBuilder('m')
       .where('lower(m.name) = lower(:name)', { name })
       .andWhere(

@@ -84,8 +84,8 @@ export class RoleGuardService
   }
 
   /**
-   * Registra la operación si no existe (si ya existe devuelve `undefined`).
-   * No recarga la lista en memoria.
+   * Registra la operación si no existe (si ya existe devuelve `undefined`) y
+   * recarga la lista en memoria.
    */
   async create(
     createRoleGuardInput: CreateRoleGuardInput,
@@ -102,12 +102,13 @@ export class RoleGuardService
         ],
       })
     ).totalCount;
-    if (cuantity == 0)
-      return super.baseCreate({
-        data: createRoleGuardInput,
-        uniqueFields: ['queryOrEndPointURL'],
-      });
-    return undefined;
+    if (cuantity > 0) return undefined;
+    const created = await super.baseCreate({
+      data: createRoleGuardInput,
+      uniqueFields: ['queryOrEndPointURL'],
+    });
+    await this.loadRoleGuardEntity();
+    return created;
   }
 
   /** Lista de la base, con lo que dice el código de cada operación. */
@@ -161,11 +162,6 @@ export class RoleGuardService
     });
     await this.loadRoleGuardEntity();
     return this.findOneInDB(id);
-  }
-
-  /** Elimina filas. No recarga la lista en memoria; ningún resolver lo usa. */
-  async remove(ids: number[]): Promise<RoleGuardEntity[]> {
-    return super.baseDeleteMany({ ids });
   }
 
   /** Añade a la fila `usesRoleGuard` y `codeRoles` (`@Roles` del código). */

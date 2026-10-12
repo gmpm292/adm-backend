@@ -98,7 +98,7 @@ export class StatisticsService {
     ] = await Promise.all([
       this.salesTotals(scope, period, currency),
       this.salesTotals(scope, previous, currency),
-      this.salesByStatus(scope, period),
+      this.salesByStatus(scope, period, currency),
       this.revenueSeries(scope, period, currency),
       this.lowStock(scope),
       this.lowStockCount(scope),
@@ -167,7 +167,7 @@ export class StatisticsService {
       this.sellerRanking(scope, period, currency),
       this.customerRanking(scope, period, currency),
       this.paymentMethods(scope, period, currency),
-      this.salesByStatus(scope, period),
+      this.salesByStatus(scope, period, currency),
       this.customerMix(scope, period, currency),
     ]);
 
@@ -404,14 +404,19 @@ export class StatisticsService {
   }
 
   /**
-   * Ventas del periodo por estado. El importe suma `totalAmount` sin mirar la
-   * moneda ni restar devoluciones: solo sirve como recuento.
+   * Ventas del periodo por estado, en cualquier moneda. El importe es el neto
+   * de devoluciones y solo suma las ventas en la moneda informada.
    */
-  private async salesByStatus(scope: Scope, period: Period) {
+  private async salesByStatus(
+    scope: Scope,
+    period: Period,
+    currency: string | null,
+  ) {
     const params = new QueryParams();
     const rows = await this.query(
       `SELECT s."saleStatus" AS key, count(*) AS count,
-              COALESCE(sum(s."totalAmount"), 0) AS amount
+              COALESCE(sum(s."totalAmount" - COALESCE(s."refundedAmount", 0))
+                FILTER (WHERE s."totalAmountCurrency" = ${params.add(currency)}), 0) AS amount
          FROM sl_sales s
         WHERE ${this.salesInPeriodSql(scope, period, params)}
         GROUP BY 1

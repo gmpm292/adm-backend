@@ -111,6 +111,7 @@ export class SaleDetailService extends BaseService<SaleDetail> {
       );
     }
 
+    // El stock sale de los inventarios de la tienda de la venta.
     const reservationId = await this.productService.validateAndReserveStock(
       productId,
       quantity,
@@ -119,10 +120,12 @@ export class SaleDetailService extends BaseService<SaleDetail> {
       cu,
       STOCK_SCOPES,
       manager,
+      undefined,
+      sale.office?.id,
     );
 
     const publicists = publicistIds?.length
-      ? await this.findPublicistsByIds(publicistIds, manager)
+      ? await this.findPublicistsByIds(publicistIds, cu, manager)
       : [];
 
     const saleDetail: SaleDetail = {
@@ -368,6 +371,8 @@ export class SaleDetailService extends BaseService<SaleDetail> {
             cu,
             STOCK_SCOPES,
             manager,
+            undefined,
+            sale.office?.id,
           );
         updateData.product = product;
         updateData.productSnapshot = this.snapshotOf(product);
@@ -381,6 +386,7 @@ export class SaleDetailService extends BaseService<SaleDetail> {
           STOCK_SCOPES,
           manager,
           saleDetail.reservationId,
+          sale.office?.id,
         );
       } else {
         await this.productService.releaseStock(
@@ -398,7 +404,7 @@ export class SaleDetailService extends BaseService<SaleDetail> {
     // Un arreglo vacío quita todos los publicistas.
     if (publicistIds !== undefined) {
       updateData.publicists = publicistIds.length
-        ? await this.findPublicistsByIds(publicistIds, manager)
+        ? await this.findPublicistsByIds(publicistIds, cu, manager)
         : [];
     }
 
@@ -607,13 +613,15 @@ export class SaleDetailService extends BaseService<SaleDetail> {
     const refundCurrency = sale.totalAmountCurrency || 'CUP';
     const repository =
       manager?.getRepository(SaleDetail) ?? this.saleDetailRepository;
+    const refundAmountOf = await this.refundAmountCalculator(
+      sale,
+      refundCurrency,
+      repository,
+    );
     let totalRefundAmount = 0;
 
     for (const detail of details) {
-      totalRefundAmount +=
-        detail.productPaymentOptions?.paymentOptions?.find(
-          (opt) => opt.currency === refundCurrency,
-        )?.total || 0;
+      totalRefundAmount += refundAmountOf(detail);
 
       // Devolver stock al inventario
       await this.productService.releaseStock(
@@ -636,8 +644,54 @@ export class SaleDetailService extends BaseService<SaleDetail> {
     return {
       saleId: sale.id as number,
       refundedDetails: details,
-      totalRefundAmount,
+      totalRefundAmount: Math.round(totalRefundAmount * 100) / 100,
       currency: refundCurrency,
+    };
+  }
+
+  /**
+   * Importe que se devuelve de una línea, en la moneda de la venta: su precio
+   * en esa moneda o, en las líneas antiguas que no lo guardaron, su parte del
+   * total cobrado en proporción a su precio base. Si sus líneas no comparten
+   * moneda base no hay proporción posible y lanza.
+   */
+  private async refundAmountCalculator(
+    sale: Sale,
+    refundCurrency: string,
+    repository: Repository<SaleDetail>,
+  ): Promise<(detail: SaleDetail) => number> {
+    const soldLines = await repository.find({
+      where: {
+        sale: { id: sale.id },
+        saleDetailStatus: In([
+          SaleDetailStatus.CONFIRMED,
+          SaleDetailStatus.REFUNDED,
+        ]),
+      },
+    });
+    const bases = soldLines.map((line) =>
+      lineAmounts(line.productPaymentOptions),
+    );
+    const baseCurrency = bases[0]?.currency;
+    const baseTotal = bases.reduce((sum, b) => sum + (b.subtotal ?? 0), 0);
+    const proportional =
+      !!baseCurrency &&
+      baseTotal > 0 &&
+      bases.every((b) => b.currency === baseCurrency && b.subtotal != null);
+
+    return (detail) => {
+      const option = detail.productPaymentOptions?.paymentOptions?.find(
+        (opt) => opt.currency === refundCurrency,
+      );
+      if (option) return Number(option.total) || 0;
+
+      const base = lineAmounts(detail.productPaymentOptions);
+      if (!proportional || base.currency !== baseCurrency) {
+        throw new BadRequestError(
+          `No se puede calcular cuánto se devuelve de "${detail.product?.name}" en ${refundCurrency}`,
+        );
+      }
+      return (Number(sale.totalAmount) * (base.subtotal as number)) / baseTotal;
     };
   }
 
@@ -677,18 +731,24 @@ export class SaleDetailService extends BaseService<SaleDetail> {
   }
 
   /**
-   * Trabajadores publicistas por id; si falta alguno, NotFoundError con los
-   * que no existen. No comprueba la empresa del trabajador.
+   * Trabajadores publicistas por id; si falta alguno o es de otra empresa,
+   * NotFoundError con los que no se encuentran.
    */
   private async findPublicistsByIds(
     publicistIds: number[],
+    cu?: JWTPayload,
     manager?: EntityManager,
   ): Promise<Worker[]> {
     const ids = [...new Set(publicistIds)];
     const repository = manager?.getRepository(Worker) ?? this.workerRepository;
-    const publicists = await repository.find({ where: { id: In(ids) } });
+    // Nunca un trabajador de otra empresa (como el vendedor y el mensajero).
+    const publicists = await repository.find({
+      where: {
+        id: In(ids),
+        ...(cu?.businessId && { business: { id: cu.businessId } }),
+      },
+    });
 
-    // Validar que se encontraron todos los publicistas solicitados
     if (publicists.length !== ids.length) {
       const foundIds = publicists.map((p) => p.id);
       const missingIds = ids.filter((id) => !foundIds.includes(id));

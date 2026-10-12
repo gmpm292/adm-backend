@@ -96,15 +96,7 @@ export class TelegramWebhooksService {
 
         // Mensajes regulares
         bot.on('message', (msg) => {
-          if (
-            !msg.text?.startsWith('/') &&
-            !msg.reply_to_message?.text &&
-            !/^\(.{2,5}\).*$/.test(msg.reply_to_message?.text || '')
-          ) {
-            const a =
-              msg.reply_to_message?.text &&
-              /^\(.{2,5}\).*$/.test(msg.reply_to_message.text);
-            console.log('a', a);
+          if (!msg.text?.startsWith('/') && !msg.reply_to_message?.text) {
             this.regularMessage
               .execute(bot, msg)
               .catch((err) =>
@@ -114,22 +106,6 @@ export class TelegramWebhooksService {
               );
           }
         });
-        // // Mensajes regulares
-        // bot.on('message', (msg) => {
-        //   // Verificar si es un mensaje de respuesta (reply) y cumple con el patrón
-        //   if (
-        //     msg.reply_to_message?.text &&
-        //     /^\(.{2,5}\).*$/.test(msg.reply_to_message.text)
-        //   ) {
-        //     this.regularMessage
-        //       .execute(bot, msg)
-        //       .catch((err) =>
-        //         this.logger.error(
-        //           `Error al manejar mensaje regular: ${err.message}`,
-        //         ),
-        //       );
-        //   }
-        // });
 
         this.logger.log(`Handlers configurados para bot: ${botName}`);
       } catch (error) {
@@ -141,8 +117,8 @@ export class TelegramWebhooksService {
   }
 
   /**
-   * Entrega al bot `botName` un update recibido por el webhook. No comprueba
-   * el `TELEGRAM_SECRET_TOKEN` de la cabecera.
+   * Entrega al bot `botName` un update recibido por el webhook (el
+   * controlador ya comprobó el `TELEGRAM_SECRET_TOKEN` de la cabecera).
    */
   handleUpdate(botName: string, update: TelegramBot.Update): void {
     const bot = this.bots.get(botName);

@@ -6,7 +6,6 @@ import { UpdatePaymentRuleInput } from '../dto/update-payment-rule.input';
 import { BaseService } from '../../../../core/services/base.service';
 import { PaymentRule } from '../entities/payment-rule.entity';
 import {
-  ListFilter,
   ListOptions,
   ListSummary,
 } from '../../../../core/graphql/remote-operations';
@@ -18,9 +17,6 @@ import { PaymentType } from '../enums/payment-type.enum';
 import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
 import { Conditions } from '../types/conditions.type';
 import { ConditionsInput } from '../dto/conditions/conditions-input.dto';
-import { ConditionalOperator } from '../../../../core/graphql/remote-operations/enums/conditional-operation.enum';
-import { LogicalOperator } from '../../../../core/graphql/remote-operations/enums/logical-operator.enum';
-import { WorkerType } from '../../worker/enums/worker-type.enum';
 import { ProductService } from '../../../inventory/product/services/product.service';
 import { CategoryService } from '../../../inventory/category/services/category.service';
 import { WorkerService } from '../../worker/services/worker.service';
@@ -289,8 +285,8 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
 
   /**
    * Cambia solo los campos que llegan. Cambiar el tipo exige condiciones
-   * nuevas; `productId`/`categoryId` vacíos quitan el vínculo. Una lista
-   * vacía de `specificWorkersIds` no borra los trabajadores ya asignados.
+   * nuevas; `productId`/`categoryId` vacíos quitan el vínculo, y una lista
+   * vacía de `specificWorkersIds` deja la regla para todos los de su tipo.
    */
   async update(
     id: number,
@@ -342,18 +338,17 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
       paymentRule.otherType = updatePaymentRuleInput.otherType;
     }
 
-    // Process specific workers if provided
-    if (
-      updatePaymentRuleInput.specificWorkersIds &&
-      updatePaymentRuleInput.specificWorkersIds.length > 0
-    ) {
-      const workers = await this.workerService.baseFindByIds({
-        ids: updatePaymentRuleInput.specificWorkersIds,
-        cu,
-        scopes,
-        manager,
-      });
-      paymentRule.specificWorkers = workers;
+    // Trabajadores concretos: una lista vacía (o null) los quita todos
+    if (updatePaymentRuleInput.specificWorkersIds !== undefined) {
+      const ids = updatePaymentRuleInput.specificWorkersIds ?? [];
+      paymentRule.specificWorkers = ids.length
+        ? await this.workerService.baseFindByIds({
+            ids,
+            cu,
+            scopes,
+            manager,
+          })
+        : [];
     }
 
     // Update product if provided
@@ -439,100 +434,5 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
       scopes,
       manager,
     });
-  }
-
-  /**
-   * Reglas activas cuyo `workerType` u `otherType` coincide con los dados.
-   * No elimina duplicados ni prioriza. Hoy no lo usa nadie.
-   */
-  async findPaymentRulesByWorkerType(
-    workerType?: WorkerType,
-    otherType?: string,
-    cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
-    manager?: EntityManager,
-  ): Promise<PaymentRule[]> {
-    // Primero buscamos reglas específicas para el workerType
-    const rules = await this.find(
-      {
-        filters: [
-          {
-            property: 'isActive',
-            operator: ConditionalOperator.EQUAL,
-            value: 'true',
-          },
-          {
-            filters: [
-              {
-                property: 'workerType',
-                operator: ConditionalOperator.EQUAL,
-                value: String(workerType),
-                logicalOperator: LogicalOperator.OR,
-              },
-              {
-                property: 'otherType',
-                operator: ConditionalOperator.EQUAL,
-                value: otherType,
-                logicalOperator: LogicalOperator.OR,
-              },
-            ],
-          } as ListFilter,
-        ],
-      },
-      cu,
-      scopes,
-      manager,
-    );
-
-    return rules.data as Array<PaymentRule>;
-  }
-
-  /**
-   * Reglas activas del producto y de la categoría dados (si llegan los dos,
-   * deben cumplirse ambos). Hoy no lo usa nadie.
-   */
-  async findPaymentRulesByProductOrCategory(
-    productId?: number,
-    categoryId?: number,
-    cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
-    manager?: EntityManager,
-  ): Promise<PaymentRule[]> {
-    const filters: ListFilter[] = [
-      {
-        property: 'isActive',
-        operator: ConditionalOperator.EQUAL,
-        value: 'true',
-      },
-    ];
-
-    if (productId) {
-      filters.push({
-        property: 'product.id',
-        operator: ConditionalOperator.EQUAL,
-        value: String(productId),
-        logicalOperator: LogicalOperator.AND,
-      });
-    }
-
-    if (categoryId) {
-      filters.push({
-        property: 'category.id',
-        operator: ConditionalOperator.EQUAL,
-        value: String(categoryId),
-        logicalOperator: LogicalOperator.AND,
-      });
-    }
-
-    const rules = await this.find(
-      {
-        filters,
-      },
-      cu,
-      scopes,
-      manager,
-    );
-
-    return rules.data as Array<PaymentRule>;
   }
 }

@@ -186,10 +186,8 @@ export class ScopedAccessService {
       };
     }
 
-    // Ojo: `{}` es verdadero, así que esto se añade siempre; sin ningún
-    // filtro jerárquico queda `{}`, que no restringe nada, y el error de
-    // abajo nunca llega a lanzarse.
-    if (hierarchicalFilter) {
+    // Un `{}` no restringe nada: solo cuenta si lleva algún nivel.
+    if (Object.keys(hierarchicalFilter).length > 0) {
       filters.push(hierarchicalFilter);
     }
 
@@ -211,11 +209,11 @@ export class ScopedAccessService {
    * Filtros de listado (`ListFilter`) según el alcance efectivo. SUPER no
    * tiene filtros; si no se puede aplicar ninguno, lanza 401.
    */
-  public async forBaseFind<T extends ObjectLiteral>(
+  public forBaseFind<T extends ObjectLiteral>(
     cu: JWTPayload,
     repository: Repository<T>,
     scopes?: ScopedAccessEnum[],
-  ): Promise<ListFilter[]> {
+  ): ListFilter[] {
     const filters: Array<ListFilter> = [];
     const dbScopes: ScopedAccessEnum[] | undefined =
       this.resourceScopedAccessService.findByBusinessAndQueryOrEndpoint(
@@ -246,10 +244,8 @@ export class ScopedAccessService {
       filters.push(companyFilters);
     }
 
-    // RELATED filters
-    if (effectiveScopes.includes(ScopedAccessEnum.RELATED)) {
-      await this.forBaseFindRelatedFilters(cu, repository, filters);
-    }
+    // RELATED no está implementado: no añade filtros, así que con solo ese
+    // nivel se deniega el acceso.
 
     // If no applicable filters and user is not SUPER, deny access.
     if (filters.length === 0 && !cu.role.some((r) => r === Role.SUPER)) {
@@ -407,41 +403,6 @@ export class ScopedAccessService {
     }
 
     return newFilter;
-  }
-
-  /** Alcance RELATED: sin implementar (el cuerpo está comentado). */
-  private async forBaseFindRelatedFilters<T extends ObjectLiteral>(
-    cu: JWTPayload,
-    repository: Repository<T>,
-    filters: ListFilter[],
-  ): Promise<void> {
-    // // 1. Obtener todas las entidades relacionadas con el usuario
-    // const relations = await this.relationService.getRelatedEntitiesForUser(
-    //   cu.sub,
-    // );
-    // if (!relations || relations.length === 0) return;
-    // // 2. Agrupar por tipo de entidad
-    // const entityGroups = relations.reduce(
-    //   (acc, rel) => {
-    //     if (!acc[rel.entityType]) {
-    //       acc[rel.entityType] = [];
-    //     }
-    //     acc[rel.entityType].push(rel.entityId);
-    //     return acc;
-    //   },
-    //   {} as Record<string, number[]>,
-    // );
-    // // 3. Para cada tipo de entidad, crear condición IN
-    // for (const [entityType, ids] of Object.entries(entityGroups)) {
-    //   if (repository.metadata.targetName === entityType && ids.length > 0) {
-    //     filters.push({
-    //       property: 'id',
-    //       operator: ConditionalOperator.IN,
-    //       value: ids.join(','),
-    //       logicalOperator: LogicalOperator.OR,
-    //     });
-    //   }
-    // }
   }
 
   /**

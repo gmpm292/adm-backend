@@ -16,6 +16,7 @@ import { ProductService } from '../../product/services/product.service';
 import { InventoryMovementService } from '../../inventory-movement/services/inventory-movement.service';
 import { ConflictError } from '../../../../core/errors/appErrors/ConflictError.error';
 import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
+import { NotFoundError } from '../../../../core/errors/appErrors/NotFoundError.error';
 import { Business } from '../../../company/business/entities/co_business.entity';
 import { Office } from '../../../company/office/entities/co_office.entity';
 import { Department } from '../../../company/department/entities/co_department.entity';
@@ -232,20 +233,25 @@ export class InventoryService extends BaseService<Inventory> {
   }
 
   /**
-   * Inventarios activos de un producto, del más antiguo al más nuevo. El
-   * alcance se comprueba sobre el producto, no sobre cada inventario.
+   * Inventarios activos de un producto, del más antiguo al más nuevo; con
+   * `officeId`, solo los de esa oficina. El alcance se comprueba sobre el
+   * producto, no sobre cada inventario.
    */
   async findByProduct(
     productId: number,
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
+    officeId?: number,
   ): Promise<Inventory[]> {
     await this.productService.findOne(productId, cu, scopes, manager);
     const repository =
       manager?.getRepository(Inventory) ?? this.inventoryRepository;
     return repository.find({
-      where: { product: { id: productId } },
+      where: {
+        product: { id: productId },
+        ...(officeId && { office: { id: officeId } }),
+      },
       relations: { product: true, office: true },
       order: { createdAt: 'ASC' },
     });
@@ -357,6 +363,9 @@ export class InventoryService extends BaseService<Inventory> {
       scopes,
       manager,
     });
+    if (inventories.length === 0) {
+      throw new NotFoundError('No se encontraron los inventarios');
+    }
 
     const withStock = inventories.find((inventory) => inventory.currentStock);
     if (withStock) {

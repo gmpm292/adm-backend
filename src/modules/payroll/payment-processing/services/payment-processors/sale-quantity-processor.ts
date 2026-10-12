@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { CurrencyService } from '../../../currency/services/currency.service';
 import { soldLines } from '../../helpers/sold-lines.helper';
+import { onlyRuleWorkers } from '../../helpers/rule-workers.helper';
 import { BasePaymentProcessor } from './base-processor';
 import {
   RealTimeCalculationResult,
@@ -43,8 +44,9 @@ export class SaleQuantityProcessor extends BasePaymentProcessor {
    * Numera cada unidad vendida siguiendo el contador del acumulador de cada
    * trabajador en el período; la unidad paga según el escalón más alto cuyo
    * `minProducts` alcanza, dividido entre los trabajadores elegidos (los
-   * mismos que en `PercentageProcessor`). Un trabajador que no suma nada no
-   * sale en el resultado. Solo calcula: los pagos los crea el servicio.
+   * mismos que en `PercentageProcessor`). Un trabajador con unidades pero
+   * sin importe (aún bajo el primer escalón) sale con importe 0 para que sus
+   * unidades se acumulen. Solo calcula: los pagos los crea el servicio.
    */
   async realTimeCalculate(
     rule: PaymentRule,
@@ -146,11 +148,6 @@ export class SaleQuantityProcessor extends BasePaymentProcessor {
           operator: ConditionalOperator.EQUAL,
           value: rule.workerType,
         },
-        // {
-        //   property: 'isActive',
-        //   operator: ConditionalOperator.EQUAL,
-        //   value: 'true',
-        // },
       ];
 
       if (rule.workerType === WorkerType.OTHER && rule.otherType) {
@@ -240,6 +237,7 @@ export class SaleQuantityProcessor extends BasePaymentProcessor {
         }
       }
     }
+    applicableWorkers = onlyRuleWorkers(rule, applicableWorkers);
 
     if (applicableWorkers.length === 0) {
       return {
@@ -314,8 +312,7 @@ export class SaleQuantityProcessor extends BasePaymentProcessor {
     > = new Map();
 
     // Inicializar cálculos para cada worker
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    for (const { worker, currentProductCounter } of workersWithAccumulators) {
+    for (const { worker } of workersWithAccumulators) {
       workerCalculations.set(worker.id as number, {
         totalAmount: 0,
         productCounterIncrement: 0,
@@ -379,8 +376,7 @@ export class SaleQuantityProcessor extends BasePaymentProcessor {
               ? nextCondition.minProducts - 1
               : '∞';
 
-            // Acumular cálculo
-            //workerCalculation.totalAmount += unitAmount;
+            // Acumular cálculo (la unidad se reparte entre los trabajadores)
             const totalApplicableWorkers = applicableWorkers.length;
             const scaledAmount = unitAmount / totalApplicableWorkers;
             workerCalculation.totalAmount += scaledAmount;
@@ -407,8 +403,15 @@ export class SaleQuantityProcessor extends BasePaymentProcessor {
       const workerId = worker.id as number;
       const workerCalculation = workerCalculations.get(workerId);
 
-      // Si el worker no tiene cálculo, continuar
-      if (!workerCalculation || workerCalculation.totalAmount <= 0) continue;
+      // Sin unidades no hay nada que anotar. Por debajo del primer escalón el
+      // importe es 0, pero las unidades sí van al acumulador para llegar al
+      // mínimo (el servicio las anota y no crea pago).
+      if (
+        !workerCalculation ||
+        workerCalculation.productCounterIncrement <= 0
+      ) {
+        continue;
+      }
 
       const finalAmount = workerCalculation.totalAmount; // Ya está escalado desde el paso 6
 

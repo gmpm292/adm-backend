@@ -70,8 +70,9 @@ export class NotificationAccessLevelService {
   }
 
   /**
-   * Filtro para leer una notificación. Hoy solo filtra por id: el alcance por
-   * rol está comentado. Sí valida el lugar del usuario en la empresa.
+   * Filtro para leer una notificación por id. Como en el listado
+   * (`NotificationService.find`), quien no es SUPER solo lee las que creó.
+   * También valida el lugar del usuario en la empresa.
    */
   public async forFindOne(
     currentUser: JWTPayload,
@@ -80,31 +81,10 @@ export class NotificationAccessLevelService {
     const user = await this.findUser(currentUser);
     await this.chekCompanyInfo(user);
 
-    // eslint-disable-next-line prefer-const
-    let filters: FindOptionsWhere<Notification> = { id };
-    // filters;
-
-    // /**
-    //  * add filters
-    //  */
-    // if (user.role.some((r) => r === Role.ADMIN)) {
-    //   filters = {
-    //     ...filters,
-    //     createdBy: { office: { id: user.office.id } },
-    //   };
-    // } else if (user.role.some((r) => r === Role.MANAGER)) {
-    //   filters = {
-    //     ...filters,
-    //     createdBy: { department: { id: user.department.id } },
-    //   };
-    // } else if (user.role.some((r) => r === Role.SUPERVISOR)) {
-    //   filters = {
-    //     ...filters,
-    //     createdBy: { team: { id: user.team.id } },
-    //   };
-    // }
-
-    return filters;
+    if (currentUser.role.some((r) => r === Role.SUPER)) {
+      return { id };
+    }
+    return { id, createdBy: { id: currentUser.sub } };
   }
 
   /**

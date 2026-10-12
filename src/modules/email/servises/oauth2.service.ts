@@ -71,7 +71,6 @@ export class OAuth2Service {
       );
     }
 
-    //const SCOPES = ['https://mail.google.com/'];
     const SCOPES = [
       'https://mail.google.com/',
       'openid', // ← Esto asegura que se incluya el ID Token
@@ -146,14 +145,22 @@ export class OAuth2Service {
     }
   }
 
-  /** Estado del primer token activo, sea o no de `EMAIL_USER`. */
+  /**
+   * Estado del token activo de `EMAIL_USER`, el mismo que busca el envío
+   * (`EmailTransportService`); el de otra cuenta no cuenta.
+   */
   async getCurrentTokenStatus(): Promise<{
     isConfigured: boolean;
     email?: string;
     expiresAt?: Date;
   }> {
+    const userEmail = this.configService.get<string>('EMAIL_USER');
+    if (!userEmail) {
+      return { isConfigured: false };
+    }
+
     const token = await this.oauthTokenRepository.findOne({
-      where: { isActive: true },
+      where: { email: userEmail, isActive: true },
     });
 
     if (!token) {

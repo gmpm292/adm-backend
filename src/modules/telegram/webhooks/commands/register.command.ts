@@ -41,7 +41,7 @@ export class RegisterCommand extends ConversationFlow {
       email: this.handleEmail.bind(this),
       mobile: this.handleMobile.bind(this),
       mobile_contact: this.handleContact.bind(this),
-      confirmation: this.handleConfirmation.bind(this),
+      confirmation: this.askToUseConfirmationButtons.bind(this),
     };
   }
 
@@ -162,7 +162,7 @@ export class RegisterCommand extends ConversationFlow {
     }
   }
 
-  /** Guarda los apellidos solo si tienen 3 caracteres o más; si no, sigue. */
+  /** Los apellidos deben tener 3 caracteres o más; si no, se vuelven a pedir. */
   private async handleLastName(
     chatId: number,
     text: string,
@@ -173,9 +173,17 @@ export class RegisterCommand extends ConversationFlow {
       if (!userState) return;
 
       const trimmedText = text.trim();
-      if (trimmedText && trimmedText.length >= 3) {
-        userState.lastName = trimmedText;
+      if (trimmedText.length < 3) {
+        this.resetInactivityTimeout(chatId, bot);
+        await this.sendRegistrationMessage(
+          chatId,
+          '🏷️ Los apellidos deben tener al menos 3 caracteres. Ingrésalos de nuevo:',
+          bot,
+          { force_reply: true },
+        );
+        return;
       }
+      userState.lastName = trimmedText;
       userState.currentStep = 'email';
       this.resetInactivityTimeout(chatId, bot);
 
@@ -317,15 +325,39 @@ export class RegisterCommand extends ConversationFlow {
   }
 
   /**
-   * Botones de confirmación: `confirm_no` cancela; cualquier otro valor valida
-   * los datos con `UserRegistrationDto` y crea el usuario. Siempre termina
-   * borrando el estado del chat.
+   * Respuesta de texto en el paso de confirmación: no confirma nada, solo
+   * recuerda que hay que usar los botones.
+   */
+  private async askToUseConfirmationButtons(
+    chatId: number,
+    _text: string,
+    bot: TelegramBot,
+  ): Promise<void> {
+    this.resetInactivityTimeout(chatId, bot);
+    await bot.sendMessage(
+      chatId,
+      'Usa los botones del mensaje anterior para confirmar o corregir tus datos.',
+    );
+  }
+
+  /**
+   * Botones de confirmación: `confirm_no` cancela y `confirm_yes` valida los
+   * datos con `UserRegistrationDto` y crea el usuario; otro valor, o un botón
+   * fuera del paso de confirmación, se ignora. Al terminar borra el estado.
    */
   public async handleConfirmation(
     chatId: number,
     callbackData: string,
     bot: TelegramBot,
   ): Promise<void> {
+    const currentState = this.userStates.get(chatId);
+    if (
+      !['confirm_yes', 'confirm_no'].includes(callbackData) ||
+      currentState?.currentStep !== 'confirmation'
+    ) {
+      return;
+    }
+
     try {
       this.resetInactivityTimeout(chatId, bot);
 

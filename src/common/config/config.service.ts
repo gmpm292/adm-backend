@@ -5,6 +5,7 @@ import { EnvironmentVariables } from './environment-variables';
 import { InjectEntityManager } from '@nestjs/typeorm';
 import { EntityManager } from 'typeorm';
 import { Config } from './config-resource/entities/config.entity';
+import { ConfigStatus } from './config-resource/enums/config-status.enum';
 
 import { ConfigResourceService } from './config-resource/services/config-resource.service';
 import { RoleGuardEntity } from '../../modules/role-guard-resource/entities/role-guard.entity';
@@ -27,16 +28,20 @@ export class ConfigService extends NestConfigService<EnvironmentVariables> {
   }
 
   /**
-   * Como `get`, pero consulta la tabla `config` en lugar del mapa en memoria
-   * y sin mirar si el grupo está desactivado. Si ningún grupo tiene la clave,
-   * lee el `.env`.
+   * Como `get`, pero consulta la tabla `config` en lugar del mapa en memoria.
+   * Si ningún grupo activo tiene la clave con valor, lee el `.env`.
    */
   async getAsync<T = any>(
     propertyPath: keyof EnvironmentVariables,
   ): Promise<T | undefined> {
     const conf = await this.manager
       .createQueryBuilder(Config, 'config')
-      .where(`config.values->>'${propertyPath}' IS NOT NULL`)
+      .where(`COALESCE(config.values->>CAST(:key AS text), '') <> ''`, {
+        key: propertyPath,
+      })
+      .andWhere('config.configStatus = :status', {
+        status: ConfigStatus.ENABLED,
+      })
       .getOne();
     if (conf) {
       return conf.values[propertyPath] as T;
@@ -46,8 +51,8 @@ export class ConfigService extends NestConfigService<EnvironmentVariables> {
 
   /**
    * Valor de la clave en los grupos activos (mapa en memoria) o, si no está,
-   * en el `.env`. Un valor vacío, `false` o `0` en la tabla cuenta como
-   * ausente.
+   * en el `.env`. Solo una cadena vacía (o nulo) en la tabla cuenta como
+   * ausente: `false` y `0` son valores.
    */
   get<T = any>(propertyPath: keyof EnvironmentVariables): T | undefined {
     const val = this.configResourceService.getVal(propertyPath);
@@ -57,27 +62,6 @@ export class ConfigService extends NestConfigService<EnvironmentVariables> {
   /** Cambia cada vez que se guarda la configuración */
   getConfigVersion(): number {
     return this.configResourceService.version;
-  }
-
-  /** Grupo activo completo (valores, estado, categoría...) o `undefined`. */
-  getVarsGroup(group: string) {
-    return this.configResourceService.getGroup(group);
-  }
-
-  /** Clave de un grupo activo concreto, sin recurrir al `.env`. */
-  getVarInGroup(groupKey: string, key: string) {
-    return this.configResourceService.getKeyInGroup(groupKey, key);
-  }
-
-  /**
-   * Con grupo, busca la clave en él y si no está en el `.env`; sin grupo,
-   * solo en el `.env` (no recorre la tabla como `get`).
-   */
-  resolveVar(varKey: string, groupKey?: string): unknown {
-    return groupKey
-      ? (this.getVarInGroup(groupKey, varKey) ??
-          super.get(varKey as keyof EnvironmentVariables))
-      : super.get(varKey as keyof EnvironmentVariables);
   }
 
   /**

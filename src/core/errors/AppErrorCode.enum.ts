@@ -6,8 +6,6 @@ export enum AppErrorCode {
   DisabledUserError = '406',
   ConfirmationTokenUserError = '407',
   ConflictError = '409',
-  ChangePolicyStatusError = '481',
-  ChangeLeadCenterStatusError = '482',
   InternalServerError = '500',
   ServiceUnavailableError = '503',
 }
