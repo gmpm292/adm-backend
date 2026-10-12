@@ -24,6 +24,11 @@ import { NotFoundError } from '../../../core/errors/appErrors/NotFoundError.erro
 import { BadRequestError } from '../../../core/errors/appErrors/BadRequestError.error';
 import { AppEventService } from '../../events/services/app-event.service';
 
+/**
+ * Notificaciones internas: se crean para una lista de destinatarios (una fila
+ * de `NotificationLog` por usuario) y se publican por la suscripción
+ * `appEvents`. Cada usuario las marca como leídas o borradas por su cuenta.
+ */
 @Injectable()
 export class NotificationService extends BaseService<Notification> {
   constructor(
@@ -37,6 +42,11 @@ export class NotificationService extends BaseService<Notification> {
     super(notificationRepository);
   }
 
+  /**
+   * Crea la notificación (sin publicarla) y una entrada por destinatario.
+   * Con `currentUser` en `false` (avisos del sistema) figura como autor el
+   * primer usuario SUPER.
+   */
   async create(
     currentUser: JWTPayload | false,
     createNotificationInput: CreateNotificationInput,
@@ -70,6 +80,10 @@ export class NotificationService extends BaseService<Notification> {
     return notification;
   }
 
+  /**
+   * Listado de administración: quien no es SUPER solo ve las que creó. Añade
+   * a cada una `users`, sus destinatarios.
+   */
   async find(
     currentUser: JWTPayload,
     options?: ListOptions,
@@ -132,6 +146,10 @@ export class NotificationService extends BaseService<Notification> {
     return notificationLogs; */
   }
 
+  /**
+   * Bandeja del usuario actual: sus entradas de notificaciones ya enviadas
+   * que no ha borrado. Devuelve `NotificationLog`, no `Notification`.
+   */
   async findClientNotification(
     currentUser: JWTPayload,
     options?: ListOptions,
@@ -193,6 +211,10 @@ export class NotificationService extends BaseService<Notification> {
     });
   }
 
+  /**
+   * Cambia título, tipo y mensaje; los destinatarios no se tocan. Una
+   * notificación enviada no se edita.
+   */
   async update(
     id: number,
     updateNotificationInput: UpdateNotificationInput,
@@ -208,6 +230,7 @@ export class NotificationService extends BaseService<Notification> {
     return super.baseUpdate({ id, data: { titulo, tipo, message } });
   }
 
+  /** Elimina por lote; si alguna ya se envió, no elimina ninguna. */
   async remove(ids: number[]): Promise<Notification[]> {
     for (const id of ids) {
       const notification = await super.baseFindOne({ id });
@@ -218,6 +241,10 @@ export class NotificationService extends BaseService<Notification> {
     return super.baseDeleteMany({ ids });
   }
 
+  /**
+   * Marca como leída la entrada del usuario actual para esa notificación. El
+   * guardado no se espera: la respuesta sale antes de escribirse.
+   */
   async markNotificationAsRead(
     currentUser: JWTPayload,
     id: number,
@@ -239,6 +266,10 @@ export class NotificationService extends BaseService<Notification> {
     return notificationLog;
   }
 
+  /**
+   * Oculta la notificación de la bandeja del usuario actual (`erased`); no
+   * la elimina para los demás. Como en leída, el guardado no se espera.
+   */
   async markNotificationAsDeleted(
     currentUser: JWTPayload,
     id: number,
@@ -260,6 +291,7 @@ export class NotificationService extends BaseService<Notification> {
     return notificationLog;
   }
 
+  /** Igual que la anterior por lote; ignora los ids que no son del usuario. */
   async markNotificationsAsDeleted(
     currentUser: JWTPayload,
     ids: Array<number>,
@@ -283,6 +315,10 @@ export class NotificationService extends BaseService<Notification> {
     return notificationLogs;
   }
 
+  /**
+   * Marca la notificación como enviada y la emite por `appEvents` a sus
+   * destinatarios (ids de usuario en `notify`). No espera al guardado.
+   */
   public async publishNotification(
     notificationId: number,
     currentUser?: JWTPayload,
@@ -305,6 +341,10 @@ export class NotificationService extends BaseService<Notification> {
     this.appEventService.publish({ message: messageToSend, notify });
   }
 
+  /**
+   * Destinatarios sin repetir: los `userIds` más los usuarios de cada rol de
+   * `roles`. `officeIds`, `departmentIds` y `teamIds` se ignoran por ahora.
+   */
   private async findUsers(
     createNotificationInput: CreateNotificationInput | UpdateNotificationInput,
   ): Promise<User[]> {
@@ -367,13 +407,14 @@ export class NotificationService extends BaseService<Notification> {
       }
     }
 
-    //remove duplicates or delete duplicates
+    // Quita los usuarios repetidos.
     const result = notify.filter(
       (val, ind, arr) => arr.findIndex((val2) => val2.id === val.id) === ind,
     );
     return result;
   }
 
+  /** Crea y publica en un paso, como aviso del sistema (sin usuario). */
   async createAndPublish(createNotificationInput: CreateNotificationInput) {
     return this.create(false, createNotificationInput).then((n) => {
       return this.publishNotification(n.id as number);

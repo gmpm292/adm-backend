@@ -31,6 +31,11 @@ import {
 import { lineAmounts } from '../../sale/helpers/sale-payments.helper';
 import { SortDirection } from '../../../../core/graphql/remote-operations/enums/sort-direction.enum';
 
+/**
+ * Líneas de venta: cada una reserva stock mientras la venta es borrador y lo
+ * convierte en salida al cobrarla, lo suelta al cancelarla o lo repone al
+ * devolverla.
+ */
 @Injectable()
 export class SaleDetailService extends BaseService<SaleDetail> {
   constructor(
@@ -47,10 +52,16 @@ export class SaleDetailService extends BaseService<SaleDetail> {
     super(saleDetailRepository);
   }
 
+  /** Alcance recibido o, si no llega, el mismo que el de las ventas. */
   private scopesFor(cu?: JWTPayload, scopes?: ScopedAccessEnum[]) {
     return scopes ?? this.scopedAccessService.scopesOrDefault(cu, SALE_SCOPES);
   }
 
+  /**
+   * Añade un producto a una venta en borrador: calcula su precio en cada
+   * moneda, reserva el stock y guarda una foto del producto. Un producto no
+   * se repite en la misma venta. Abre transacción si no recibe `manager`.
+   */
   async create(
     createSaleDetailInput: CreateSaleDetailInput,
     cu?: JWTPayload,
@@ -137,6 +148,7 @@ export class SaleDetailService extends BaseService<SaleDetail> {
     });
   }
 
+  /** Listado paginado de líneas (Detalles de venta) con sus importes. */
   async find(
     options?: ListOptions,
     cu?: JWTPayload,
@@ -224,6 +236,7 @@ export class SaleDetailService extends BaseService<SaleDetail> {
     );
   }
 
+  /** Línea con su venta, producto y publicistas, e importes calculados. */
   async findOne(
     id: number,
     cu?: JWTPayload,
@@ -248,6 +261,7 @@ export class SaleDetailService extends BaseService<SaleDetail> {
     return this.withAmounts(detail);
   }
 
+  /** Líneas de una venta en orden; antes comprueba que el usuario la ve. */
   async findBySale(
     saleId: number,
     cu?: JWTPayload,
@@ -265,6 +279,12 @@ export class SaleDetailService extends BaseService<SaleDetail> {
     return details.map((detail) => this.withAmounts(detail));
   }
 
+  /**
+   * Cambia producto, cantidad o publicistas de una línea en borrador.
+   * Recalcula el precio y ajusta la reserva: con otro producto suelta la
+   * anterior y abre una nueva; con otra cantidad reserva o suelta solo la
+   * diferencia. Abre transacción si no recibe `manager`.
+   */
   async update(
     id: number,
     updateSaleDetailInput: UpdateSaleDetailInput,
@@ -391,6 +411,11 @@ export class SaleDetailService extends BaseService<SaleDetail> {
     });
   }
 
+  /**
+   * Borrado lógico por lote, en una transacción. Una línea en borrador
+   * suelta su reserva; una vendida no se elimina (se devuelve) salvo que su
+   * venta esté cancelada.
+   */
   async remove(
     ids: number[],
     cu?: JWTPayload,
@@ -447,6 +472,7 @@ export class SaleDetailService extends BaseService<SaleDetail> {
     });
   }
 
+  /** Restaura líneas eliminadas; no vuelve a reservar stock. */
   async restore(
     ids: number[],
     cu?: JWTPayload,
@@ -517,6 +543,11 @@ export class SaleDetailService extends BaseService<SaleDetail> {
     }
   }
 
+  /**
+   * Devuelve líneas vendidas de una misma venta cobrada: repone su stock y
+   * las marca REFUNDED. El importe devuelto se calcula en la moneda de la
+   * venta (CUP si no tiene); el estado de la venta lo pone SaleService.
+   */
   async refundSaleDetails(
     saleDetailIds: number[],
     cu?: JWTPayload,
@@ -610,6 +641,7 @@ export class SaleDetailService extends BaseService<SaleDetail> {
     };
   }
 
+  /** Las líneas solo se añaden o cambian mientras la venta es borrador. */
   private validateSaleForModification(sale: Sale): void {
     if (sale.saleStatus !== SaleStatus.DRAFT) {
       throw new BadRequestError(
@@ -644,6 +676,10 @@ export class SaleDetailService extends BaseService<SaleDetail> {
     };
   }
 
+  /**
+   * Trabajadores publicistas por id; si falta alguno, NotFoundError con los
+   * que no existen. No comprueba la empresa del trabajador.
+   */
   private async findPublicistsByIds(
     publicistIds: number[],
     manager?: EntityManager,

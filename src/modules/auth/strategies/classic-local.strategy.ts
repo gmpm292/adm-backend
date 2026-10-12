@@ -11,6 +11,10 @@ import { Role } from '../../../core/enums/role.enum';
 
 export const classicLocalStrategyName = 'classic-local';
 
+/**
+ * Login de la aplicación web: correo y contraseña, con un rol distinto de
+ * USER y el lugar en la empresa que exige cada rol.
+ */
 @Injectable()
 export class ClassicLocalStrategy extends PassportStrategy(
   Strategy,
@@ -39,11 +43,7 @@ export class ClassicLocalStrategy extends PassportStrategy(
     return user;
   }
 
-  /**
-   * Validate user's role for access to WebApp
-   *
-   * @param user
-   */
+  /** Rechaza a quien solo tiene el rol USER (es el de la app móvil). */
   private async validateRoleForWebApp(user: User): Promise<void> {
     if (!user.role?.some((r) => r !== Role.USER)) {
       throw new UnauthorizedError();
@@ -52,9 +52,8 @@ export class ClassicLocalStrategy extends PassportStrategy(
   }
 
   /**
-   * Validate user's company information.
-   *
-   * @param user
+   * Cada rol exige su lugar en la empresa: PRINCIPAL empresa; ADMIN además
+   * oficina; MANAGER además departamento; SUPERVISOR y AGENT además equipo.
    */
   private async validateCompanyInformationByRole(user: User): Promise<void> {
     if (user.role?.some((r) => r === Role.PRINCIPAL && !user.business)) {

@@ -8,6 +8,10 @@ import { HelpCommand } from './commands/help.command';
 import { RegularMessage } from './commands/regular-message';
 import { RegisterCommand } from './commands/register.command';
 
+/**
+ * Atiende lo que los usuarios escriben a los bots: Telegram llama al webhook,
+ * el update se pasa al bot y estos handlers lo reparten entre los comandos.
+ */
 @Injectable()
 export class TelegramWebhooksService {
   private bots: Map<string, TelegramBot>;
@@ -21,6 +25,7 @@ export class TelegramWebhooksService {
     private readonly regularMessage: RegularMessage,
   ) {}
 
+  /** Se llama tras `TelegramTransportService.init`, cuando ya hay bots. */
   async init(): Promise<void> {
     try {
       this.bots = this.transportService.getBots();
@@ -34,6 +39,11 @@ export class TelegramWebhooksService {
     }
   }
 
+  /**
+   * Engancha a cada bot: contacto compartido y botones (registro), los
+   * comandos `/start`, `/help` y `/register`, las respuestas a mensajes de un
+   * flujo y, para el resto de textos, una respuesta genérica.
+   */
   private setupMessageHandlers(): void {
     this.bots.forEach((bot, botName) => {
       try {
@@ -130,6 +140,10 @@ export class TelegramWebhooksService {
     });
   }
 
+  /**
+   * Entrega al bot `botName` un update recibido por el webhook. No comprueba
+   * el `TELEGRAM_SECRET_TOKEN` de la cabecera.
+   */
   handleUpdate(botName: string, update: TelegramBot.Update): void {
     const bot = this.bots.get(botName);
     if (!bot) {

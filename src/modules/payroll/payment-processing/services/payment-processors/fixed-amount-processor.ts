@@ -19,6 +19,7 @@ import { PeriodBatchCalculationResult } from '../../types/payment-calculation.ty
 import { ListFilter } from '../../../../../core/graphql/remote-operations';
 import { LogicalOperator } from '../../../../../core/graphql/remote-operations/enums/logical-operator.enum';
 
+/** Cálculo de las reglas de importe fijo (`FIXED_AMOUNT`), por período. */
 @Injectable()
 export class FixedAmountProcessor extends BasePaymentProcessor {
   protected readonly supportedPaymentType = PaymentType.FIXED_AMOUNT;
@@ -34,7 +35,10 @@ export class FixedAmountProcessor extends BasePaymentProcessor {
   }
 
   /**
-   * Calcular pagos batch para un período completo
+   * A cada trabajador de la regla le toca el importe fijo multiplicado por el
+   * número de unidades del ámbito (`scope`): oficinas, departamentos o equipos
+   * de la empresa (o solo la indicada en el input); empresa u otro ámbito, ×1.
+   * Lanza `Error` si la regla no tiene importe o no se sabe la empresa.
    */
   async calculateBatchForPeriod(
     rule: PaymentRule,
@@ -193,7 +197,9 @@ export class FixedAmountProcessor extends BasePaymentProcessor {
   }
 
   /**
-   * Obtener workers que aplican a una regla específica
+   * Trabajadores del tipo de la regla (y `otherType`, si es OTHER), filtrados
+   * por la empresa, oficina, departamento, equipo o ids que lleguen en el
+   * input. No mira `specificWorkers` ni la asistencia.
    */
   private async getWorkersForRule(
     rule: PaymentRule,
@@ -277,7 +283,8 @@ export class FixedAmountProcessor extends BasePaymentProcessor {
   }
 
   /**
-   * Obtener conteo de unidades organizativas
+   * Cuántas oficinas, departamentos o equipos tiene la empresa (1 o 0 si se
+   * pide uno concreto), dentro del alcance del usuario.
    */
   private async getUnitCount(
     unitType: 'office' | 'department' | 'team',

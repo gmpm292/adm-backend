@@ -25,7 +25,10 @@ export function isSellerOnly(cu?: JWTPayload): boolean {
   return !!cu && !cu.role?.some((role) => SUPERVISING_ROLES.includes(role));
 }
 
-/** Roles que pueden elegir vendedor, fechar una venta o cobrar por otro. */
+/**
+ * Roles que pueden fechar una venta en otro día al cobrarla. Elegir vendedor
+ * lo decide `isSellerOnly`, no esta función.
+ */
 export function canManageSales(cu?: JWTPayload): boolean {
   return !!cu?.role?.some((role) =>
     [Role.SUPER, Role.PRINCIPAL, Role.ADMIN].includes(role),

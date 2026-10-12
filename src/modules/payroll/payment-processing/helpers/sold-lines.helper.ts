@@ -51,6 +51,7 @@ export async function soldLines(
   return lines;
 }
 
+/** Precio unitario de la línea en `currency`; 0 si no se puede saber. */
 async function unitPriceIn(
   detail: NonNullable<Sale['details']>[number],
   currency: string,

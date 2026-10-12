@@ -17,6 +17,12 @@ import { ListFilter } from '../models/list-filter.interface';
 import 'reflect-metadata';
 import { ListOptions } from '../models/list-options.interface';
 
+/**
+ * Lee y valida las opciones de listado del argumento `arg`. Rechaza campos
+ * con expresiones, columnas secretas y operadores que escriben SQL; si hay
+ * `dto` o `class`, solo admite filtrar por los campos que declaran. Añade a
+ * las opciones los campos pedidos en la consulta (`requestedFields`).
+ */
 export const Opts = createParamDecorator(
   async (
     data: { arg: string; dto?: any; class?: any },
@@ -58,6 +64,10 @@ export const Opts = createParamDecorator(
   },
 );
 
+/**
+ * Lanza BadRequestException si se filtra por un campo que no admite el `dto`
+ * (o la `class`); con los dos, basta con que lo admita uno.
+ */
 async function validateFilters(
   data: { arg: string; dto?: any; class?: any },
   args: any,
@@ -209,6 +219,7 @@ function assertSafeListOptions(options: any): void {
   }
 }
 
+/** Aplana los filtros (también los anidados) en `{ campo: valor }`. */
 function extractPropsAndVals(filts: ListFilter[]) {
   let propsAndVals = {};
   for (const { property, value, filters } of filts) {

@@ -3,6 +3,7 @@ import { EmailTransportService } from './email.transport';
 import { EmailProvider } from '../enums/email-provider.enum';
 import { ConfigService } from '../../../common/config';
 
+/** Informa si el proveedor de correo elegido está listo para enviar. */
 @Injectable()
 export class EmailHealthService {
   private readonly logger = new Logger(EmailHealthService.name);
@@ -12,6 +13,10 @@ export class EmailHealthService {
     private configService: ConfigService,
   ) {}
 
+  /**
+   * Gmail cuenta como configurado si `EMAIL_USER` tiene token activo; SMTP si
+   * hay host, usuario y contraseña. No comprueba la conexión real.
+   */
   async checkEmailStatus(): Promise<{
     provider: string;
     configured: boolean;

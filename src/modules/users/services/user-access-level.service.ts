@@ -20,6 +20,11 @@ import { BadRequestError } from '../../../core/errors/appErrors/BadRequestError.
 import { CreateUserInput } from '../dto/create-user.input';
 import { ForbiddenResourceError } from '../../../core/errors/appErrors/ForbiddenResourceError';
 
+/**
+ * Ajustes previos de `UsersResolver` según quién hace la petición (método
+ * `forX` para cada operación X). Casi todos los filtros por oficina o
+ * departamento están comentados: hoy la mayoría devuelve lo que recibe.
+ */
 @Injectable()
 export class UserAccessLevelService {
   private createUserTree: Map<Role, Role[]> = new Map();
@@ -30,6 +35,7 @@ export class UserAccessLevelService {
     this.constructCreateUserTree();
   }
 
+  /** Quien no es SUPER solo puede cambiar su propia contraseña (su correo). */
   public async forChangePasswordByEmail(
     currentUser: JWTPayload,
     changePasswordByEmailInput: ChangePasswordByEmailInput,
@@ -47,6 +53,7 @@ export class UserAccessLevelService {
     return changePasswordByEmailInput;
   }
 
+  /** Garantiza `options.filters`; no añade filtros (están comentados). */
   public async forFind(
     currentUser: JWTPayload,
     options?: ListOptions,
@@ -90,6 +97,7 @@ export class UserAccessLevelService {
     return options;
   }
 
+  /** Sin uso; no añade filtros (están comentados). */
   public async forFindCustomers(
     currentUser: JWTPayload,
     options?: ListOptions,
@@ -133,6 +141,7 @@ export class UserAccessLevelService {
     return options;
   }
 
+  /** Sin uso. Limita el listado a usuarios con rol exactamente `{USER}`. */
   public async forFindGlobalCustomers(
     currentUser: JWTPayload,
     options?: ListOptions,
@@ -157,6 +166,11 @@ export class UserAccessLevelService {
     return options;
   }
 
+  /**
+   * Valida el alta: el lugar que exige el rol nuevo, que el primer rol de
+   * quien crea pueda crear el primer rol pedido (`createUserTree`) y, si crea
+   * SUPER o PRINCIPAL un rol inferior, que llegue la oficina.
+   */
   public async forCreate(
     currentUser: JWTPayload,
     createUserInput: CreateUserInput,
@@ -191,6 +205,7 @@ export class UserAccessLevelService {
     return createUserInput;
   }
 
+  /** Siempre permite (la comprobación por oficina está comentada). */
   public async forRequestPasswordChangeForAnotherUser(
     currentUser: JWTPayload,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -210,6 +225,7 @@ export class UserAccessLevelService {
     return true;
   }
 
+  /** Sin uso. Prepara el alta de un cliente: rol USER y oficina obligatoria. */
   public async forCreateCustomer(
     currentUser: JWTPayload,
     createUserInput: CreateUserInput,
@@ -232,6 +248,8 @@ export class UserAccessLevelService {
     return createUserInput;
   }
 
+  // forFindOne, forUpdateUserRole, forUpdate, forUpdateCustomer y forRemove
+  // devuelven filtros vacíos: los filtros por rol están comentados.
   public async forFindOne(
     currentUser: JWTPayload,
     id: number,
@@ -346,6 +364,7 @@ export class UserAccessLevelService {
     return { ids, filters };
   }
 
+  /** No comprueba nada: todo el cuerpo está comentado. */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private async chekCompanyInfo(user: User): Promise<void> {
     // if (
@@ -412,6 +431,11 @@ export class UserAccessLevelService {
     return user as User;
   }
 
+  /**
+   * Lugar que exige el rol del usuario nuevo: SUPER y PRINCIPAL sin oficina;
+   * ADMIN oficina; MANAGER y departamento; AGENT y equipo; USER oficina.
+   * (SUPERVISOR no se comprueba aquí: está comentado.)
+   */
   private async chekCompanyInfoOfUserToBeCreated(
     createUserInput: CreateUserInput,
   ) {
@@ -476,6 +500,7 @@ export class UserAccessLevelService {
     return;
   }
 
+  /** Qué roles puede crear cada rol; los que no están no crean ninguno. */
   private constructCreateUserTree() {
     this.createUserTree.set(Role.SUPER, [
       Role.SUPER,

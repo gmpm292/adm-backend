@@ -8,6 +8,10 @@ import { JWTPayload } from '../dto/jwt-payload.dto';
 import { AuthParameterKey } from '../enums/auth-parameter-key.enum';
 import { extractJWT } from '../helpers/app-jwt-extractor.helper';
 
+/**
+ * Valida solo la firma y la caducidad del token de acceso, sin sesión única
+ * ni 2FA. Está registrada, pero ningún guard usa `access-token`.
+ */
 @Injectable()
 export class AccessTokenStrategy extends PassportStrategy(
   Strategy,
@@ -26,9 +30,8 @@ export class AccessTokenStrategy extends PassportStrategy(
   }
 
   /**
-   * Returns the token payload
-   *
-   * @param payload Access token payload
+   * Devuelve el payload del token. Ojo: con `passReqToCallback` el primer
+   * argumento que llega es la petición, no el payload.
    */
   public validate(payload: JWTPayload): JWTPayload {
     return payload;

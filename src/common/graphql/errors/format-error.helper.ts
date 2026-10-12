@@ -11,6 +11,12 @@ import { v4 as uuid } from 'uuid';
 import { AppErrorInput } from '../../../core/errors/interfaces/appError.input';
 import { AppErrorCode } from '../../../core/errors/AppErrorCode.enum';
 
+/**
+ * Da a todo error GraphQL la forma `{ message, extensions: { code } }`. Los
+ * `AppError` ya traen ese JSON en el mensaje; los de Nest y GraphQL se
+ * traducen a su código HTTP. Lo que no se reconoce sale como 500 con un id
+ * (`intServErrorId`); el detalle queda 5 minutos en memoria del logger.
+ */
 export function formatError(
   formattedError: GraphQLFormattedError,
   error: any,

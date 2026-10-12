@@ -9,6 +9,10 @@ import { UpdateScheduledTaskInput } from '../dto/update-scheduled-task.input';
 import { CreateScheduledTaskInput } from '../dto/create-scheduled-task.input';
 import { ConditionalOperator } from '../../../core/graphql/remote-operations/enums/conditional-operation.enum';
 
+/**
+ * Programa en memoria (cron) las tareas guardadas en `scheduled_task`. Al
+ * arrancar sincroniza las tareas por defecto y programa las activas.
+ */
 @Injectable()
 export class TaskSchedulerService implements OnModuleInit {
   private readonly logger = new Logger(TaskSchedulerService.name);
@@ -25,6 +29,12 @@ export class TaskSchedulerService implements OnModuleInit {
     await this.initializeScheduledTasks(); // <-- cargamos las tareas existentes
   }
 
+  /**
+   * Deja en la base exactamente las tareas por defecto de esta lista: crea las
+   * que faltan y elimina (borrado lógico) las marcadas `isDefault` que ya no
+   * están. Se identifican por `handlerType` + `cronExpression`, así que
+   * cambiar aquí la hora de una tarea la sustituye por otra.
+   */
   private async initializeDefaultTasks() {
     const defaultTasks: CreateScheduledTaskInput[] = [
       // {
@@ -91,6 +101,7 @@ export class TaskSchedulerService implements OnModuleInit {
 
     // Las tareas restantes en expectedTaskKeys son las que necesitan ser creadas
     expectedTaskKeys.forEach((name, key) => {
+      // Se separa por '-': un cron con rangos (`1-5`) no se encontraría.
       const [handlerType, cronExpression] = key.split('-');
       const taskToCreate = defaultTasks.find(
         (task) =>
@@ -130,6 +141,10 @@ export class TaskSchedulerService implements OnModuleInit {
     tasks.forEach((task) => this.scheduleTask(task));
   }
 
+  /**
+   * Crea y arranca el cron de la tarea, registrado por su nombre (dos tareas
+   * con el mismo nombre chocan en `SchedulerRegistry`). No mira `isActive`.
+   */
   scheduleTask(task: ScheduledTask) {
     const job = new CronJob(task.cronExpression, async () => {
       await this.executeAndTrackTask(task);
@@ -142,6 +157,10 @@ export class TaskSchedulerService implements OnModuleInit {
     this.logger.log(`Tarea programada: ${task.name}`);
   }
 
+  /**
+   * Ejecuta la tarea y guarda `lastRun` y `nextRun`. Los errores del handler
+   * los registra `TaskHandlerService` y no detienen el cron.
+   */
   async executeAndTrackTask(task: ScheduledTask) {
     await this.taskHandler.executeTask(task);
 
@@ -166,11 +185,13 @@ export class TaskSchedulerService implements OnModuleInit {
     }
   }
 
+  /** Reprograma la tarea con sus datos nuevos (para y rehace el cron). */
   updateTask(task: ScheduledTask) {
     this.removeTask(task.name);
     this.scheduleTask(task);
   }
 
+  /** Para el cron de la tarea con ese nombre; si no está programada, nada. */
   removeTask(taskName: string) {
     if (this.jobs.has(taskName)) {
       const job = this.jobs.get(taskName);

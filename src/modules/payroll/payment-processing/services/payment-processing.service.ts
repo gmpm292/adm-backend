@@ -19,6 +19,11 @@ import { PeriodSalesProcessingResult } from '../types/period-sales-processing-re
 import { Sale } from '../../../sales/sale/entities/sale.entity';
 import { PayrollPeriod } from '../../payroll-period/entities/payroll-period.entity';
 
+/**
+ * Punto de entrada del cálculo de nómina que usa el resolver: delega en
+ * `RealTimePaymentService` (comisiones por venta), `PaymentPeriodService`
+ * (importe fijo por período) y `PaymentRollbackService` (reversiones).
+ */
 @Injectable()
 export class PaymentProcessingService {
   constructor(
@@ -36,8 +41,9 @@ export class PaymentProcessingService {
   ) {}
 
   /**
-   * MÉTODO PRINCIPAL: Procesar pagos de una venta en tiempo real
-   * Este es el método que llamará SaleService cuando se confirme una venta
+   * Calcula (o recalcula) las comisiones de una venta cobrada. No lanza: si
+   * falla devuelve `success: false` con el motivo en `details`. Hoy solo se
+   * llama desde el resolver y desde `processBatchSalePayments`.
    */
   async processSalePayment(
     input: ProcessSalePaymentInput,
@@ -99,6 +105,10 @@ export class PaymentProcessingService {
     }
   }
 
+  /**
+   * Procesa varias ventas una a una con `processSalePayment`; una que falla no
+   * detiene las demás. `success` solo es true si no falló ninguna.
+   */
   async processBatchSalePayments(
     saleIds: number[],
     cu?: JWTPayload,
@@ -191,8 +201,9 @@ export class PaymentProcessingService {
   }
 
   /**
-   * Procesar todas las ventas de un período específico
-   * Busca todas las ventas confirmadas del período y las procesa en batch
+   * Recalcula las comisiones de las ventas cobradas del período (por
+   * `effectiveDate`, de la empresa del período) y las imputa a ese período.
+   * Toma como mucho 1000 ventas. No lanza: los errores van en `results`.
    */
   async processPeriodSales(
     payrollPeriodId: number,
@@ -346,8 +357,8 @@ export class PaymentProcessingService {
   }
 
   /**
-   * MÉTODO PeriodPayments: Procesar pagos de un período completo
-   * Para reglas FIXED_AMOUNT u otras asociadas al periodo completo.
+   * Crea los pagos de las reglas de período (hoy solo `FIXED_AMOUNT`); ver
+   * `PaymentPeriodService.processPeriodPayments`.
    */
   async processPeriodPayments(
     input: ProcessPeriodPaymentsInput,
@@ -386,8 +397,8 @@ export class PaymentProcessingService {
   }
 
   /**
-   * REVERTIR PAGOS: Para devoluciones de venta
-   * Delega toda la lógica al servicio especializado
+   * Revierte los pagos de una venta; ver
+   * `PaymentRollbackService.rollbackSalePayments`.
    */
   async rollbackSalePayments(
     input: RollbackSalePaymentsInput,

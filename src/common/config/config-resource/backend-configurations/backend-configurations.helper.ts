@@ -19,8 +19,15 @@ export const SECRET_CONFIG_KEYS = [
   'TELEGRAM_SECRET_TOKEN',
 ];
 
+/** Lo que devuelve la API en lugar del valor de una clave secreta. */
 export const SECRET_MASK = '••••••••';
 
+/**
+ * Grupos que el código espera en la tabla `config`. Se sincronizan al
+ * arrancar (`ConfigResourceService.syncBackendConfigurationsAndDB`): estos
+ * valores solo se usan al crear el grupo o al añadir una clave nueva, y el
+ * estado (activo o no) solo al crear el grupo.
+ */
 export const backendConfigurations: Array<Config> = [
   {
     category: ConfigCategory.FRONTEND,

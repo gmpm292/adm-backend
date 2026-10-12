@@ -21,6 +21,10 @@ import { LogicalOperator } from '../../../../core/graphql/remote-operations/enum
 import { PeriodBatchCalculationResult } from '../types/payment-calculation.types';
 import { WorkerPayment } from '../../worker-payment/entities/worker-payment.entity';
 
+/**
+ * Pagos que se calculan por período completo y no venta a venta: hoy solo las
+ * reglas de importe fijo (`FIXED_AMOUNT`).
+ */
 @Injectable()
 export class PaymentPeriodService {
   // Tipos de pago que se procesan en batch (al final del período)
@@ -36,10 +40,9 @@ export class PaymentPeriodService {
   ) {}
 
   /**
-   * Procesar pagos de un período completo (Batch)
-   */
-  /**
-   * Procesar pagos de un período completo (Batch)
+   * Crea los pagos de las reglas de período activas para el período indicado
+   * (o el que contiene hoy, creándolo si no existe). Cada regla se procesa
+   * por separado: los errores no se lanzan, se devuelven como filas `ERROR`.
    */
   async processPeriodPayments(
     input: ProcessPeriodPaymentsInput,
@@ -181,7 +184,8 @@ export class PaymentPeriodService {
   }
 
   /**
-   * Obtener reglas aplicables para procesamiento batch
+   * Reglas activas cuyo tipo está en `FOR_PERIOD_PAYMENT_TYPES`, dentro del
+   * alcance del usuario. No filtra por empresa ni usa el período.
    */
   private async getApplicableBatchRules(
     input: ProcessPeriodPaymentsInput,
@@ -227,7 +231,10 @@ export class PaymentPeriodService {
   }
 
   /**
-   * Procesar una regla específica para todo el período
+   * Calcula con el procesador del tipo de la regla y crea un pago `SALARY` por
+   * trabajador. Si ya hay pago de esa regla, trabajador y período, se omite
+   * (`SKIPPED`); con `force` se elimina y se rehace (`remove` rechaza los ya
+   * pagados o de un período cerrado, y ese trabajador queda en `ERROR`).
    */
   private async processRuleForPeriod(
     rule: PaymentRule,

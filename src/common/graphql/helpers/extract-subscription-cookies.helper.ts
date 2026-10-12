@@ -5,6 +5,10 @@
 import { parse } from 'cookie';
 import { AuthParameterKey } from '../../../modules/auth/enums/auth-parameter-key.enum';
 
+/**
+ * Cookies de la petición que abrió el websocket: busca en las cabeceras la
+ * que contiene la de acceso y la parsea. `undefined` si no la hay.
+ */
 export function extractSubscriptionCookies({ extra }) {
   const rawHeaders = extra['request']['rawHeaders'];
   let cookie;

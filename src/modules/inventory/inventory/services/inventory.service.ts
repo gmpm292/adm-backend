@@ -21,6 +21,10 @@ import { Office } from '../../../company/office/entities/co_office.entity';
 import { Department } from '../../../company/department/entities/co_department.entity';
 import { Team } from '../../../company/team/entities/co_team.entity';
 
+/**
+ * Inventarios: uno por producto, oficina y ubicación. Las existencias solo
+ * cambian con movimientos (`InventoryMovementService`), que llaman a `adjust`.
+ */
 @Injectable()
 export class InventoryService extends BaseService<Inventory> {
   constructor(
@@ -46,6 +50,7 @@ export class InventoryService extends BaseService<Inventory> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Inventory> {
+    // Sin transacción recibida, abre una y se vuelve a llamar dentro.
     if (!manager) {
       return this.inventoryRepository.manager.transaction((txManager) =>
         this.create(createInventoryInput, cu, scopes, txManager),
@@ -108,6 +113,7 @@ export class InventoryService extends BaseService<Inventory> {
         rest.departmentId,
       ),
       team: getScopeEntity<Team>(product.team, cu?.teamId, rest.teamId),
+      // Nace a cero: el stock inicial lo suma el movimiento de abajo.
       currentStock: 0,
     };
 
@@ -176,6 +182,7 @@ export class InventoryService extends BaseService<Inventory> {
     }
   }
 
+  /** Listado con el producto (categoría y unidad) y su lugar en la empresa. */
   async find(
     options?: ListOptions,
     cu?: JWTPayload,
@@ -199,6 +206,7 @@ export class InventoryService extends BaseService<Inventory> {
     });
   }
 
+  /** Un inventario con producto, lugar y auditoría, dentro del alcance. */
   async findOne(
     id: number,
     cu?: JWTPayload,
@@ -223,6 +231,10 @@ export class InventoryService extends BaseService<Inventory> {
     });
   }
 
+  /**
+   * Inventarios activos de un producto, del más antiguo al más nuevo. El
+   * alcance se comprueba sobre el producto, no sobre cada inventario.
+   */
   async findByProduct(
     productId: number,
     cu?: JWTPayload,
@@ -281,6 +293,10 @@ export class InventoryService extends BaseService<Inventory> {
     return { ...inventory, currentStock: inventory.currentStock + adjustment };
   }
 
+  /**
+   * Cambia el mínimo y la ubicación; las existencias no se editan aquí. La
+   * ubicación nueva no puede repetirse en la oficina.
+   */
   async update(
     id: number,
     updateInventoryInput: UpdateInventoryInput,
@@ -359,6 +375,10 @@ export class InventoryService extends BaseService<Inventory> {
     });
   }
 
+  /**
+   * Restaura solo los eliminados de la lista y devuelve cuántos. Exige que su
+   * producto no esté eliminado y que no haya otro activo en esa ubicación.
+   */
   async restore(
     ids: number[],
     cu?: JWTPayload,

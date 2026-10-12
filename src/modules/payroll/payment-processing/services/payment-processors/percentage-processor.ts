@@ -27,6 +27,7 @@ import { PaymentAccumulator } from '../../../payment_accumulator/entities/paymen
 import { Attendance } from '../../../attendance/entities/attendance.entity';
 import { AttendanceStatus } from '../../../attendance/enums/attendance-status.enum';
 
+/** Comisión de un porcentaje de lo vendido (`PERCENTAGE`), venta a venta. */
 @Injectable()
 export class PercentageProcessor extends BasePaymentProcessor {
   protected readonly supportedPaymentType = PaymentType.PERCENTAGE;
@@ -40,6 +41,14 @@ export class PercentageProcessor extends BasePaymentProcessor {
     super();
   }
 
+  /**
+   * Calcula el porcentaje de lo vendido en la moneda de la regla y lo reparte
+   * a partes iguales. Sin reparto: al agente vendedor o a los publicistas de
+   * la venta; con reparto (o si el tipo no es AGENT ni PUBLICIST): entre los
+   * trabajadores del tipo y ámbito de la regla (el ámbito se toma del
+   * vendedor) presentes o con retraso el día de la venta y que cuentan para el
+   * reparto. Solo calcula: los pagos los crea `RealTimePaymentService`.
+   */
   async realTimeCalculate(
     rule: PaymentRule,
     sale: Sale,
@@ -113,6 +122,7 @@ export class PercentageProcessor extends BasePaymentProcessor {
         applicableWorkers = Array.from(publicists.values());
       } else {
         // Otros tipos de workers: forzar distribución
+        // (cambia el objeto `rule` recibido, no la regla guardada)
         rule.distributeProfits = true;
       }
     }

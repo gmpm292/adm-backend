@@ -19,6 +19,10 @@ import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestErr
 import { ConflictError } from '../../../../core/errors/appErrors/ConflictError.error';
 import { SortDirection } from '../../../../core/graphql/remote-operations/enums/sort-direction.enum';
 
+/**
+ * Períodos de nómina de cada empresa: sin solapes, de 31 días como mucho.
+ * Sobre ellos se calculan y se pagan los pagos a trabajadores.
+ */
 @Injectable()
 export class PayrollPeriodService extends BaseService<PayrollPeriod> {
   constructor(
@@ -31,6 +35,10 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     super(payrollPeriodRepository);
   }
 
+  /**
+   * Crea un período abierto. Valida las fechas y que no se solape con otro de
+   * la empresa indicada o, si no llega, de la del usuario.
+   */
   async create(
     createPayrollPeriodInput: CreatePayrollPeriodInput,
     cu?: JWTPayload,
@@ -212,6 +220,7 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<PayrollPeriod[]> {
+    // Solo se eliminan (borrado lógico) períodos sin pagos ni acumuladores.
     const periods = await super.baseFindByIds({
       ids,
       relationsToLoad: { payments: true, paymentAccumulators: true },
@@ -251,6 +260,10 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     });
   }
 
+  /**
+   * Período listo para calcular pagos: visible para el usuario, abierto y ya
+   * terminado. Lo usa el cálculo de nómina (`payment-processing`).
+   */
   async validatePeriod(
     payrollPeriodId: number,
     cu?: JWTPayload,
@@ -313,6 +326,7 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     }
   }
 
+  /** Inicio antes que fin y 31 días como mucho */
   private validatePeriodIntegrity(payrollPeriod: PayrollPeriod) {
     // Verificar que startDate sea anterior a endDate
     if (payrollPeriod.startDate >= payrollPeriod.endDate) {
@@ -332,6 +346,11 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     }
   }
 
+  /**
+   * Período visible para el usuario que contiene la fecha. Si no hay, crea en
+   * su empresa el siguiente al último (mensual, quincenal o semanal, como
+   * aquel) o, si no existe ninguno, la semana de lunes a domingo de la fecha.
+   */
   async getCurrentOrCreatePeriod(
     date: Date,
     cu?: JWTPayload,
@@ -363,6 +382,7 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
       : this.createFirstPeriod(date, cu, scopes, manager);
   }
 
+  /** Período visible que contiene la fecha; si la consulta falla, null. */
   private async findPeriodForDate(
     date: Date,
     cu: JWTPayload,
@@ -431,7 +451,7 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     const dayOfWeek = referenceDate.getDay();
 
     // Calcular días hasta el lunes anterior
-    // Si es domingo (0): -1 (lunes anterior)
+    // Si es domingo (0): -6 (lunes anterior)
     // Si es lunes (1): 0 (hoy es lunes)
     // Si es martes (2): -1, etc.
     const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
@@ -461,6 +481,11 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     return this.create(createInput, cu, scopes, manager);
   }
 
+  /**
+   * Período que empieza el día siguiente al anterior. Su duración la deduce
+   * la del anterior: mensual (28-31 días), quincenal (14-16, cortando a mitad
+   * o a final de mes) o, en cualquier otro caso, semanal.
+   */
   private async createPeriodAfter(
     previousPeriod: PayrollPeriod,
     cu: JWTPayload,

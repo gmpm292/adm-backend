@@ -25,6 +25,10 @@ import { ProductService } from '../../../inventory/product/services/product.serv
 import { CategoryService } from '../../../inventory/category/services/category.service';
 import { WorkerService } from '../../worker/services/worker.service';
 
+/**
+ * Reglas de pago de nómina: a qué trabajadores se aplican, cómo se calcula el
+ * importe (`conditions` según el tipo) y en qué moneda.
+ */
 @Injectable()
 export class PaymentRuleService extends BaseService<PaymentRule> {
   constructor(
@@ -39,6 +43,11 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
     super(paymentRuleRepository);
   }
 
+  /**
+   * Crea la regla con sus condiciones validadas. Producto, categoría y
+   * trabajadores concretos se buscan dentro del alcance del usuario. El
+   * nombre no se repite en la empresa (lanza `ConflictError`).
+   */
   async create(
     createPaymentRuleInput: CreatePaymentRuleInput,
     cu?: JWTPayload,
@@ -278,6 +287,11 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
     });
   }
 
+  /**
+   * Cambia solo los campos que llegan. Cambiar el tipo exige condiciones
+   * nuevas; `productId`/`categoryId` vacíos quitan el vínculo. Una lista
+   * vacía de `specificWorkersIds` no borra los trabajadores ya asignados.
+   */
   async update(
     id: number,
     updatePaymentRuleInput: UpdatePaymentRuleInput,
@@ -397,6 +411,7 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
     });
   }
 
+  /** Borrado lógico, sin comprobar si la regla tiene pagos o acumuladores. */
   async remove(
     ids: number[],
     cu?: JWTPayload,
@@ -427,7 +442,8 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
   }
 
   /**
-   * Encuentra reglas de pago únicas por workerType y si es null por otherType y paymentType. Prioriza reglas con producto asociado.
+   * Reglas activas cuyo `workerType` u `otherType` coincide con los dados.
+   * No elimina duplicados ni prioriza. Hoy no lo usa nadie.
    */
   async findPaymentRulesByWorkerType(
     workerType?: WorkerType,
@@ -472,7 +488,8 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
   }
 
   /**
-   * Busca reglas de pago por producto o categoría
+   * Reglas activas del producto y de la categoría dados (si llegan los dos,
+   * deben cumplirse ambos). Hoy no lo usa nadie.
    */
   async findPaymentRulesByProductOrCategory(
     productId?: number,

@@ -12,6 +12,11 @@ import { Log } from './log/entities/log.entity';
 
 const { combine, timestamp, simple } = format;
 
+/**
+ * Logger de la aplicación (winston a consola). Con `con` en false, solo `log`
+ * escribe: el resto de niveles van a `saveInDB`, que hoy no guarda nada
+ * (`LogPostgresService` está comentado), así que esos mensajes se pierden.
+ */
 @Injectable()
 export class AppLoggerService implements LoggerService {
   //future environment variable. write in console.
@@ -31,10 +36,10 @@ export class AppLoggerService implements LoggerService {
   }
 
   /**
-   * Write logs
+   * Escribe en consola con nivel info. Es el único método que escribe siempre.
    *
-   * @param level Level message log
-   * @param message Summary message
+   * @param message Resumen del mensaje
+   * @param meta Información adicional (contexto)
    */
   public log(message: string, meta: any): void {
     this.logger.info(message, meta);
@@ -113,6 +118,10 @@ export class AppLoggerService implements LoggerService {
       : await this.saveInDB('warning', message, meta);
   }
 
+  /**
+   * Registra un error 500 junto con el detalle que `formatError` dejó en
+   * memoria con el mismo `intServErrorId` (y lo saca de ella).
+   */
   public async internalServerError(
     message: string,
     meta: Record<string, unknown>,
@@ -136,6 +145,10 @@ export class AppLoggerService implements LoggerService {
     }
   }
 
+  /**
+   * Guarda en memoria el detalle de un error 500 para enlazarlo después con
+   * su petición. Cada llamada descarta los de más de 5 minutos.
+   */
   public saveInternalServerError(
     message: string,
     meta: Record<string, unknown>,
@@ -159,6 +172,7 @@ export class AppLoggerService implements LoggerService {
     return log;
   }
 
+  /** Saca de memoria (y devuelve) el error 500 con ese id. */
   public findInternalServerError(intServErrorId: string): Log | undefined {
     const index = this.internalServerErrors.findIndex(
       (e) => e.meta.intServErrorId === intServErrorId,
@@ -170,6 +184,10 @@ export class AppLoggerService implements LoggerService {
     return undefined;
   }
 
+  /**
+   * Debería guardar el registro en la tabla de logs; hoy solo lo construye y
+   * lo devuelve (la escritura está comentada).
+   */
   private async saveInDB(
     level: string,
     message: string,

@@ -1,6 +1,11 @@
 import { IsNotEmpty, IsOptional, ValidateIf } from 'class-validator';
 import { Environment } from './enums/environment.enum';
 
+/**
+ * Variables de configuración. Las del bloque `.ENV` se validan al arrancar
+ * (`validate.helper`); las de «Backend Configurations» viven en la tabla
+ * `config` y aquí solo dan nombre y tipo a sus claves.
+ */
 export class EnvironmentVariables {
   ////.ENV //////////////////////////////////////////////////////////////
   // DATABASE
@@ -29,7 +34,8 @@ export class EnvironmentVariables {
   public ACCESS_TOKEN_SECRET: string;
   @IsNotEmpty()
   public REFRESH_TOKEN_SECRET: string;
-  // Origins allowed to query the API. To insert multiple values separate by comma (,) to allow any origin set (*)
+  // Orígenes que pueden consultar la API, separados por comas; `*` acepta
+  // cualquiera.
   @IsNotEmpty()
   public CORS_ORIGIN: string;
 

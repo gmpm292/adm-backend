@@ -4,6 +4,10 @@ import { CreateWorkScheduleInput } from '../../payroll/work-schedule/dto/create-
 import { ConditionalOperator } from '../../../core/graphql/remote-operations/enums/conditional-operation.enum';
 import { WorkSchedule } from '../../payroll/work-schedule/entities/work-schedule.entity';
 
+/**
+ * Handler de la tarea `GENERATE_WORK_SCHEDULES`: crea un horario por semana
+ * (lunes a sábado laborables) para todo un año.
+ */
 @Injectable()
 export class WorkScheduleGeneratorService {
   private readonly logger = new Logger(WorkScheduleGeneratorService.name);
@@ -11,7 +15,8 @@ export class WorkScheduleGeneratorService {
   constructor(private readonly workScheduleService: WorkScheduleService) {}
 
   /**
-   * Genera los WorkSchedules para un año completo
+   * Genera los WorkSchedules para un año completo. Si ya hay alguno en ese
+   * año (y oficina) no crea nada y devuelve cuántos hay.
    * @param year Año a planificar
    * @param officeId ID de la oficina (opcional)
    * @returns Número de semanas planificadas
@@ -81,6 +86,8 @@ export class WorkScheduleGeneratorService {
   /**
    * Verifica y completa la planificación del próximo año si es necesario
    * Se ejecuta mensualmente para asegurar que el próximo año esté planificado
+   * (solo de octubre en adelante). Con menos de 52 semanas borra lo que haya
+   * de ese año (sin filtrar por oficina) y lo regenera sin oficina.
    */
   async verifyAndCompleteNextYearPlanning(): Promise<number> {
     try {
@@ -176,7 +183,8 @@ export class WorkScheduleGeneratorService {
   }
 
   /**
-   * Genera todas las semanas de un año específico
+   * Semanas de lunes a domingo desde el primer lunes del año; la última se
+   * recorta al 31 de diciembre. Los días antes del primer lunes no se cubren.
    */
   private generateWeeksForYear(year: number): Array<{
     weekNumber: number;

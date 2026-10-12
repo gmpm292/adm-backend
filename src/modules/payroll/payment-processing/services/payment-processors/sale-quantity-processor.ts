@@ -25,6 +25,7 @@ import { Attendance } from '../../../attendance/entities/attendance.entity';
 import { AttendanceStatus } from '../../../attendance/enums/attendance-status.enum';
 import { SaleQuantityCondition } from '../../../payment-rule/types/sale-quantity-condition.type';
 
+/** Comisión por escalones de unidades vendidas (`SALE_QUANTITY`). */
 @Injectable()
 export class SaleQuantityProcessor extends BasePaymentProcessor {
   protected readonly supportedPaymentType = PaymentType.SALE_QUANTITY;
@@ -38,6 +39,13 @@ export class SaleQuantityProcessor extends BasePaymentProcessor {
     super();
   }
 
+  /**
+   * Numera cada unidad vendida siguiendo el contador del acumulador de cada
+   * trabajador en el período; la unidad paga según el escalón más alto cuyo
+   * `minProducts` alcanza, dividido entre los trabajadores elegidos (los
+   * mismos que en `PercentageProcessor`). Un trabajador que no suma nada no
+   * sale en el resultado. Solo calcula: los pagos los crea el servicio.
+   */
   async realTimeCalculate(
     rule: PaymentRule,
     sale: Sale,

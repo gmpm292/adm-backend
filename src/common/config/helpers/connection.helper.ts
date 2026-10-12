@@ -20,6 +20,7 @@ export interface DatabaseConnection {
 
 const LOCAL_HOSTS = ['localhost', '127.0.0.1', 'postgres', 'redis'];
 
+/** Hosts locales (o de contenedores): con ellos no se usa TLS ni SSL. */
 function isLocalHost(host: string): boolean {
   return LOCAL_HOSTS.includes(host);
 }

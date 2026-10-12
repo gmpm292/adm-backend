@@ -35,6 +35,7 @@ export class UnitOfMeasureService extends BaseService<UnitOfMeasure> {
     super(unitOfMeasureRepository);
   }
 
+  /** Crea la unidad (activa por defecto) tras comprobar nombre y símbolo. */
   async create(
     createUnitOfMeasureInput: CreateUnitOfMeasureInput,
     cu?: JWTPayload,
@@ -73,6 +74,7 @@ export class UnitOfMeasureService extends BaseService<UnitOfMeasure> {
     return super.baseFindOne({ id, cu, scopes: GLOBAL, manager });
   }
 
+  /** Cambia solo los campos que llegan, sin repetir nombre ni símbolo. */
   async update(
     id: number,
     updateUnitOfMeasureInput: UpdateUnitOfMeasureInput,
@@ -140,6 +142,7 @@ export class UnitOfMeasureService extends BaseService<UnitOfMeasure> {
     });
   }
 
+  /** Restaura solo las eliminadas de la lista; devuelve cuántas. */
   async restore(
     ids: number[],
     cu?: JWTPayload,
@@ -167,6 +170,7 @@ export class UnitOfMeasureService extends BaseService<UnitOfMeasure> {
     });
   }
 
+  /** Activa la unidad si está inactiva y al revés. */
   async toggleActive(
     id: number,
     cu?: JWTPayload,

@@ -5,6 +5,10 @@ import { ListSummary } from '../models/list-summary.interface';
 import { ListOptionsTypeOrmQueryBuilderMapper } from '../mappers/list-options-type-orm-query-builder.mapper';
 import { ListOptions } from '../models/list-options.interface';
 
+/**
+ * Listado paginado sobre cualquier repositorio, sin alcance de usuario. Hoy
+ * nadie lo usa: los servicios listan con `BaseService.baseFind`.
+ */
 @Injectable()
 export class RemoteOperationsService<Entity extends ObjectLiteral> {
   public async find(

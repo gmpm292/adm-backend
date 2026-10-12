@@ -19,6 +19,10 @@ import { ConfigVisibility } from '../enums/config-visibility.enum';
 import { ConfigStatus } from '../enums/config-status.enum';
 
 export type SettingMapType = Omit<Config, 'group'>;
+/**
+ * Grupos de configuración de la tabla `config` y su copia en memoria (solo
+ * los activos), que es lo que lee `ConfigService.get`.
+ */
 @Injectable()
 export class ConfigResourceService
   extends BaseService<Config>
@@ -35,11 +39,13 @@ export class ConfigResourceService
   ) {
     super(configRepository);
   }
+  /** Al arrancar ajusta la tabla a los grupos del código y carga el mapa. */
   async onModuleInit() {
     await this.syncBackendConfigurationsAndDB();
     await this.initMap();
   }
 
+  /** Crea un grupo (el nombre no se repite) y recarga el mapa. */
   async create(createConfigInput: CreateConfigInput): Promise<Config> {
     const created = await super.baseCreate({
       data: createConfigInput,
@@ -58,6 +64,10 @@ export class ConfigResourceService
     return super.baseFindOneByFilters({ filters });
   }
 
+  /**
+   * Actualiza un grupo y recarga el mapa. Los secretos que llegan con la
+   * máscara conservan el valor guardado.
+   */
   async update(
     id: number,
     updateConfigInput: UpdateConfigInput,
@@ -78,6 +88,7 @@ export class ConfigResourceService
     return updated;
   }
 
+  /** Borra los grupos de forma definitiva (sin borrado lógico) y recarga. */
   async remove(ids: number[]): Promise<Config[]> {
     const removed = await super.baseDeleteMany({ ids, softRemove: false });
     await this.initMap();
@@ -98,6 +109,13 @@ export class ConfigResourceService
     return { ...config, values };
   }
 
+  /**
+   * Ajusta la tabla a `backendConfigurations`: crea los grupos que faltan y,
+   * en los que existen, añade las claves nuevas con su valor por defecto,
+   * quita las que sobran y actualiza descripción, categoría y visibilidad. No
+   * toca los valores guardados ni el estado. Borra los grupos PRIVATE que el
+   * código ya no declara.
+   */
   async syncBackendConfigurationsAndDB() {
     let dbConfig = (
       await this.find({
@@ -177,6 +195,7 @@ export class ConfigResourceService
     return this._Map_Vars.get(group)?.values[key];
   }
 
+  /** Primer valor no vacío de la clave en cualquier grupo activo, o null. */
   getVal(key: string) {
     for (const val of this._Map_Vars.values()) {
       if (val.configStatus == ConfigStatus.ENABLED && val.values[key])

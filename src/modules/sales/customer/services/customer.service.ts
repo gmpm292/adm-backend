@@ -24,6 +24,10 @@ const UNIQUE_FIELDS = [
   { field: 'ci', label: 'ese carné de identidad' },
 ] as const;
 
+/**
+ * Clientes de la tienda (empresa + oficina). Teléfono, correo y carné no se
+ * repiten dentro de una empresa.
+ */
 @Injectable()
 export class CustomerService extends BaseService<Customer> {
   constructor(
@@ -40,6 +44,7 @@ export class CustomerService extends BaseService<Customer> {
     return scopes ?? this.scopedAccessService.scopesOrDefault(cu, SALE_SCOPES);
   }
 
+  /** Nombre y apellidos sin espacios sobrantes; se guarda en `fullName`. */
   private generateFullName(name: string, lastName?: string | null): string {
     return [name, lastName]
       .map((part) => part?.trim())
@@ -47,6 +52,10 @@ export class CustomerService extends BaseService<Customer> {
       .join(' ');
   }
 
+  /**
+   * Crea el cliente normalizando sus datos (correo en minúsculas, vacíos a
+   * `null`) y, si llega `userId`, lo vincula a esa cuenta de usuario.
+   */
   async create(
     createCustomerInput: CreateCustomerInput,
     cu?: JWTPayload,
@@ -132,6 +141,10 @@ export class CustomerService extends BaseService<Customer> {
     });
   }
 
+  /**
+   * Cambia solo los campos que llegan, recalcula `fullName` y vuelve a
+   * comprobar que teléfono, correo y carné no se repitan.
+   */
   async update(
     id: number,
     updateCustomerInput: UpdateCustomerInput,
@@ -210,6 +223,7 @@ export class CustomerService extends BaseService<Customer> {
     });
   }
 
+  /** Restaura los clientes eliminados de la lista; devuelve cuántos. */
   async restore(
     ids: number[],
     cu?: JWTPayload,
@@ -238,6 +252,10 @@ export class CustomerService extends BaseService<Customer> {
     });
   }
 
+  /**
+   * ConflictError si otro cliente activo de la empresa ya tiene ese teléfono,
+   * correo o carné. Sin `businessId` se comprueba en todas las empresas.
+   */
   private async assertUnique(
     data: Partial<Customer>,
     businessId: number | undefined,

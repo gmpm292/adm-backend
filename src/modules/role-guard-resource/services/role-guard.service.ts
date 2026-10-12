@@ -56,6 +56,8 @@ export class RoleGuardService
     super(roleGuardRepository);
   }
 
+  // Las filas se cargan al iniciar el módulo; los `@Roles` del código, cuando
+  // ya están instanciados todos los resolvers.
   async onModuleInit() {
     await this.loadRoleGuardEntity();
   }
@@ -64,6 +66,7 @@ export class RoleGuardService
     this.loadCodeRoles();
   }
 
+  /** Fila de la operación, de la lista en memoria (sin consultar la base). */
   getRoleGuard(queryOrEndPointURL: string): RoleGuardEntity | undefined {
     return this.roleGuardList.find(
       (rg) => rg.queryOrEndPointURL == queryOrEndPointURL,
@@ -80,6 +83,10 @@ export class RoleGuardService
     return { usesRoleGuard: code.usesRoleGuard, roles: saved ?? code.roles };
   }
 
+  /**
+   * Registra la operación si no existe (si ya existe devuelve `undefined`).
+   * No recarga la lista en memoria.
+   */
   async create(
     createRoleGuardInput: CreateRoleGuardInput,
   ): Promise<RoleGuardEntity | undefined> {
@@ -103,6 +110,7 @@ export class RoleGuardService
     return undefined;
   }
 
+  /** Lista de la base, con lo que dice el código de cada operación. */
   async findInDB(options?: ListOptions): Promise<ListSummary> {
     const result = await super.baseFind({ options });
     return {
@@ -115,6 +123,11 @@ export class RoleGuardService
     return this.withCode(await super.baseFindOne({ id }));
   }
 
+  /**
+   * Cambia roles y descripción y recarga la lista en memoria (efecto
+   * inmediato). Los roles solo se cambian en operaciones con `RoleGuard`, no
+   * pueden quedar vacíos y deben incluir SUPER para no perder el acceso.
+   */
   async update(
     id: number,
     updateRoleGuardInput: UpdateRoleGuardInput,
@@ -150,10 +163,12 @@ export class RoleGuardService
     return this.findOneInDB(id);
   }
 
+  /** Elimina filas. No recarga la lista en memoria; ningún resolver lo usa. */
   async remove(ids: number[]): Promise<RoleGuardEntity[]> {
     return super.baseDeleteMany({ ids });
   }
 
+  /** Añade a la fila `usesRoleGuard` y `codeRoles` (`@Roles` del código). */
   private withCode(rg: RoleGuardEntity): RoleGuardView {
     const code = this.codeRoles.get(rg.queryOrEndPointURL);
     return {

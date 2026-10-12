@@ -3,6 +3,10 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { PubSubRedisOptions, RedisPubSub } from 'graphql-redis-subscriptions';
 import { getRedisConnection } from '../../config/helpers/connection.helper';
 
+/**
+ * Token para inyectar el PubSub de Redis con el que se publican y escuchan
+ * las suscripciones GraphQL (conexión `SUBSCRIPTION_*` o `REDIS_URL`).
+ */
 export const REDIS_PUB_SUB_TOKEN = 'REDIS_PUB_SUB_TOKEN';
 const logger = new Logger('RedisPubSub');
 

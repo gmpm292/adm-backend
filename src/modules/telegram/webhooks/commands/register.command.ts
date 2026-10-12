@@ -14,6 +14,11 @@ import { ConversationFlow } from '../conversation-flow.service';
 import { UsersService } from '../../../users/services/users.service';
 import { Role } from '../../../../core/enums/role.enum';
 
+/**
+ * Comando `/register`: pide por el chat nombre, apellidos, correo y teléfono,
+ * los confirma y crea un usuario con rol USER. El estado de cada chat vive en
+ * memoria (se pierde al reiniciar) y caduca tras 5 minutos sin respuesta.
+ */
 @Injectable()
 export class RegisterCommand extends ConversationFlow {
   protected readonly FLOW_PREFIX = 'reg';
@@ -40,6 +45,7 @@ export class RegisterCommand extends ConversationFlow {
     };
   }
 
+  /** Empieza (o reinicia) el registro del chat preguntando el nombre. */
   execute(bot: TelegramBot, msg: Message): void {
     const chatId = msg.chat.id;
     this.cleanupUserState(chatId);
@@ -57,6 +63,7 @@ export class RegisterCommand extends ConversationFlow {
     this.userStates.delete(chatId);
   }
 
+  /** Reinicia el plazo de 5 minutos; al vencer avisa y borra el estado. */
   private resetInactivityTimeout(chatId: number, bot: TelegramBot): void {
     const existingTimeout = this.timeouts.get(chatId);
     if (existingTimeout) clearTimeout(existingTimeout);
@@ -85,6 +92,10 @@ export class RegisterCommand extends ConversationFlow {
     }
   }
 
+  /**
+   * Envía una pregunta del flujo con el prefijo `(reg)`: así
+   * `isFlowMessage` reconoce después la respuesta del usuario.
+   */
   private async sendRegistrationMessage(
     chatId: number,
     text: string,
@@ -151,6 +162,7 @@ export class RegisterCommand extends ConversationFlow {
     }
   }
 
+  /** Guarda los apellidos solo si tienen 3 caracteres o más; si no, sigue. */
   private async handleLastName(
     chatId: number,
     text: string,
@@ -247,6 +259,10 @@ export class RegisterCommand extends ConversationFlow {
     }
   }
 
+  /**
+   * Teléfono compartido con el botón de contacto (solo en el paso `mobile`).
+   * Le añade el `+` si falta y pasa a la confirmación.
+   */
   public async handleContact(bot: TelegramBot, msg: Message): Promise<void> {
     if (!msg.contact) return;
 
@@ -300,6 +316,11 @@ export class RegisterCommand extends ConversationFlow {
     );
   }
 
+  /**
+   * Botones de confirmación: `confirm_no` cancela; cualquier otro valor valida
+   * los datos con `UserRegistrationDto` y crea el usuario. Siempre termina
+   * borrando el estado del chat.
+   */
   public async handleConfirmation(
     chatId: number,
     callbackData: string,
@@ -353,6 +374,10 @@ export class RegisterCommand extends ConversationFlow {
     }
   }
 
+  /**
+   * Respuesta de texto a una pregunta del flujo: la pasa al handler del paso
+   * actual. Si falla, avisa y borra el estado.
+   */
   public async handleReply(bot: TelegramBot, msg: Message): Promise<void> {
     if (!msg.reply_to_message?.text || !msg.text) return;
 

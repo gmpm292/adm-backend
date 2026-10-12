@@ -1,10 +1,8 @@
 import { createHash } from 'crypto';
 
 /**
- * Returns the digest stored in place of a json web token. A JWT is too long
- * for bcrypt (it only reads the first 72 bytes), so SHA-256 is used instead.
- *
- * @param token Json web token
+ * Hash que se guarda en lugar de un JWT. Un JWT es demasiado largo para
+ * bcrypt (solo lee los primeros 72 bytes), por eso se usa SHA-256.
  */
 export function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');

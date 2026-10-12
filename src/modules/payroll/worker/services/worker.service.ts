@@ -46,6 +46,10 @@ export class WorkerService extends BaseService<Worker> {
     super(workerRepository);
   }
 
+  /**
+   * Crea el trabajador en una transacción. Exige empresa y, o bien nombre, o
+   * bien una cuenta vinculable; la regla de pago es opcional.
+   */
   async create(
     createWorkerInput: CreateWorkerInput,
     cu?: JWTPayload,
@@ -159,6 +163,11 @@ export class WorkerService extends BaseService<Worker> {
     });
   }
 
+  /**
+   * Todos los trabajadores (sin paginar) de la empresa, oficina, departamento
+   * o equipo indicados, y opcionalmente solo los de `workerIds`. Hoy no lo
+   * llama nadie.
+   */
   async findWorkersByScope(
     filters: {
       businessId?: number;
@@ -214,6 +223,10 @@ export class WorkerService extends BaseService<Worker> {
     );
   }
 
+  /**
+   * Cambia en una transacción los campos que llegan. Si llega alguna parte
+   * del lugar se rehace entero; al final debe quedar nombre o cuenta.
+   */
   async update(
     id: number,
     updateWorkerInput: UpdateWorkerInput,
@@ -318,6 +331,7 @@ export class WorkerService extends BaseService<Worker> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Worker[]> {
+    // Borrado lógico: pagos y asistencias siguen apuntando al trabajador.
     return super.baseDeleteMany({
       ids,
       cu,

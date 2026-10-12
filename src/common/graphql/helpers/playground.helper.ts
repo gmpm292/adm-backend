@@ -2,6 +2,10 @@
 import { ConfigService, Environment } from '../../config';
 import { AppLoggerService } from '../../logger/logger.service';
 
+/**
+ * Playground activo salvo en producción. Hoy no se usa: `graphql.module`
+ * fija `playground: true`.
+ */
 export function playground(
   loggerService: AppLoggerService,
   configService: ConfigService,

@@ -4,6 +4,11 @@ import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { getDatabaseConnection } from '../config/helpers/connection.helper';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
+/**
+ * Conexión a PostgreSQL. Las entidades y migraciones se leen de `dist`; las
+ * migraciones pendientes se aplican al arrancar y el esquema nunca se
+ * sincroniza solo.
+ */
 @Module({
   imports: [
     TypeOrmModule.forRootAsync({

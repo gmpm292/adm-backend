@@ -21,6 +21,10 @@ import { TelegramTransportResult } from '../interfaces/elegram-transport-result.
 import { TelegramError } from '../enums/telegram-error.interface';
 import { UpdateTelegramTemplateInput } from '../dtos/update-telegram-template.input';
 
+/**
+ * Envía mensajes de Telegram (texto directo o plantilla Handlebars), guarda
+ * cada envío en `telegram_message` y administra las plantillas.
+ */
 @Injectable()
 export class TelegramService implements OnModuleInit {
   private readonly logger = new Logger(TelegramService.name);
@@ -34,11 +38,17 @@ export class TelegramService implements OnModuleInit {
     private readonly transportService: TelegramTransportService,
   ) {}
 
+  /** Al arrancar reintenta los envíos fallidos. */
   async onModuleInit(): Promise<void> {
     await this.retryFailedMessages();
   }
 
-  // Método principal para enviar mensajes
+  /**
+   * Envía un mensaje por bot (`chatId`) o por la cuenta de usuario
+   * (`phoneNumber`). Lo guarda como `pending` y luego como SENT o FAILED.
+   * Ojo: el transporte devuelve los fallos como `success: false` sin lanzar,
+   * y aquí no se mira `success`, así que esos envíos quedan como SENT.
+   */
   async sendMessage(data: SendTelegramMessageInput): Promise<TelegramMessage> {
     const messageData = {
       chatId: data.chatId,
@@ -76,6 +86,10 @@ export class TelegramService implements OnModuleInit {
   }
 
   // Métodos auxiliares privados
+  /**
+   * Si llega `templateId` (el nombre de una plantilla activa), rellena el
+   * mensaje con `context` o el `defaultContext` y toma su tipo de mensaje.
+   */
   private async processTemplateIfNeeded(
     data: SendTelegramMessageInput,
     message: TelegramMessage,
@@ -100,6 +114,10 @@ export class TelegramService implements OnModuleInit {
     }
   }
 
+  /**
+   * Marca el envío como SENT. Si se envió por teléfono, guarda como `chatId`
+   * el id de usuario de Telegram que se resolvió.
+   */
   private async handleSuccess(
     message: TelegramMessage,
     result: TelegramTransportResult,
@@ -115,6 +133,7 @@ export class TelegramService implements OnModuleInit {
     return this.messageRepository.save(message);
   }
 
+  /** Marca el envío como FAILED, guarda el error y lo vuelve a lanzar. */
   private async handleError(
     message: TelegramMessage,
     error: Error & { code?: string },
@@ -139,6 +158,7 @@ export class TelegramService implements OnModuleInit {
     };
   }
 
+  /** Validación de la entrada de envío. Hoy no la llama nadie. */
   private validateSendInput(data: SendTelegramMessageInput): void {
     if (!data.chatId && !data.phoneNumber) {
       throw new Error('Either chatId or phoneNumber must be provided');
@@ -154,6 +174,11 @@ export class TelegramService implements OnModuleInit {
   }
 
   // Métodos para reintentos
+  /**
+   * Reintenta los mensajes FAILED con menos de `maxRetries` intentos. Cada
+   * reintento crea un registro nuevo vía `sendMessage`; el original solo
+   * suma `retryCount` (y queda en RETRYING si el reintento sale bien).
+   */
   async retryFailedMessages(
     maxRetries: number = this.maxRetries,
   ): Promise<void> {
@@ -204,6 +229,7 @@ export class TelegramService implements OnModuleInit {
   }
 
   // Métodos CRUD para plantillas
+  /** Crea una plantilla (activa por defecto); el nombre no se repite. */
   async createTemplate(
     input: CreateTelegramTemplateInput,
   ): Promise<TelegramTemplate> {
@@ -269,6 +295,10 @@ export class TelegramService implements OnModuleInit {
   }
 
   // Métodos para estadísticas
+  /**
+   * Totales por estado, con desglose por bot y por tipo de mensaje.
+   * `successRate` es una fracción (0-1), no un porcentaje.
+   */
   async getStats(): Promise<TelegramStatsOutput> {
     const [total, sent, delivered, failed, pending] = await Promise.all([
       this.messageRepository.count(),

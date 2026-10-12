@@ -13,6 +13,10 @@ import { StringSession } from 'telegram/sessions';
 import { Api } from 'telegram/tl';
 import bigInt from 'big-integer';
 
+/**
+ * Envío real a Telegram por dos vías: bots (`TELEGRAM_BOTS`, por `chatId`) y
+ * una cuenta de usuario con GramJS (por número de teléfono).
+ */
 @Injectable()
 export class TelegramTransportService implements OnModuleInit {
   private readonly logger = new Logger(TelegramTransportService.name);
@@ -25,6 +29,11 @@ export class TelegramTransportService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {}
 
+  /**
+   * Lo llama `TelegramModule` al arrancar: crea los bots, conecta la cuenta
+   * de usuario (si hay `TELEGRAM_API_ID` y `TELEGRAM_API_HASH`) y registra
+   * los webhooks.
+   */
   async init(): Promise<void> {
     // Configuración para el cliente de usuario (envío por número)
     const apiId = this.configService.get<number>('TELEGRAM_API_ID');
@@ -55,6 +64,10 @@ export class TelegramTransportService implements OnModuleInit {
     //}
   }
 
+  /**
+   * Registra en Telegram, para cada bot, la URL
+   * `TELEGRAM_WEBHOOK_URL/telegram/webhooks/<bot>` con `TELEGRAM_SECRET_TOKEN`.
+   */
   private async setupWebhooks(): Promise<void> {
     const webhookBaseUrl = this.configService.get<string>(
       'TELEGRAM_WEBHOOK_URL',
@@ -93,6 +106,7 @@ export class TelegramTransportService implements OnModuleInit {
     }
   }
 
+  /** Prueba manual con destinos fijos; su llamada en `init` está comentada. */
   private async testSendMessages(): Promise<void> {
     try {
       this.logger.log('=== INICIANDO PRUEBAS DE ENVÍO ===');
@@ -135,6 +149,11 @@ export class TelegramTransportService implements OnModuleInit {
     }
   }
 
+  /**
+   * Crea un bot (sin polling: se usan webhooks) por cada entrada del JSON
+   * `TELEGRAM_BOTS` (`{ nombre: token }`). Salta los tokens mal formados y
+   * lanza si el JSON no es válido.
+   */
   private initializeBots(): void {
     try {
       // Obtener el string JSON de la configuración
@@ -168,6 +187,7 @@ export class TelegramTransportService implements OnModuleInit {
     }
   }
 
+  /** Conecta la cuenta de usuario y guarda la sesión en `TELEGRAM_SESSION`. */
   private async connectClient(): Promise<void> {
     if (!this.isClientConnected && this.client) {
       await this.client.connect();
@@ -188,6 +208,10 @@ export class TelegramTransportService implements OnModuleInit {
     return bot;
   }
 
+  /**
+   * Envía por teléfono si llega `phoneNumber`; si no, por bot con `chatId`.
+   * No lanza: los fallos vuelven como `success: false` con el error.
+   */
   async sendMessage(
     options: TelegramSendOptions,
   ): Promise<TelegramTransportResult> {
@@ -210,6 +234,10 @@ export class TelegramTransportService implements OnModuleInit {
     }
   }
 
+  /**
+   * Envío por bot (`botTokenKey`, por defecto `default`). Foto y documento
+   * usan la URL del primer adjunto y el texto como pie.
+   */
   private async sendViaBot(
     options: TelegramSendOptions,
   ): Promise<TelegramTransportResult> {
@@ -260,6 +288,10 @@ export class TelegramTransportService implements OnModuleInit {
     }
   }
 
+  /**
+   * Envío desde la cuenta de usuario: importa el número como contacto para
+   * obtener su id de Telegram y le escribe. Solo texto, sin adjuntos.
+   */
   private async sendToPhoneNumber(
     options: TelegramSendOptions,
   ): Promise<TelegramTransportResult> {
@@ -317,6 +349,7 @@ export class TelegramTransportService implements OnModuleInit {
     }
   }
 
+  /** Formato de Telegram según el tipo: MarkdownV2, HTML o texto plano. */
   private getParseMode(
     messageType: TelegramMessageType,
   ): 'MarkdownV2' | 'HTML' | undefined {
@@ -327,6 +360,7 @@ export class TelegramTransportService implements OnModuleInit {
         : undefined;
   }
 
+  /** Bots creados al arrancar; los usa `TelegramWebhooksService`. */
   public getBots(): Map<string, TelegramBot> {
     return this.bots;
   }

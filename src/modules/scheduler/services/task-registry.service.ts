@@ -15,6 +15,10 @@ import { ConditionalOperator } from '../../../core/graphql/remote-operations/enu
 import { NotFoundError } from '../../../core/errors/appErrors/NotFoundError.error';
 import { UpdateScheduledTaskInput } from '../dto/update-scheduled-task.input';
 
+/**
+ * Persistencia de las tareas programadas (`scheduled_task`). No programa
+ * nada: eso lo hace `TaskSchedulerService`.
+ */
 @Injectable()
 export class TaskRegistryService extends BaseService<ScheduledTask> {
   constructor(
@@ -32,7 +36,8 @@ export class TaskRegistryService extends BaseService<ScheduledTask> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<ScheduledTask> {
-    // 🔎 Validar que no exista tarea con mismo handlerType y cronExpression
+    // Solo avisa si ya hay una tarea con el mismo handlerType y cron: no
+    // impide crearla.
     await this.validateUniqueTask(createTaskInput, cu, scopes, manager);
 
     const task: DeepPartial<ScheduledTask> = {
@@ -65,6 +70,7 @@ export class TaskRegistryService extends BaseService<ScheduledTask> {
     return super.baseFindOne({ id, cu, scopes, manager });
   }
 
+  /** Tareas activas no eliminadas, sin alcance de usuario (para arrancar). */
   async getAllActiveTasks(): Promise<ScheduledTask[]> {
     return this.taskRepository.find({ where: { isActive: true } });
   }
@@ -94,6 +100,7 @@ export class TaskRegistryService extends BaseService<ScheduledTask> {
     });
   }
 
+  /** Borrado lógico; lanza NotFound si no encuentra ninguna. */
   async remove(
     ids: number[],
     cu?: JWTPayload,
@@ -131,6 +138,11 @@ export class TaskRegistryService extends BaseService<ScheduledTask> {
     });
   }
 
+  /**
+   * Comprueba si ya existe una tarea con el mismo `handlerType` y
+   * `cronExpression`. Si existe solo lo escribe en consola; siempre devuelve
+   * `true`.
+   */
   private async validateUniqueTask(
     createTaskInput: CreateScheduledTaskInput,
     cu?: JWTPayload,

@@ -22,6 +22,11 @@ import { PaymentRuleService } from '../../payment-rule/services/payment-rule.ser
 import { PayrollPeriodService } from '../../payroll-period/services/payroll-period.service';
 import { ConditionalOperator } from '../../../../core/graphql/remote-operations/enums/conditional-operation.enum';
 
+/**
+ * Acumuladores de nómina: uno por trabajador, regla y período, con lo que
+ * suman sus ventas (unidades, importe, total vendido). Los mantiene
+ * `RealTimePaymentService`; aquí está el CRUD.
+ */
 @Injectable()
 export class PaymentAccumulatorService extends BaseService<PaymentAccumulator> {
   constructor(
@@ -35,6 +40,11 @@ export class PaymentAccumulatorService extends BaseService<PaymentAccumulator> {
     super(paymentAccumulatorRepository);
   }
 
+  /**
+   * Crea el acumulador copiando la empresa, oficina, departamento y equipo del
+   * trabajador. Lanza `ConflictError` si ya hay uno para ese trabajador,
+   * regla y período.
+   */
   async create(
     createPaymentAccumulatorInput: CreatePaymentAccumulatorInput,
     cu?: JWTPayload,
@@ -128,6 +138,10 @@ export class PaymentAccumulatorService extends BaseService<PaymentAccumulator> {
     });
   }
 
+  /**
+   * Si cambia el trabajador, toma también su lugar en la empresa. No vuelve a
+   * comprobar que no se repita trabajador, regla y período.
+   */
   async update(
     id: number,
     updatePaymentAccumulatorInput: UpdatePaymentAccumulatorInput,
@@ -228,6 +242,7 @@ export class PaymentAccumulatorService extends BaseService<PaymentAccumulator> {
     });
   }
 
+  /** Lanza `ConflictError` si ya hay uno de ese trabajador, regla y período. */
   async validateUniquePaymentAccumulator(
     createInput: CreatePaymentAccumulatorInput,
     cu?: JWTPayload,
@@ -270,6 +285,7 @@ export class PaymentAccumulatorService extends BaseService<PaymentAccumulator> {
     return true;
   }
 
+  /** Acumuladores del trabajador en el período, uno por regla. */
   async findByWorkerAndPeriod(
     workerId: number,
     payrollPeriodId: number,

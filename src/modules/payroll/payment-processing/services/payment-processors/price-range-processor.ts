@@ -25,6 +25,7 @@ import { PaymentAccumulator } from '../../../payment_accumulator/entities/paymen
 import { Attendance } from '../../../attendance/entities/attendance.entity';
 import { AttendanceStatus } from '../../../attendance/enums/attendance-status.enum';
 
+/** Comisión según el tramo de precio de cada producto (`PRICE_RANGE`). */
 @Injectable()
 export class PriceRangeProcessor extends BasePaymentProcessor {
   protected readonly supportedPaymentType = PaymentType.PRICE_RANGE;
@@ -38,6 +39,12 @@ export class PriceRangeProcessor extends BasePaymentProcessor {
     super();
   }
 
+  /**
+   * Cada unidad vendida paga el importe fijo o el porcentaje del tramo en que
+   * cae su precio (en la moneda de la regla); fuera de todo tramo no paga. El
+   * total se reparte a partes iguales entre los mismos trabajadores que en
+   * `PercentageProcessor`. Solo calcula: los pagos los crea el servicio.
+   */
   async realTimeCalculate(
     rule: PaymentRule,
     sale: Sale,
@@ -125,6 +132,7 @@ export class PriceRangeProcessor extends BasePaymentProcessor {
         const range = sortedRanges[i];
         const nextRange = sortedRanges[i + 1];
 
+        // El máximo es exclusivo; sin máximo, el tramo llega hasta el siguiente
         const rangeMin = range.min || 0;
         const rangeMax = range.max ?? nextRange?.min ?? Infinity;
 
@@ -214,6 +222,7 @@ export class PriceRangeProcessor extends BasePaymentProcessor {
         applicableWorkers = Array.from(publicists.values());
       } else {
         // Otros tipos de workers: forzar distribución
+        // (cambia el objeto `rule` recibido, no la regla guardada)
         rule.distributeProfits = true;
       }
     }

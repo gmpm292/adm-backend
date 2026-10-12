@@ -1,6 +1,7 @@
 import { Role } from '../enums/role.enum';
 
 const FULL_BUSSINES_ACCESS_ROLES = [Role.SUPER, Role.PRINCIPAL];
+/** Si alguno de los roles es SUPER o PRINCIPAL. */
 export const haveFullAccess = (roles: Role[]) => {
   let haveFull = false;
   FULL_BUSSINES_ACCESS_ROLES.forEach((r) => {
@@ -9,6 +10,7 @@ export const haveFullAccess = (roles: Role[]) => {
   return haveFull;
 };
 
+/** Si el usuario tiene al menos uno de los roles indicados. */
 export const haveAccess = (userRoles: Role[], rolesForCheck: Role[]) => {
   let haveAcces = false;
 

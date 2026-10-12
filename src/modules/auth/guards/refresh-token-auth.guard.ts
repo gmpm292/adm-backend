@@ -8,6 +8,10 @@ import { GqlExecutionContext } from '@nestjs/graphql';
 import { parse } from 'cookie';
 import { Request } from 'express';
 
+/**
+ * Exige un refresh token válido (estrategia `refresh-token`); parsea las
+ * cookies de la petición GraphQL antes de pasarla a Passport.
+ */
 @Injectable()
 export class RefreshTokenAuthGuard extends AuthGuard('refresh-token') {
   public getRequest(context: ExecutionContext): Request {

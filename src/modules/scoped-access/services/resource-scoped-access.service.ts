@@ -58,7 +58,8 @@ export class ResourceScopedAccessService
   }
 
   /**
-   * Busca en caché por businessId y currentQueryOrEndpoint (síncrono)
+   * Nivel de acceso activo de la empresa para la operación, desde la memoria
+   * (síncrono). Nulo si la operación no está registrada o no tiene uno.
    */
   findByBusinessAndQueryOrEndpoint(
     businessId: number,
@@ -74,6 +75,10 @@ export class ResourceScopedAccessService
     return this.scopedAccessCache.get(cacheKey) || null;
   }
 
+  /**
+   * Crea el nivel de acceso (activo si no llega estado) y recarga la memoria.
+   * Lanza `ConflictError` si la empresa ya tiene uno para la operación.
+   */
   async create(
     createScopedAccessInput: CreateScopedAccessInput,
     cu?: JWTPayload,
@@ -179,6 +184,7 @@ export class ResourceScopedAccessService
     return this.findOne(id, cu, scopes, manager);
   }
 
+  /** Elimina (borrado lógico) los que encuentre y recarga la memoria. */
   async remove(
     ids: number[],
     cu?: JWTPayload,
@@ -209,6 +215,10 @@ export class ResourceScopedAccessService
     return result;
   }
 
+  /**
+   * Restaura los eliminados de la lista (ignora los que no lo están) y
+   * recarga la memoria. Devuelve cuántos se restauraron.
+   */
   async restore(
     ids: number[],
     cu?: JWTPayload,
@@ -258,7 +268,8 @@ export class ResourceScopedAccessService
   }
 
   /**
-   * Carga en memoria los niveles de acceso activos
+   * Carga en memoria los niveles de acceso activos, con clave
+   * `empresa:operación`. Se llama tras cada cambio.
    */
   private async loadScopedAccessCache(): Promise<void> {
     const all = await this.scopedAccessRepository.find({

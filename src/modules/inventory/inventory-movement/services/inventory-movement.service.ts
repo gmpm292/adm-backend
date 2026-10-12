@@ -18,6 +18,10 @@ import {
 import { ConditionalOperator } from '../../../../core/graphql/remote-operations/enums/conditional-operation.enum';
 import { MANUAL_MOVEMENT_REASONS } from '../enums/movement-reason';
 
+/**
+ * Movimientos de inventario: la única vía para cambiar existencias. No se
+ * editan ni se eliminan; son el historial de entradas y salidas.
+ */
 @Injectable()
 export class InventoryMovementService extends BaseService<InventoryMovement> {
   constructor(
@@ -98,6 +102,7 @@ export class InventoryMovementService extends BaseService<InventoryMovement> {
       throw new NotFoundError('No se encontró el usuario');
     }
 
+    // Hereda empresa, oficina, departamento y equipo de su inventario.
     const movement: InventoryMovement = {
       ...rest,
       inventory,
@@ -135,6 +140,7 @@ export class InventoryMovementService extends BaseService<InventoryMovement> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<ListSummary> {
+    // Los movimientos eliminados se siguen ocultando salvo que se pidan.
     const notDeleted = options?.withDeleted
       ? []
       : [{ property: 'deletedAt', operator: ConditionalOperator.IS_NULL }];
@@ -160,6 +166,7 @@ export class InventoryMovementService extends BaseService<InventoryMovement> {
     });
   }
 
+  /** Un movimiento con todo su contexto, aunque esté eliminado. */
   async findOne(
     id: number,
     cu?: JWTPayload,
@@ -186,6 +193,10 @@ export class InventoryMovementService extends BaseService<InventoryMovement> {
     });
   }
 
+  /**
+   * Movimientos de un inventario, del más reciente al más antiguo. El alcance
+   * se comprueba sobre el inventario.
+   */
   async findByInventory(
     inventoryId: number,
     cu?: JWTPayload,

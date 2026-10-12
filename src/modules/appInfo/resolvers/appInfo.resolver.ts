@@ -35,6 +35,7 @@ export class AppInfoResolver {
     return this.appInfoService.appInfo();
   }
 
+  // Sin guard y con destinatarios fijos: parece código de prueba.
   @Mutation(() => AppInfo)
   updateAppInfo(@Args('appInfoInput') appInfoInput: AppInfoInput) {
     this.pubSub

@@ -15,6 +15,11 @@ import { Role } from '../../../core/enums/role.enum';
 import { RoleGuardService } from '../../role-guard-resource/services/role-guard.service';
 import { haveAccess } from '../../../core/utils/full-access.roles';
 
+/**
+ * Comprueba los roles del usuario contra los de la operación. Debe ir después
+ * de `AccessTokenAuthGuard` (necesita `req.user`); un `@Roles` sin este guard
+ * no se aplica.
+ */
 @Injectable()
 export class RoleGuard implements CanActivate {
   constructor(
@@ -35,6 +40,10 @@ export class RoleGuard implements CanActivate {
     return ctx.getContext().req.user as JWTPayload;
   }
 
+  /**
+   * Nombre de la operación GraphQL o ruta HTTP sin parámetros: es la clave
+   * con la que se guardan los permisos en `RoleGuardEntity`.
+   */
   private getCurrentQueryOrEndPointURL(context: ExecutionContext) {
     const contextType = context.getType();
     if ((contextType as any) == 'graphql') {
@@ -51,6 +60,11 @@ export class RoleGuard implements CanActivate {
     return null;
   }
 
+  /**
+   * Los roles de `RoleGuardEntity` (editables desde el frontend) sustituyen a
+   * los `@Roles` del código. `@NoRoles` deniega a quien tenga alguno de esos
+   * roles; sin roles definidos, pasa cualquiera.
+   */
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const roles =
       this.getRolesInRoleGuardEntity(context) ??
@@ -73,6 +87,7 @@ export class RoleGuard implements CanActivate {
     return this.matchRoles(roles, user.role);
   }
 
+  /** Roles guardados para la operación, o nulo si no hay fila o no tiene. */
   private getRolesInRoleGuardEntity(context: ExecutionContext) {
     const queryOrEndPointURL = this.getCurrentQueryOrEndPointURL(context);
     return queryOrEndPointURL

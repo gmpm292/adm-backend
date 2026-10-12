@@ -1,3 +1,7 @@
+/**
+ * Deja solo los dígitos y añade `+`; con menos de 11 dígitos supone el
+ * prefijo de EE. UU. (`+1`).
+ */
 export function constructPhoneNumber(cad: string) {
   if (!cad) return null;
   const solved = cad.toString().replace(/\D+/g, '');
@@ -5,6 +9,7 @@ export function constructPhoneNumber(cad: string) {
   return '+'.concat(solved);
 }
 
+/** Diferencia entre dos fechas como `HH:mm:ss:SSS` (las horas no se cortan). */
 export function calculateTimeDifference(date1: Date, date2: Date): string {
   const difference = Math.abs(date2.getTime() - date1.getTime());
 

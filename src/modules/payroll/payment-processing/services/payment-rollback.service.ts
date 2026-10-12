@@ -10,6 +10,10 @@ import { PaymentConcept } from '../../worker-payment/enums/payment-concept.enum'
 import { PaymentMethod } from '../../worker-payment/enums/payment-method.enum';
 import { ConditionalOperator } from '../../../../core/graphql/remote-operations/enums/conditional-operation.enum';
 
+/**
+ * Deshace las comisiones de una venta devuelta. Lo llama `SaleService` al
+ * devolver (en la misma transacción) y también está expuesto en GraphQL.
+ */
 @Injectable()
 export class PaymentRollbackService {
   constructor(
@@ -18,8 +22,10 @@ export class PaymentRollbackService {
   ) {}
 
   /**
-   * MÉTODO PRINCIPAL: Revertir pagos de una venta
-   * Para devoluciones, cancelaciones o correcciones
+   * Revierte los pagos de la venta que no lo estén ya: los pendientes se
+   * eliminan; los pagados se marcan `reversed` en `breakdown` y, con
+   * `compensateInNextPeriod` (por defecto), se intenta crear un descuento.
+   * No lanza: un error se devuelve como `success: false`.
    */
   async rollbackSalePayments(
     input: RollbackSalePaymentsInput,
@@ -198,9 +204,7 @@ export class PaymentRollbackService {
     }
   }
 
-  /**
-   * Buscar pagos por ID de venta
-   */
+  /** Todos los pagos vinculados a la venta (comisiones y compensaciones). */
   private async findPaymentsBySaleId(
     saleId: number,
     cu?: JWTPayload,
@@ -236,7 +240,9 @@ export class PaymentRollbackService {
   }
 
   /**
-   * Marcar pagos como reversados
+   * Anota la reversión en `breakdown` y `notes` sin tocar el importe. Un pago
+   * que no se puede actualizar (p. ej. de un período cerrado) solo se registra
+   * en el log.
    */
   private async markPaymentsAsReversed(
     payments: WorkerPayment[],
@@ -284,7 +290,10 @@ export class PaymentRollbackService {
   }
 
   /**
-   * Crear pagos de compensación (descuentos para próximo período)
+   * Crea un pago `DISCOUNT` con el importe en negativo por cada pago ya hecho,
+   * en `specificNextPeriodId` o en el período que contiene hoy. Ojo:
+   * `WorkerPaymentService.create` exige importe mayor que cero, así que hoy
+   * cada creación falla y solo queda en el log.
    */
   private async createCompensationPayments(
     originalPayments: WorkerPayment[],

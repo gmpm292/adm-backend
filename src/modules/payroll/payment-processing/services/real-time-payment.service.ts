@@ -48,6 +48,7 @@ const metadataOf = (accumulator: PaymentAccumulator): AccumulatorMetadata =>
  */
 @Injectable()
 export class RealTimePaymentService {
+  /** Tipos de regla que se calculan venta a venta (el importe fijo no). */
   REAL_TIME_PAYMENT_TYPES = [
     PaymentType.PRICE_RANGE,
     PaymentType.SALE_QUANTITY,
@@ -181,7 +182,8 @@ export class RealTimePaymentService {
 
   /**
    * Borra los pagos no pagados de la venta y resta de los acumuladores lo que
-   * la venta les había sumado. Devuelve las reglas con pagos ya hechos.
+   * la venta les había sumado. Devuelve las reglas cuyos pagos se conservan
+   * (pagados, revertidos o compensaciones): esas no se recalculan.
    */
   private async clearUnpaidPayments(
     sale: Sale,
@@ -283,6 +285,11 @@ export class RealTimePaymentService {
     );
   }
 
+  /**
+   * Calcula la regla con su procesador, anota en el acumulador lo que aporta
+   * la venta y crea un pago `COMMISSION` por trabajador con importe positivo
+   * (redondeado a 2 decimales).
+   */
   private async processRuleForSale(
     rule: PaymentRule,
     sale: Sale,

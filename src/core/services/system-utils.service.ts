@@ -3,6 +3,10 @@ import { EntityManager } from 'typeorm';
 import { Role } from '../enums/role.enum';
 import { User } from '../../modules/users/entities/user.entity';
 
+/**
+ * Usuario del sistema (`system@admin.com`), con el que actúan las tareas
+ * automáticas. Se carga al arrancar (`CoreModule`).
+ */
 @Injectable()
 export class SystemUtilsService {
   private systemUser: User;
@@ -13,11 +17,16 @@ export class SystemUtilsService {
     this.systemUser = await this.ensureSystemUserExists();
   }
 
+  /** Lanza si se pide antes de que `CoreModule` lo cargue. */
   public getSystemUser(): User {
     if (!this.systemUser) throw new Error('System user not loaded!');
     return this.systemUser;
   }
 
+  /**
+   * Lo busca (también entre eliminados) y, si no está, lo crea como SUPER
+   * sin contraseña. Normalmente ya lo crearon las migraciones.
+   */
   private async ensureSystemUserExists(): Promise<User> {
     let user = await this.entityManager.findOne(User, {
       where: { email: 'system@admin.com' },

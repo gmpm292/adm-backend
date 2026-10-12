@@ -26,6 +26,7 @@ import {
   plural,
 } from '../../helpers/company-structure.helper';
 
+/** Departamentos de una oficina; guardan también la empresa de la oficina. */
 @Injectable()
 export class DepartmentService extends BaseService<Department> {
   constructor(
@@ -36,6 +37,7 @@ export class DepartmentService extends BaseService<Department> {
     super(departmentRepository);
   }
 
+  /** El de la transacción en curso o, si no hay, el del repositorio. */
   private managerOf(manager?: EntityManager): EntityManager {
     return manager ?? this.departmentRepository.manager;
   }
@@ -53,6 +55,10 @@ export class DepartmentService extends BaseService<Department> {
     return office;
   }
 
+  /**
+   * Crea el departamento en una oficina y le copia la empresa de esta. El
+   * nombre no se repite dentro de la oficina.
+   */
   async create(
     dto: CreateDepartmentInput,
     cu?: JWTPayload,
@@ -88,6 +94,7 @@ export class DepartmentService extends BaseService<Department> {
     return this.findOne(created.id as number, cu, scopes, manager);
   }
 
+  /** Listado con oficina y empresa; por defecto ordenado por nombre. */
   async find(
     options?: ListOptions,
     cu?: JWTPayload,
@@ -107,6 +114,7 @@ export class DepartmentService extends BaseService<Department> {
     });
   }
 
+  /** Un departamento con oficina, empresa y equipos, dentro del alcance. */
   async findOne(
     id: number,
     cu?: JWTPayload,
@@ -126,6 +134,7 @@ export class DepartmentService extends BaseService<Department> {
     });
   }
 
+  /** Como `findOne`, pero buscando por cualquier condición. */
   async findOneByFilters(
     filters: FindOptionsWhere<Department>,
     cu?: JWTPayload,
@@ -145,6 +154,7 @@ export class DepartmentService extends BaseService<Department> {
     });
   }
 
+  /** Cambia solo los campos que llegan; la oficina no se cambia. */
   async update(
     id: number,
     updateDepartmentInput: UpdateDepartmentInput,
@@ -233,6 +243,10 @@ export class DepartmentService extends BaseService<Department> {
     });
   }
 
+  /**
+   * Restaura solo los eliminados de la lista y devuelve cuántos. Falla si la
+   * oficina de alguno sigue eliminada.
+   */
   async restore(
     ids: number[],
     cu?: JWTPayload,

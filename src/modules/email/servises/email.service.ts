@@ -21,6 +21,10 @@ import { NotFoundError } from '../../../core/errors/appErrors/NotFoundError.erro
 import { ConfigService } from '../../../common/config';
 import { EmailHealthService } from './email-health.service';
 
+/**
+ * Envía correos (texto directo o plantilla Handlebars) y guarda cada envío en
+ * la tabla `email` con su estado. También administra las plantillas.
+ */
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
@@ -36,6 +40,10 @@ export class EmailService {
     private readonly healthService: EmailHealthService,
   ) {}
 
+  /**
+   * Prepara el transporte y, si `EMAIL_TEST_ON_STARTUP` está activo, manda un
+   * correo de prueba. Se llama al arrancar el módulo y al recargar OAuth2.
+   */
   async init(): Promise<void> {
     await this.initializeTransport();
 
@@ -56,6 +64,10 @@ export class EmailService {
     }
   }
 
+  /**
+   * Manda el correo de prueba a `EMAIL_TEST_RECIPIENT`. Si el correo no está
+   * configurado no hace nada; los fallos solo se registran en el log.
+   */
   private async sendTestEmail(): Promise<void> {
     const testEmail = this.configService.get<string>('EMAIL_TEST_RECIPIENT');
     if (!testEmail) {
@@ -85,6 +97,11 @@ export class EmailService {
     }
   }
 
+  /**
+   * Envía un correo. Exige `templateId` o asunto y cuerpo. Guarda el registro
+   * como PENDING antes de enviar y lo pasa a SENT o FAILED; si falla, guarda
+   * el error y vuelve a lanzarlo.
+   */
   async sendEmail(data: SendEmailInput): Promise<Email> {
     if (!data.templateId && (!data.body || !data.subject)) {
       throw new Error(
@@ -148,12 +165,18 @@ export class EmailService {
     }
   }
 
+  /** Remitente con el formato `"FROM" <FROM_EMAIL>`. */
   private getFromAddress(): string {
     return `"${this.configService.get<string>('FROM')}" <${this.configService.get<string>(
       'FROM_EMAIL',
     )}>`;
   }
 
+  /**
+   * Busca la plantilla activa por su nombre (`templateId` es el nombre, no el
+   * id) y rellena asunto y cuerpo con `context` o, si no llega, con su
+   * `defaultContext`.
+   */
   private async applyTemplate(
     data: SendEmailInput,
     emailRecord: Email,
@@ -181,6 +204,7 @@ export class EmailService {
     await this.emailRepository.save(emailRecord);
   }
 
+  /** Marca el envío como FAILED y guarda el mensaje, la traza y el código. */
   private async handleEmailError(
     emailRecord: Email,
     error: any,
@@ -232,6 +256,7 @@ export class EmailService {
     return template;
   }
 
+  /** Crea una plantilla; el nombre no puede repetirse. */
   async createTemplate(
     input: CreateEmailTemplateInput,
   ): Promise<EmailTemplate> {
@@ -256,6 +281,11 @@ export class EmailService {
     return this.findTemplateById(input.id);
   }
 
+  /**
+   * Reintenta los envíos FAILED con menos de `maxRetries` intentos. Cada
+   * reintento pasa por `sendEmail`, que guarda un registro nuevo; el original
+   * solo suma `retryCount` (y queda en RETRYING si el reintento sale bien).
+   */
   async retryFailedEmails(maxRetries = 3): Promise<void> {
     const failedEmails = await this.emailRepository.find({
       where: {
@@ -297,6 +327,7 @@ export class EmailService {
     }
   }
 
+  /** Totales por estado de todos los envíos y porcentaje de enviados. */
   async getStats(): Promise<EmailStats> {
     const [total, sent, failed, pending] = await Promise.all([
       this.emailRepository.count(),
@@ -314,6 +345,10 @@ export class EmailService {
     };
   }
 
+  /**
+   * Correos enviados con Gmail en las últimas 24 h frente a un límite fijo de
+   * 2000 (no se consulta a Google). Hoy no lo usa ningún resolver.
+   */
   async checkGoogleQuota(): Promise<{ limit: number; usage: number }> {
     try {
       return {

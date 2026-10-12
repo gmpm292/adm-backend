@@ -12,6 +12,7 @@ import { User } from '../../users/entities/user.entity';
 
 export const mobileLocalStrategyName = 'mobile-local';
 
+/** Login de la app móvil: correo y contraseña de un usuario con rol USER. */
 @Injectable()
 export class MobileLocalStrategy extends PassportStrategy(
   Strategy,
@@ -22,9 +23,8 @@ export class MobileLocalStrategy extends PassportStrategy(
   }
 
   /**
-   * Validate user's credentials
-   *
-   * @param request
+   * Toma las credenciales de la primera variable de la petición GraphQL y
+   * exige el rol USER.
    */
   public async validate(request: Request): Promise<User> {
     const { email, password } =

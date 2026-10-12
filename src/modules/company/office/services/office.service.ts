@@ -27,6 +27,7 @@ import {
   plural,
 } from '../../helpers/company-structure.helper';
 
+/** Oficinas de una empresa (segundo nivel de la estructura). */
 @Injectable()
 export class OfficeService extends BaseService<Office> {
   constructor(
@@ -37,10 +38,12 @@ export class OfficeService extends BaseService<Office> {
     super(officeRepository);
   }
 
+  /** El de la transacción en curso o, si no hay, el del repositorio. */
   private managerOf(manager?: EntityManager): EntityManager {
     return manager ?? this.officeRepository.manager;
   }
 
+  /** La empresa de la oficina; lanza `NotFoundError` si no existe. */
   private async findBusiness(
     businessId: number,
     manager?: EntityManager,
@@ -52,6 +55,10 @@ export class OfficeService extends BaseService<Office> {
     return business;
   }
 
+  /**
+   * Crea la oficina en una empresa (la del usuario, si tiene una). El nombre
+   * no se repite dentro de la empresa. Devuelve la oficina con sus relaciones.
+   */
   async create(
     createOfficeInput: CreateOfficeInput,
     cu?: JWTPayload,
@@ -94,6 +101,7 @@ export class OfficeService extends BaseService<Office> {
     return this.findOne(created.id as number, cu, scopes, manager);
   }
 
+  /** Listado con empresa y departamentos; por defecto ordenado por nombre. */
   async find(
     options?: ListOptions,
     cu?: JWTPayload,
@@ -113,6 +121,7 @@ export class OfficeService extends BaseService<Office> {
     });
   }
 
+  /** Una oficina con empresa y departamentos, dentro del alcance. */
   async findOne(
     id: number,
     cu?: JWTPayload,
@@ -131,6 +140,11 @@ export class OfficeService extends BaseService<Office> {
     });
   }
 
+  /**
+   * Cambia solo los campos que llegan. La empresa no se cambia; descripción y
+   * dirección vacías se guardan como cadena vacía (las columnas no admiten
+   * nulos).
+   */
   async update(
     id: number,
     updateOfficeInput: UpdateOfficeInput,
@@ -210,6 +224,10 @@ export class OfficeService extends BaseService<Office> {
     });
   }
 
+  /**
+   * Restaura solo las eliminadas de la lista y devuelve cuántas. Falla si la
+   * empresa de alguna sigue eliminada.
+   */
   async restore(
     ids: number[],
     cu?: JWTPayload,

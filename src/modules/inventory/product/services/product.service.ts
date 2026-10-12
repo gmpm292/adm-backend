@@ -28,6 +28,10 @@ import { UnitOfMeasureService } from '../../unit-of-measure/services/unit-of-mea
 import { MaterialCostService } from '../../../payroll/material-cost/services/material-cost.service';
 import { MaterialCost } from '../../../payroll/material-cost/entities/material-cost.entity';
 
+/**
+ * Productos: catálogo, precios por moneda y reservas de existencias para las
+ * ventas (reservar, confirmar y devolver).
+ */
 @Injectable()
 export class ProductService extends BaseService<Product> {
   constructor(
@@ -46,6 +50,11 @@ export class ProductService extends BaseService<Product> {
     super(productRepository);
   }
 
+  /**
+   * Crea el producto en una categoría y hereda de ella empresa, oficina,
+   * departamento y equipo. El nombre no se repite en la categoría (contando
+   * los eliminados).
+   */
   async create(
     createProductInput: CreateProductInput,
     cu?: JWTPayload,
@@ -102,6 +111,7 @@ export class ProductService extends BaseService<Product> {
     });
   }
 
+  /** Listado con categoría, inventarios, unidad, material y lugar. */
   async find(
     options?: ListOptions,
     cu?: JWTPayload,
@@ -125,6 +135,7 @@ export class ProductService extends BaseService<Product> {
     });
   }
 
+  /** Un producto con todas sus relaciones, dentro del alcance del usuario. */
   async findOne(
     id: number,
     cu?: JWTPayload,
@@ -152,6 +163,7 @@ export class ProductService extends BaseService<Product> {
     });
   }
 
+  /** Productos activos de una categoría; el alcance se mira en ella. */
   async findByCategory(
     categoryId: number,
     cu?: JWTPayload,
@@ -165,6 +177,11 @@ export class ProductService extends BaseService<Product> {
     });
   }
 
+  /**
+   * Cambia los campos que llegan. Cambiar de categoría también le cambia el
+   * lugar en la empresa (el de la categoría nueva). Los ids de empresa,
+   * oficina, departamento y equipo del formulario se ignoran.
+   */
   async update(
     id: number,
     updateProductInput: UpdateProductInput,
@@ -391,7 +408,8 @@ export class ProductService extends BaseService<Product> {
       manager,
     });
 
-    // Los inventarios se borraron con el producto, en el mismo instante
+    // Los inventarios se borraron con el producto, en el mismo instante: se
+    // restauran los eliminados hasta 5 s antes o después que él.
     for (const product of deletedProducts) {
       const inventoryIds = (product.inventories ?? [])
         .filter(
@@ -411,6 +429,11 @@ export class ProductService extends BaseService<Product> {
     return restored;
   }
 
+  /**
+   * Precio de una cantidad del producto en cada moneda aceptada (o solo en
+   * `currency`). A diferencia de `buildPaymentOptions`, valida la cantidad
+   * mínima y máxima de venta y que la moneda se acepte.
+   */
   async calculatePaymentOptions(
     productId: number,
     quantity: number = 1,
@@ -491,6 +514,8 @@ export class ProductService extends BaseService<Product> {
         (p) => p.currency === code,
       );
 
+      // Prioridad: precio fijo en esa moneda, precio base si es la moneda
+      // base, o precio base convertido con la tasa y el margen de cambio.
       let unitPrice: number;
       let exchangeRate: number | undefined;
       if (fixedPrice) {
@@ -516,6 +541,8 @@ export class ProductService extends BaseService<Product> {
         unitPrice = basePrice * exchangeRate * marginMultiplier;
       }
 
+      // El descuento por volumen (el del mayor escalón alcanzado) solo se
+      // aplica en las monedas que indica.
       if (bulkDiscount?.applicableCurrencies?.includes(code)) {
         unitPrice *= 1 - bulkDiscount.discount / 100;
       }
@@ -540,6 +567,11 @@ export class ProductService extends BaseService<Product> {
     };
   }
 
+  /**
+   * Reserva existencias para una venta: crea salidas marcadas como reserva,
+   * sacando primero de los inventarios más antiguos del producto. Devuelve el
+   * `reservationId` que agrupa esas salidas. Lanza si no hay stock suficiente.
+   */
   public async validateAndReserveStock(
     productId: number,
     quantity: number,
@@ -621,6 +653,11 @@ export class ProductService extends BaseService<Product> {
     return reservationId;
   }
 
+  /**
+   * Devuelve al inventario unidades de una reserva (cancelación o devolución)
+   * con entradas bajo el mismo `reservationId`. No deja devolver más de lo
+   * que salió.
+   */
   public async releaseStock(
     productId: number,
     quantity: number,
@@ -747,6 +784,10 @@ export class ProductService extends BaseService<Product> {
     }
   }
 
+  /**
+   * Al cobrar la venta, sus salidas reservadas pasan a `SALE_CONFIRMED` con la
+   * referencia de la venta. El stock ya salió al reservar.
+   */
   public async confirmSale(
     reservationId: string,
     saleReferenceId: string,

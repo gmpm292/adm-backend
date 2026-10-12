@@ -9,6 +9,10 @@ import {
 } from '../../../core/graphql/remote-operations';
 import { Notification } from '../entities/notification.entity';
 
+/**
+ * Entradas de notificación por destinatario (leída, borrada). Acceso básico;
+ * la lógica está en `NotificationService`.
+ */
 @Injectable()
 export class NotificationLogService extends BaseService<NotificationLog> {
   constructor(

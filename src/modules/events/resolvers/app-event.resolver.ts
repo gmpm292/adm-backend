@@ -25,6 +25,7 @@ export class AppEventResolver {
     @Inject(REDIS_PUB_SUB_TOKEN) private readonly pubSub: RedisPubSub,
   ) {}
 
+  // Ojo: sin guard, cualquiera puede publicar un evento a cualquier usuario.
   @Mutation('publish')
   public publish(@Args('appEventInput') appEventInput: AppEvent) {
     this.eventService.publish(appEventInput);

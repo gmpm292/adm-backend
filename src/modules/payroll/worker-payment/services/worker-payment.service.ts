@@ -20,6 +20,10 @@ import { CurrencyService } from '../../currency/services/currency.service';
 import { Sale } from '../../../sales/sale/entities/sale.entity';
 import { PaymentRule } from '../../payment-rule/entities/payment-rule.entity';
 
+/**
+ * Pagos a trabajadores dentro de un período de nómina. Un pago con
+ * `paidDate` ya está hecho; los de un período cerrado no se tocan.
+ */
 @Injectable()
 export class WorkerPaymentService extends BaseService<WorkerPayment> {
   constructor(
@@ -35,6 +39,10 @@ export class WorkerPaymentService extends BaseService<WorkerPayment> {
     super(workerPaymentRepository);
   }
 
+  /**
+   * Registra un pago (importe > 0) en un período abierto. Si no llega tasa se
+   * guarda la de la moneda a CUP, y el lugar se copia del trabajador.
+   */
   async create(
     createWorkerPaymentInput: CreateWorkerPaymentInput,
     cu?: JWTPayload,
@@ -84,7 +92,7 @@ export class WorkerPaymentService extends BaseService<WorkerPayment> {
     });
   }
 
-  /** La moneda existe y está activa */
+  /** La moneda existe (no comprueba que esté activa) */
   private async validCurrency(code: string) {
     const currency = await this.currencyService
       .findByCode(code)
@@ -95,7 +103,10 @@ export class WorkerPaymentService extends BaseService<WorkerPayment> {
     return currency;
   }
 
-  /** Marca pagos como hechos, todos o ninguno */
+  /**
+   * Marca pagos como hechos, todos o ninguno (en una transacción). Los que ya
+   * tenían fecha se saltan y no se devuelven; sin `paidDate` se usa ahora.
+   */
   async markAsPaid(
     ids: number[],
     paidDate: Date | undefined,
@@ -182,6 +193,10 @@ export class WorkerPaymentService extends BaseService<WorkerPayment> {
     });
   }
 
+  /**
+   * Pagos de un trabajador, del más reciente al más antiguo. El alcance se
+   * comprueba sobre el trabajador, no sobre cada pago.
+   */
   async findByWorker(
     workerId: number,
     cu?: JWTPayload,
@@ -196,6 +211,10 @@ export class WorkerPaymentService extends BaseService<WorkerPayment> {
     });
   }
 
+  /**
+   * Pagos de un período, del más reciente al más antiguo. El alcance se
+   * comprueba sobre el período, no sobre cada pago.
+   */
   async findByPeriod(
     periodId: number,
     cu?: JWTPayload,
@@ -211,8 +230,10 @@ export class WorkerPaymentService extends BaseService<WorkerPayment> {
   }
 
   /**
-   * Un pago hecho solo admite notas o deshacer el pago (`paidDate: null`);
-   * los de un período cerrado no se tocan.
+   * Un pago hecho no cambia trabajador, período, importe, moneda ni concepto
+   * salvo que a la vez se deshaga el pago (`paidDate: null`); el resto de
+   * campos sí. Los de un período cerrado no se tocan. Cambiar el trabajador
+   * no actualiza el lugar copiado al crear.
    */
   async update(
     id: number,

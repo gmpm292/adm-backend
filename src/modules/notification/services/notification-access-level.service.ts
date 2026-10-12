@@ -16,12 +16,20 @@ import { LogicalOperator } from '../../../core/graphql/remote-operations/enums/l
 import { ForbiddenResourceError } from '../../../core/errors/appErrors/ForbiddenResourceError';
 import { Notification } from '../entities/notification.entity';
 
+/**
+ * Alcance de las notificaciones según el rol y el lugar del usuario en la
+ * empresa. Lo aplica el resolver antes de llamar a `NotificationService`.
+ */
 @Injectable()
 export class NotificationAccessLevelService {
   constructor(
     @InjectRepository(User) private userRepository: Repository<User>,
   ) {}
 
+  /**
+   * Añade al listado el filtro por autor: ADMIN ve las creadas en su oficina,
+   * MANAGER en su departamento y SUPERVISOR en su equipo. El resto, sin filtro.
+   */
   public async forFind(
     currentUser: JWTPayload,
     options?: ListOptions,
@@ -61,6 +69,10 @@ export class NotificationAccessLevelService {
     return options;
   }
 
+  /**
+   * Filtro para leer una notificación. Hoy solo filtra por id: el alcance por
+   * rol está comentado. Sí valida el lugar del usuario en la empresa.
+   */
   public async forFindOne(
     currentUser: JWTPayload,
     id: number,
@@ -95,6 +107,10 @@ export class NotificationAccessLevelService {
     return filters;
   }
 
+  /**
+   * Comprueba que el usuario tenga justo el lugar que pide su rol (SUPER y
+   * PRINCIPAL sin oficina, ADMIN con oficina...). Si no, lanza Forbidden.
+   */
   private async chekCompanyInfo(user: User): Promise<void> {
     if (
       user.role?.some((r) => r === Role.SUPER) &&

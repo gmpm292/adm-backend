@@ -67,6 +67,10 @@ const WORKER_RELATIONS = {
   team: true,
 };
 
+/**
+ * Ventas de una tienda (empresa + oficina): borrador con stock reservado,
+ * cobro, cancelación y devolución. Las líneas van en SaleDetailService.
+ */
 @Injectable()
 export class SaleService extends BaseService<Sale> {
   constructor(
@@ -85,6 +89,10 @@ export class SaleService extends BaseService<Sale> {
     super(saleRepository);
   }
 
+  /**
+   * Alcance a aplicar: el recibido o, si no llega, SALE_SCOPES (empresa +
+   * oficina), salvo que la empresa tenga configurado uno para la operación.
+   */
   private scopesFor(cu?: JWTPayload, scopes?: ScopedAccessEnum[]) {
     return scopes ?? this.scopedAccessService.scopesOrDefault(cu, SALE_SCOPES);
   }
@@ -189,6 +197,11 @@ export class SaleService extends BaseService<Sale> {
     return this.findOne(saleId, cu, scopes, manager);
   }
 
+  /**
+   * Listado paginado de ventas con importes calculados. Un vendedor sin mando
+   * solo ve las suyas (como vendedor o, sin trabajador vinculado, creadas por
+   * él).
+   */
   async find(
     options?: ListOptions,
     cu?: JWTPayload,
@@ -305,6 +318,10 @@ export class SaleService extends BaseService<Sale> {
     return sale;
   }
 
+  /**
+   * Venta con todas sus relaciones y las líneas ordenadas. A un vendedor sin
+   * mando una venta ajena le responde NotFoundError, como si no existiera.
+   */
   async findOne(
     id: number,
     cu?: JWTPayload,
@@ -341,6 +358,10 @@ export class SaleService extends BaseService<Sale> {
     return this.withAmounts(sale);
   }
 
+  /**
+   * Ventas de un cliente, las más recientes primero. El alcance se comprueba
+   * con el cliente; la consulta de ventas no filtra por vendedor.
+   */
   async findByCustomer(
     customerId: number,
     cu?: JWTPayload,
@@ -362,6 +383,10 @@ export class SaleService extends BaseService<Sale> {
     return sales.map((sale) => this.withAmounts(sale));
   }
 
+  /**
+   * Cambia solo los campos que llegan. Vendedor y cliente solo en borrador;
+   * mensajero, mensajería, notas y factura en cualquier estado.
+   */
   async update(
     id: number,
     updateSaleInput: UpdateSaleInput,
@@ -428,6 +453,10 @@ export class SaleService extends BaseService<Sale> {
     return this.findOne(id, cu, scopes, manager);
   }
 
+  /**
+   * Borrado lógico por lote, en una transacción. Rechaza las ventas cobradas
+   * (se devuelven); un borrador suelta su reserva y queda cancelado.
+   */
   async remove(
     ids: number[],
     cu?: JWTPayload,
@@ -492,6 +521,10 @@ export class SaleService extends BaseService<Sale> {
     });
   }
 
+  /**
+   * Restaura ventas eliminadas junto con sus líneas. No vuelve a reservar
+   * stock: un borrador eliminado se restaura cancelado. Devuelve cuántas.
+   */
   async restore(
     ids: number[],
     cu?: JWTPayload,
@@ -567,6 +600,11 @@ export class SaleService extends BaseService<Sale> {
     return this.findOne(saleId, cu, scopes, manager);
   }
 
+  /**
+   * Cobro común a createSale y makeSale (dentro de su transacción): valida
+   * estado, mensajero y pagos, convierte las reservas en salidas y guarda
+   * total, fecha efectiva y número de factura.
+   */
   private async finalize(
     saleId: number,
     payments: SalePayment[],
@@ -751,6 +789,11 @@ export class SaleService extends BaseService<Sale> {
     return this.findOne(saleId, cu, scopes, manager);
   }
 
+  /**
+   * Ventas con fecha efectiva en el rango, de la unidad indicada por `scope`
+   * (la del trabajador o el id recibido), opcionalmente solo las del
+   * trabajador o de un producto o categoría. Sin unidad lanza ConflictError.
+   */
   async getSalesByScope(
     params: {
       businessId?: number;
@@ -854,7 +897,7 @@ export class SaleService extends BaseService<Sale> {
       });
     }
 
-    // Si existe categoryId filtrar para este producto.
+    // Si existe categoryId filtrar por esa categoría.
     if (categoryId) {
       filters.push({
         property: 'category.id',
@@ -974,6 +1017,7 @@ export class SaleService extends BaseService<Sale> {
     });
   }
 
+  /** Trabajador por id; si no existe o es de otra empresa, NotFoundError. */
   private async findWorker(
     id: number,
     cu: JWTPayload | undefined,
@@ -1024,6 +1068,10 @@ export class SaleService extends BaseService<Sale> {
     }
   }
 
+  /**
+   * Junta las líneas del mismo producto: suma cantidades y une publicistas
+   * sin repetirlos.
+   */
   private mergeDetails(
     details: Array<{
       productId: number;
@@ -1050,7 +1098,10 @@ export class SaleService extends BaseService<Sale> {
     return [...merged.values()];
   }
 
-  /** Consecutivo por empresa y año: F2026-0001. */
+  /**
+   * Consecutivo por empresa y año: F2026-0001. Cuenta también las ventas
+   * eliminadas para no repetir números.
+   */
   private async nextInvoiceNumber(
     sale: Sale,
     date: Date,
