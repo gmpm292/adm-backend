@@ -1,21 +1,28 @@
-import { IsNotEmpty, IsOptional } from 'class-validator';
+import { IsNotEmpty, IsOptional, ValidateIf } from 'class-validator';
 import { Environment } from './enums/environment.enum';
 
 export class EnvironmentVariables {
   ////.ENV //////////////////////////////////////////////////////////////
   // DATABASE
+  // En Heroku manda DATABASE_URL (la actualiza el add-on); las TYPEORM_* son
+  // para local y solo se exigen sin ella.
+  @IsOptional()
+  public DATABASE_URL: string;
+  @ValidateIf((env: EnvironmentVariables) => !env.DATABASE_URL)
   @IsNotEmpty()
   public TYPEORM_HOST: string;
+  @ValidateIf((env: EnvironmentVariables) => !env.DATABASE_URL)
   @IsNotEmpty()
   public TYPEORM_PORT: number;
+  @ValidateIf((env: EnvironmentVariables) => !env.DATABASE_URL)
   @IsNotEmpty()
   public TYPEORM_USERNAME: string;
+  @ValidateIf((env: EnvironmentVariables) => !env.DATABASE_URL)
   @IsNotEmpty()
   public TYPEORM_PASSWORD: string;
+  @ValidateIf((env: EnvironmentVariables) => !env.DATABASE_URL)
   @IsNotEmpty()
   public TYPEORM_DATABASE: string;
-  @IsOptional()
-  public SSL_CERT: string;
 
   // SECURITY
   @IsNotEmpty()
@@ -33,17 +40,27 @@ export class EnvironmentVariables {
   @IsNotEmpty()
   public PORT: number;
 
+  // REDIS
+  // En Heroku manda REDIS_URL (la actualiza el add-on); las CACHE_* y
+  // SUBSCRIPTION_* son para local y solo se exigen sin ella.
+  @IsOptional()
+  public REDIS_URL: string;
+
   //CACHE
+  @ValidateIf((env: EnvironmentVariables) => !env.REDIS_URL)
   @IsNotEmpty()
   public CACHE_REDIS_HOST: string;
+  @ValidateIf((env: EnvironmentVariables) => !env.REDIS_URL)
   @IsNotEmpty()
   public CACHE_REDIS_PORT: string;
   @IsOptional()
   public CACHE_REDIS_PASSWORD: string;
 
   //SUBSCRIPTIONS
+  @ValidateIf((env: EnvironmentVariables) => !env.REDIS_URL)
   @IsNotEmpty()
   public SUBSCRIPTION_REDIS_HOST: string;
+  @ValidateIf((env: EnvironmentVariables) => !env.REDIS_URL)
   @IsNotEmpty()
   public SUBSCRIPTION_REDIS_PORT: string;
   @IsOptional()
