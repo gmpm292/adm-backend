@@ -4,6 +4,10 @@ import { ConfigModule, ConfigService } from '../config';
 import * as redisStore from 'cache-manager-redis-store';
 import { getRedisConnection } from '../config/helpers/connection.helper';
 
+/**
+ * Caché global sobre Redis (sesiones activas, entre otras). Ojo: con este
+ * store el TTL va como `{ ttl: segundos }`; un número suelto se ignora.
+ */
 @Module({
   imports: [
     CacheModule.registerAsync({

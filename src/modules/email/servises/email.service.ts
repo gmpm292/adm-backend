@@ -4,7 +4,7 @@
 
 import { forwardRef, Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThan, MoreThanOrEqual, Repository } from 'typeorm';
+import { LessThan, Repository } from 'typeorm';
 import { Email } from '../entities/email.entity';
 import { EmailTemplate } from '../entities/email-template.entity';
 import { EmailStatus } from '../enums/email-status.enum';
@@ -21,6 +21,10 @@ import { NotFoundError } from '../../../core/errors/appErrors/NotFoundError.erro
 import { ConfigService } from '../../../common/config';
 import { EmailHealthService } from './email-health.service';
 
+/**
+ * Envía correos (texto directo o plantilla Handlebars) y guarda cada envío en
+ * la tabla `email` con su estado. También administra las plantillas.
+ */
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
@@ -36,6 +40,10 @@ export class EmailService {
     private readonly healthService: EmailHealthService,
   ) {}
 
+  /**
+   * Prepara el transporte y, si `EMAIL_TEST_ON_STARTUP` está activo, manda un
+   * correo de prueba. Se llama al arrancar el módulo y al recargar OAuth2.
+   */
   async init(): Promise<void> {
     await this.initializeTransport();
 
@@ -56,6 +64,10 @@ export class EmailService {
     }
   }
 
+  /**
+   * Manda el correo de prueba a `EMAIL_TEST_RECIPIENT`. Si el correo no está
+   * configurado no hace nada; los fallos solo se registran en el log.
+   */
   private async sendTestEmail(): Promise<void> {
     const testEmail = this.configService.get<string>('EMAIL_TEST_RECIPIENT');
     if (!testEmail) {
@@ -85,6 +97,11 @@ export class EmailService {
     }
   }
 
+  /**
+   * Envía un correo. Exige `templateId` o asunto y cuerpo. Guarda el registro
+   * como PENDING antes de enviar y lo pasa a SENT o FAILED; si falla, guarda
+   * el error y vuelve a lanzarlo.
+   */
   async sendEmail(data: SendEmailInput): Promise<Email> {
     if (!data.templateId && (!data.body || !data.subject)) {
       throw new Error(
@@ -113,6 +130,17 @@ export class EmailService {
 
     await this.emailRepository.save(emailRecord);
 
+    return this.deliver(emailRecord, data);
+  }
+
+  /**
+   * Hace el envío de un registro ya guardado (nuevo o reintento) y lo pasa a
+   * SENT o FAILED; si falla, vuelve a lanzar el error.
+   */
+  private async deliver(
+    emailRecord: Email,
+    data: SendEmailInput,
+  ): Promise<Email> {
     try {
       if (data.templateId) {
         await this.applyTemplate(data, emailRecord);
@@ -148,12 +176,18 @@ export class EmailService {
     }
   }
 
+  /** Remitente con el formato `"FROM" <FROM_EMAIL>`. */
   private getFromAddress(): string {
     return `"${this.configService.get<string>('FROM')}" <${this.configService.get<string>(
       'FROM_EMAIL',
     )}>`;
   }
 
+  /**
+   * Busca la plantilla activa por su nombre (`templateId` es el nombre, no el
+   * id) y rellena asunto y cuerpo con `context` o, si no llega, con su
+   * `defaultContext`.
+   */
   private async applyTemplate(
     data: SendEmailInput,
     emailRecord: Email,
@@ -181,6 +215,7 @@ export class EmailService {
     await this.emailRepository.save(emailRecord);
   }
 
+  /** Marca el envío como FAILED y guarda el mensaje, la traza y el código. */
   private async handleEmailError(
     emailRecord: Email,
     error: any,
@@ -232,6 +267,7 @@ export class EmailService {
     return template;
   }
 
+  /** Crea una plantilla; el nombre no puede repetirse. */
   async createTemplate(
     input: CreateEmailTemplateInput,
   ): Promise<EmailTemplate> {
@@ -256,6 +292,10 @@ export class EmailService {
     return this.findTemplateById(input.id);
   }
 
+  /**
+   * Reintenta los envíos FAILED con menos de `maxRetries` intentos sobre el
+   * mismo registro: suma `retryCount` y queda como SENT o FAILED.
+   */
   async retryFailedEmails(maxRetries = 3): Promise<void> {
     const failedEmails = await this.emailRepository.find({
       where: {
@@ -265,11 +305,13 @@ export class EmailService {
     });
 
     for (const email of failedEmails) {
-      try {
-        email.status = EmailStatus.RETRYING;
-        await this.emailRepository.save(email);
+      email.status = EmailStatus.RETRYING;
+      email.retryCount += 1;
+      email.lastRetryAt = new Date();
+      await this.emailRepository.save(email);
 
-        await this.sendEmail({
+      try {
+        await this.deliver(email, {
           to: email.to,
           subject: email.subject,
           body: email.body,
@@ -279,24 +321,13 @@ export class EmailService {
           templateId: email.templateId,
           attachments: email.attachments,
         });
-
-        email.retryCount += 1;
-        email.lastRetryAt = new Date();
-        await this.emailRepository.save(email);
-      } catch (error) {
-        const err = error as Error;
-        email.retryCount += 1;
-        email.lastRetryAt = new Date();
-        email.error = {
-          message: err.message,
-          stack: err.stack,
-          code: (error as any)?.code,
-        };
-        await this.emailRepository.save(email);
+      } catch {
+        // `deliver` ya lo dejó como FAILED con el error.
       }
     }
   }
 
+  /** Totales por estado de todos los envíos y porcentaje de enviados. */
   async getStats(): Promise<EmailStats> {
     const [total, sent, failed, pending] = await Promise.all([
       this.emailRepository.count(),
@@ -312,22 +343,5 @@ export class EmailService {
       pending,
       successRate: total > 0 ? (sent / total) * 100 : 0,
     };
-  }
-
-  async checkGoogleQuota(): Promise<{ limit: number; usage: number }> {
-    try {
-      return {
-        limit: 2000,
-        usage: await this.emailRepository.count({
-          where: {
-            provider: EmailProvider.GMAIL_OAUTH2,
-            sentAt: MoreThanOrEqual(new Date(Date.now() - 24 * 60 * 60 * 1000)),
-          },
-        }),
-      };
-    } catch (error) {
-      this.logger.error('Error checking Google quota', error);
-      return { limit: 0, usage: 0 };
-    }
   }
 }

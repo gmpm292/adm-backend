@@ -16,12 +16,20 @@ import { LogicalOperator } from '../../../core/graphql/remote-operations/enums/l
 import { ForbiddenResourceError } from '../../../core/errors/appErrors/ForbiddenResourceError';
 import { Notification } from '../entities/notification.entity';
 
+/**
+ * Alcance de las notificaciones según el rol y el lugar del usuario en la
+ * empresa. Lo aplica el resolver antes de llamar a `NotificationService`.
+ */
 @Injectable()
 export class NotificationAccessLevelService {
   constructor(
     @InjectRepository(User) private userRepository: Repository<User>,
   ) {}
 
+  /**
+   * Añade al listado el filtro por autor: ADMIN ve las creadas en su oficina,
+   * MANAGER en su departamento y SUPERVISOR en su equipo. El resto, sin filtro.
+   */
   public async forFind(
     currentUser: JWTPayload,
     options?: ListOptions,
@@ -61,6 +69,11 @@ export class NotificationAccessLevelService {
     return options;
   }
 
+  /**
+   * Filtro para leer una notificación por id. Como en el listado
+   * (`NotificationService.find`), quien no es SUPER solo lee las que creó.
+   * También valida el lugar del usuario en la empresa.
+   */
   public async forFindOne(
     currentUser: JWTPayload,
     id: number,
@@ -68,33 +81,16 @@ export class NotificationAccessLevelService {
     const user = await this.findUser(currentUser);
     await this.chekCompanyInfo(user);
 
-    // eslint-disable-next-line prefer-const
-    let filters: FindOptionsWhere<Notification> = { id };
-    // filters;
-
-    // /**
-    //  * add filters
-    //  */
-    // if (user.role.some((r) => r === Role.ADMIN)) {
-    //   filters = {
-    //     ...filters,
-    //     createdBy: { office: { id: user.office.id } },
-    //   };
-    // } else if (user.role.some((r) => r === Role.MANAGER)) {
-    //   filters = {
-    //     ...filters,
-    //     createdBy: { department: { id: user.department.id } },
-    //   };
-    // } else if (user.role.some((r) => r === Role.SUPERVISOR)) {
-    //   filters = {
-    //     ...filters,
-    //     createdBy: { team: { id: user.team.id } },
-    //   };
-    // }
-
-    return filters;
+    if (currentUser.role.some((r) => r === Role.SUPER)) {
+      return { id };
+    }
+    return { id, createdBy: { id: currentUser.sub } };
   }
 
+  /**
+   * Comprueba que el usuario tenga justo el lugar que pide su rol (SUPER y
+   * PRINCIPAL sin oficina, ADMIN con oficina...). Si no, lanza Forbidden.
+   */
   private async chekCompanyInfo(user: User): Promise<void> {
     if (
       user.role?.some((r) => r === Role.SUPER) &&

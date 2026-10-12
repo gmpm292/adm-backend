@@ -4,6 +4,10 @@ import { ScheduledTask } from '../entities/scheduled-task.entity';
 import { AttendanceGeneratorService } from '../handlers/attendance-generator.service';
 import { WorkScheduleGeneratorService } from '../handlers/work-schedule-generator.service';
 
+/**
+ * Asocia cada `handlerType` de una tarea programada con el código que la
+ * ejecuta. Una tarea nueva necesita registrar aquí su handler.
+ */
 @Injectable()
 export class TaskHandlerService {
   private readonly logger = new Logger(TaskHandlerService.name);
@@ -27,6 +31,10 @@ export class TaskHandlerService {
     );
   }
 
+  /**
+   * Ejecuta el handler de la tarea. Un tipo sin handler solo avisa en el log,
+   * y los errores se registran sin propagarse.
+   */
   async executeTask(task: ScheduledTask): Promise<void> {
     const handler = this.taskHandlers.get(task.handlerType);
 

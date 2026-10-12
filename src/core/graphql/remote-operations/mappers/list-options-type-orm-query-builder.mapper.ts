@@ -22,27 +22,19 @@ import * as moment from 'moment';
 import { SelectField } from '../types/select-field.type';
 import { MapperOptions } from '../types/mapper-options.type';
 
+/**
+ * Traduce las opciones de listado (`ListOptions`) a un QueryBuilder de
+ * TypeORM. La entidad principal tiene el alias `root`; una propiedad con
+ * punto (`office.name`) se refiere al alias de una relación unida.
+ */
 export class ListOptionsTypeOrmQueryBuilderMapper {
   /**
-   * Translate an object "instance of" ListOptions into another "instance of" QueryBuilder
+   * Construye la consulta: página, eliminados, orden, filtros, relaciones
+   * (`relationsToLoad`, p. ej. `['inventory', 'inventory.product']`: cada
+   * una después de la que la contiene) y campos extra.
    *
-   * @param filters @see ListOptions
-   * @param skip @see ListOptions
-   * @param sorts @see ListOptions
-   * @param take @see ListOptions
-   * @param repository
-   * @param relationsToLoad @example ['nameTable1', 'nameTable2']
-   */
-
-  /**
-   * Translate an object "instance of" ListOptions into another "instance of" QueryBuilder
-   *
-   * @param filters @see ListOptions
-   * @param skip @see ListOptions
-   * @param sorts @see ListOptions
-   * @param take @see ListOptions
-   * @param repository
-   * @param relationsToLoad
+   * @param filterRelations solo une las relaciones que pide la consulta
+   * GraphQL o usan los filtros (necesita `requestedFields` de `@Opts`).
    */
   public mapToQueryBuilder<Entity extends ObjectLiteral>(
     {
@@ -109,8 +101,16 @@ export class ListOptionsTypeOrmQueryBuilderMapper {
     return queryBuilder;
   }
 
+  /**
+   * Pasa a hora local del servidor los valores de fecha que terminan en `z`
+   * minúscula. Las fechas ISO normales (con `Z`) no entran aquí y llegan tal
+   * cual a la consulta; del cliente no puede llegar otra cosa, porque
+   * `CheckIsIsoUTCDate` exige `toISOString()`. En el servidor (UTC) cuadran
+   * con las columnas `timestamp`.
+   */
   protected convertDatesToLocalTime(filters: ListFilter[]) {
     filters.map((filter) => {
+      if (filter.filters) this.convertDatesToLocalTime(filter.filters);
       const beginWithDate = (val) => {
         const regex =
           /^(\d{4}-\d{2}-\d{2})|(0?[1-9]|1[0-2])\/(0?[1-9]|[12]\d|3[01])\/(19|20)?\d{2}/;
@@ -131,6 +131,12 @@ export class ListOptionsTypeOrmQueryBuilderMapper {
     });
   }
 
+  /**
+   * Los filtros `principal` van sueltos con AND y el resto, entre paréntesis,
+   * para que un OR no los anule. Si no hay ninguno principal, todos van
+   * sueltos: `A OR B AND C` se evalúa como `A OR (B AND C)`. Por eso `@Opts`
+   * entrega los filtros del cliente ya agrupados en uno solo.
+   */
   protected addFiltersToQueryBuilder<Entity extends ObjectLiteral>(
     filters: ListFilter[],
     queryBuilder: SelectQueryBuilder<Entity>,
@@ -151,6 +157,11 @@ export class ListOptionsTypeOrmQueryBuilderMapper {
     }
   }
 
+  /**
+   * Añade cada filtro con AND u OR según `logicalOperator`, y los anidados
+   * (`filters`) como un grupo. Un filtro sin valor se ignora, salvo IS_NULL e
+   * IS_NOT_NULL.
+   */
   protected addFilters<Entity extends ObjectLiteral>(
     filters: ListFilter[],
     queryBuilder: SelectQueryBuilder<Entity> | WhereExpressionBuilder,
@@ -255,6 +266,8 @@ export class ListOptionsTypeOrmQueryBuilderMapper {
       this.createPropertyWithAliasAndParameterName(property || '');
 
     switch (operator) {
+      // ANY y ANY_OPERATOR_AND_VALUE escriben el valor tal cual en el SQL:
+      // solo para servicios (`@Opts` los rechaza si llegan del cliente).
       case ConditionalOperator.ANY:
         return [
           `${propertyWithAlias} = ${value}`,

@@ -32,6 +32,10 @@ export class CategoryService extends BaseService<Category> {
     super(categoryRepository);
   }
 
+  /**
+   * Crea la categoría con los textos limpios. Falla si el nombre ya existe en
+   * la empresa, también entre las eliminadas.
+   */
   async create(
     createCategoryInput: CreateCategoryInput,
     cu?: JWTPayload,
@@ -45,11 +49,12 @@ export class CategoryService extends BaseService<Category> {
     } as Category;
     // La empresa sale del usuario (o del formulario, si es SUPER)
     const businessId = createCategoryInput.businessId ?? cu?.businessId;
-    await this.checkUniqueName(data.name, businessId);
+    await this.checkUniqueName(data.name, businessId, undefined, true, manager);
 
     return super.baseCreate({ data, cu, scopes, manager });
   }
 
+  /** Listado con la empresa y el número de productos de cada categoría. */
   async find(
     options?: ListOptions,
     cu?: JWTPayload,
@@ -69,6 +74,7 @@ export class CategoryService extends BaseService<Category> {
     };
   }
 
+  /** Una categoría con su empresa, dentro del alcance del usuario. */
   async findOne(
     id: number,
     cu?: JWTPayload,
@@ -100,7 +106,13 @@ export class CategoryService extends BaseService<Category> {
     const category = await this.findOne(id, cu, scopes, manager);
     const { name, description } = updateCategoryInput;
     if (name !== undefined) {
-      await this.checkUniqueName(name.trim(), category.business?.id, id);
+      await this.checkUniqueName(
+        name.trim(),
+        category.business?.id,
+        id,
+        true,
+        manager,
+      );
     }
 
     return super.baseUpdate({
@@ -117,6 +129,10 @@ export class CategoryService extends BaseService<Category> {
     });
   }
 
+  /**
+   * Elimina (borrado lógico) las categorías sin productos ni reglas de pago
+   * activos; si alguna los tiene, no elimina ninguna.
+   */
   async remove(
     ids: number[],
     cu?: JWTPayload,
@@ -185,6 +201,7 @@ export class CategoryService extends BaseService<Category> {
         category.business?.id,
         category.id,
         false,
+        manager,
       );
     }
 
@@ -196,13 +213,19 @@ export class CategoryService extends BaseService<Category> {
     });
   }
 
+  /**
+   * Lanza `ConflictError` si otra categoría de la empresa tiene el nombre
+   * (sin distinguir mayúsculas). Con `includeDeleted` cuenta también las
+   * eliminadas.
+   */
   private async checkUniqueName(
     name: string,
     businessId?: number,
     exceptId?: number,
     includeDeleted = true,
+    manager?: EntityManager,
   ) {
-    const query = this.categoryRepository
+    const query = (manager?.getRepository(Category) ?? this.categoryRepository)
       .createQueryBuilder('c')
       .where('lower(c.name) = lower(:name)', { name })
       .andWhere(
@@ -220,6 +243,7 @@ export class CategoryService extends BaseService<Category> {
     );
   }
 
+  /** Añade `productCount` (productos no eliminados) con una sola consulta. */
   private async withProductCount(
     categories: Category[],
     manager?: EntityManager,

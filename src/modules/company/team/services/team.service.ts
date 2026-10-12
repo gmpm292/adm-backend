@@ -12,6 +12,7 @@ import {
 import { SortDirection } from '../../../../core/graphql/remote-operations/enums/sort-direction.enum';
 import { NotFoundError } from '../../../../core/errors/appErrors/NotFoundError.error';
 import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
+import { ForbiddenResourceError } from '../../../../core/errors/appErrors/ForbiddenResourceError';
 import { JWTPayload } from '../../../../modules/auth/dto/jwt-payload.dto';
 import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
 import { ScopedAccessService } from '../../../scoped-access/services/scoped-access.service';
@@ -27,6 +28,10 @@ import {
 
 const TEAM_RELATIONS = { department: true, office: true, business: true };
 
+/**
+ * Equipos de un departamento (último nivel); guardan también la oficina y la
+ * empresa del departamento.
+ */
 @Injectable()
 export class TeamService extends BaseService<Team> {
   constructor(
@@ -37,6 +42,7 @@ export class TeamService extends BaseService<Team> {
     super(teamRepository);
   }
 
+  /** El de la transacción en curso o, si no hay, el del repositorio. */
   private managerOf(manager?: EntityManager): EntityManager {
     return manager ?? this.teamRepository.manager;
   }
@@ -54,6 +60,10 @@ export class TeamService extends BaseService<Team> {
     return department;
   }
 
+  /**
+   * Crea el equipo en un departamento y le copia su oficina y su empresa. El
+   * nombre no se repite dentro del departamento.
+   */
   async create(
     createTeamInput: CreateTeamInput,
     cu?: JWTPayload,
@@ -65,6 +75,12 @@ export class TeamService extends BaseService<Team> {
       createTeamInput.departmentId,
       manager,
     );
+    // Quien pertenece a una empresa solo crea equipos en la suya.
+    if (cu?.businessId && department.business?.id !== cu.businessId) {
+      throw new ForbiddenResourceError(
+        'Solo puedes crear equipos en tu empresa',
+      );
+    }
 
     await assertUniqueName(
       this.managerOf(manager),
@@ -94,6 +110,7 @@ export class TeamService extends BaseService<Team> {
     return this.findOne(created.id as number, cu, scopes, manager);
   }
 
+  /** Listado con sus niveles superiores; por defecto ordenado por nombre. */
   async find(
     options?: ListOptions,
     cu?: JWTPayload,
@@ -113,6 +130,7 @@ export class TeamService extends BaseService<Team> {
     });
   }
 
+  /** Un equipo con departamento, oficina y empresa, dentro del alcance. */
   async findOne(
     id: number,
     cu?: JWTPayload,
@@ -128,6 +146,7 @@ export class TeamService extends BaseService<Team> {
     });
   }
 
+  /** Como `findOne`, pero buscando por cualquier condición. */
   async findOneByFilters(
     filters: FindOptionsWhere<Team>,
     cu?: JWTPayload,
@@ -143,6 +162,7 @@ export class TeamService extends BaseService<Team> {
     });
   }
 
+  /** Cambia solo los campos que llegan; el departamento no se cambia. */
   async update(
     id: number,
     updateTeamInput: UpdateTeamInput,
@@ -213,6 +233,10 @@ export class TeamService extends BaseService<Team> {
     });
   }
 
+  /**
+   * Restaura solo los eliminados de la lista y devuelve cuántos. Falla si el
+   * departamento de alguno sigue eliminado.
+   */
   async restore(
     ids: number[],
     cu?: JWTPayload,

@@ -42,6 +42,10 @@ export class MaterialCostService extends BaseService<MaterialCost> {
     super(materialCostRepository);
   }
 
+  /**
+   * Crea el material en la empresa indicada o, si no llega, en la del usuario.
+   * La unidad y la moneda deben existir y estar activas.
+   */
   async create(
     createMaterialCostInput: CreateMaterialCostInput,
     cu?: JWTPayload,
@@ -50,7 +54,13 @@ export class MaterialCostService extends BaseService<MaterialCost> {
   ): Promise<MaterialCost> {
     const { unitOfMeasureId, currency, ...rest } = createMaterialCostInput;
     const name = rest.name.trim();
-    await this.checkUniqueName(name, rest.businessId ?? cu?.businessId);
+    await this.checkUniqueName(
+      name,
+      rest.businessId ?? cu?.businessId,
+      undefined,
+      true,
+      manager,
+    );
     await this.validateUnitOfMeasure(unitOfMeasureId, manager);
     const curr = await this.validateCurrency(currency, manager);
 
@@ -72,6 +82,7 @@ export class MaterialCostService extends BaseService<MaterialCost> {
     return this.findOne(created.id as number, cu, scopes, manager);
   }
 
+  /** Listado con `productCount` (productos activos que usan cada material). */
   async find(
     options?: ListOptions,
     cu?: JWTPayload,
@@ -126,7 +137,13 @@ export class MaterialCostService extends BaseService<MaterialCost> {
     } = updateMaterialCostInput;
 
     if (name !== undefined) {
-      await this.checkUniqueName(name.trim(), current.business?.id, id);
+      await this.checkUniqueName(
+        name.trim(),
+        current.business?.id,
+        id,
+        true,
+        manager,
+      );
     }
     if (unitOfMeasureId !== undefined) {
       await this.validateUnitOfMeasure(unitOfMeasureId, manager);
@@ -217,6 +234,7 @@ export class MaterialCostService extends BaseService<MaterialCost> {
         materialCost.business?.id,
         materialCost.id,
         false,
+        manager,
       );
     }
 
@@ -228,6 +246,7 @@ export class MaterialCostService extends BaseService<MaterialCost> {
     });
   }
 
+  /** Invierte `isActive` y devuelve el material actualizado. */
   async toggleActive(
     id: number,
     cu?: JWTPayload,
@@ -245,6 +264,7 @@ export class MaterialCostService extends BaseService<MaterialCost> {
     return this.findOne(id, cu, scopes, manager);
   }
 
+  /** Lanza 404 si la unidad no existe y 400 si está desactivada. */
   private async validateUnitOfMeasure(
     unitOfMeasureId: number,
     manager?: EntityManager,
@@ -260,6 +280,7 @@ export class MaterialCostService extends BaseService<MaterialCost> {
     }
   }
 
+  /** Moneda por código; lanza 404 si no existe y 400 si está desactivada. */
   private async validateCurrency(
     currencyCode: string,
     manager?: EntityManager,
@@ -276,13 +297,20 @@ export class MaterialCostService extends BaseService<MaterialCost> {
     return currency;
   }
 
+  /**
+   * Nombre único en la empresa sin distinguir mayúsculas. Por defecto cuenta
+   * los eliminados (y pide restaurarlos); al restaurar, solo los activos.
+   */
   private async checkUniqueName(
     name: string,
     businessId?: number,
     exceptId?: number,
     includeDeleted = true,
+    manager?: EntityManager,
   ) {
-    const query = this.materialCostRepository
+    const query = (
+      manager?.getRepository(MaterialCost) ?? this.materialCostRepository
+    )
       .createQueryBuilder('m')
       .where('lower(m.name) = lower(:name)', { name })
       .andWhere(
@@ -300,6 +328,7 @@ export class MaterialCostService extends BaseService<MaterialCost> {
     );
   }
 
+  /** Añade a cada material cuántos productos no eliminados lo usan. */
   private async withProductCount(
     materialCosts: MaterialCost[],
     manager?: EntityManager,

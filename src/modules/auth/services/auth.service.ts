@@ -34,20 +34,19 @@ import { LoggerService } from '../../../common/logger';
 import { Role } from '../../../core/enums/role.enum';
 
 /**
- * Seconds a replaced refresh token keeps being accepted, so requests that
- * were already on their way (another tab, a retry) are not logged out
+ * Segundos que se sigue aceptando un refresh token sustituido, para no cerrar
+ * la sesión a peticiones que ya iban en camino (otra pestaña, un reintento).
  */
 const REFRESH_TOKEN_GRACE_PERIOD = 30;
 const MAX_TWO_FACTOR_ATTEMPTS = 5;
 const TWO_FACTOR_LOCKOUT_SECONDS = 15 * 60;
 
+/**
+ * Emite y valida los tokens de sesión (cookies, refresh rotativo, sesión
+ * única en Redis) y gestiona el segundo factor (TOTP).
+ */
 @Injectable()
 export class AuthService {
-  private accessTokensMap: Map<
-    number,
-    Array<{ accessToken: string; reason: AccessTokenReason; metadata: any }>
-  > = new Map();
-
   public constructor(
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
@@ -58,6 +57,10 @@ export class AuthService {
     private readonly notificationService: NotificationService,
   ) {}
 
+  /**
+   * Pone el token de acceso en la cookie `Authorization`. Sin `expiresIn`
+   * dura `ACCESS_TOKEN_EXPIRE_IN` segundos.
+   */
   public addAccessTokenToCookies(
     jwt: string,
     res: Response,
@@ -73,13 +76,9 @@ export class AuthService {
   }
 
   /**
-   * Add a json web token to response cookies with common configuration
-   * for this purpose
-   *
-   * @param jwt Token
-   * @param cookieNameKey Name of environment variable witch specify cookie name
-   * @param expiresInKey Name of environment variable witch specify time of expiration
-   * @param res Response to send to client
+   * Pone un JWT con el prefijo `Bearer` en una cookie `HttpOnly; Secure;
+   * SameSite=None`. La duración sale de `expiresIn` o, si no llega, de la
+   * clave de configuración `expiresInKey` (en segundos).
    */
   public addBearerJWTToCookies(
     jwt: string,
@@ -98,11 +97,9 @@ export class AuthService {
   }
 
   /**
-   * Remove access and refresh tokens from response cookies. The attributes
-   * must match the ones used to set them, otherwise browsers ignore the
-   * removal on cross-site requests.
-   *
-   * @param res Response to send to client
+   * Borra las cookies de acceso y refresh. Los atributos deben coincidir con
+   * los usados al crearlas; si no, el navegador ignora el borrado en
+   * peticiones entre sitios.
    */
   public clearAuthCookies(res: Response): void {
     for (const cookieNameKey of [
@@ -117,6 +114,7 @@ export class AuthService {
     }
   }
 
+  /** Pone el refresh token en la cookie `Refresh`. */
   public addRefreshTokenToCookies(jwt: string, res: Response): void {
     return this.addBearerJWTToCookies(
       jwt,
@@ -126,6 +124,7 @@ export class AuthService {
     );
   }
 
+  /** Firma un token de acceso con `ACCESS_TOKEN_SECRET`. */
   public createAccessToken(
     user: User,
     expiresIn?: number,
@@ -141,11 +140,10 @@ export class AuthService {
   }
 
   /**
-   * Create a json web token with given configuration
-   *
-   * @param user User or Worker entity
-   * @param expiresInKey Name of environment variable witch specify time of expiration
-   * @param secretKey Name of environment variable witch specify secret word
+   * Firma un JWT con el id, el rol y el lugar del usuario en la empresa
+   * (empresa, oficina, departamento, equipo) y el estado del 2FA. Cada token
+   * lleva un `jti` aleatorio para que dos emitidos en el mismo segundo no
+   * coincidan. `expiresInKey` y `secretKey` son claves de configuración.
    */
   public createJWT(
     user: User,
@@ -176,6 +174,7 @@ export class AuthService {
     );
   }
 
+  /** Firma un refresh token con `REFRESH_TOKEN_SECRET` (no lo guarda). */
   public createRefreshToken(
     user: User,
     expiresIn?: number,
@@ -190,6 +189,11 @@ export class AuthService {
     );
   }
 
+  /**
+   * Comprueba que el refresh token es el vigente del usuario (se compara su
+   * SHA-256) o el recién sustituido, aún dentro de su periodo de gracia.
+   * Lanza `DisabledUserError` si la cuenta está desactivada.
+   */
   public async validateUserToRefreshAccessToken(
     id: number,
     refreshToken: string,
@@ -217,13 +221,9 @@ export class AuthService {
   }
 
   /**
-   * Issues a new refresh token for the user, saves it and adds it to cookies.
-   * The token it replaces stays valid for a short grace period.
-   *
-   * @param user User entity
-   * @param res Response to send to client
-   * @param twoFactorAuthPassed Whether the session already passed 2FA
-   * @param replacedToken Refresh token used to ask for this one, if any
+   * Emite un refresh token nuevo, guarda su hash en el usuario y lo pone en
+   * la cookie. Si llega `replacedToken` (el usado para pedir este), sigue
+   * valiendo `REFRESH_TOKEN_GRACE_PERIOD` segundos; si no, se anula la gracia.
    */
   public async issueRefreshToken(
     user: User,
@@ -253,6 +253,10 @@ export class AuthService {
     return refreshToken;
   }
 
+  /**
+   * Sesión única: el token de acceso debe estar entre los guardados en Redis
+   * para el usuario (`AccessTokenUser{id}`); si no, lanza 401.
+   */
   public async validateUserToSingleLogin(id: number, accessToken: string) {
     const tokens = await this.cacheManager.get<Array<AccessTokenInfo>>(
       `AccessTokenUser${id}`,
@@ -264,6 +268,11 @@ export class AuthService {
     return;
   }
 
+  /**
+   * Login con correo y contraseña (bcrypt). Responde el mismo error si el
+   * correo no existe o la contraseña falla; una cuenta desactivada o
+   * eliminada lanza `DisabledUserError`.
+   */
   public async validateUserWithEmailAndPassword(
     email: string,
     password: string,
@@ -293,6 +302,10 @@ export class AuthService {
     return user;
   }
 
+  /**
+   * Tokens de acceso del usuario guardados en Redis que siguen sin caducar:
+   * los de login y, con `withInspectTokens`, también los de inspección.
+   */
   private async getActiveAccessTokenInfo(
     userId: number,
     withInspectTokens = false,
@@ -325,6 +338,11 @@ export class AuthService {
     return values;
   }
 
+  /**
+   * Registra en Redis un token de acceso válido del usuario, con el host y el
+   * navegador de la petición. Un login (`UserSingleLogin`) descarta los demás
+   * tokens de login: así se aplica la sesión única.
+   */
   public async saveAccessToken(
     user: User,
     accessToken: string,
@@ -370,11 +388,13 @@ export class AuthService {
         userAgent: req.header('user-agent'),
       },
     });
-    const expiredIn = this.configService.get('ACCESS_TOKEN_EXPIRE_IN') * 1000;
-    await this.cacheManager.set(`AccessTokenUser${user.id}`, values, expiredIn);
-    const a = await this.cacheManager.get(`AccessTokenUser${user.id}`);
+    await this.saveAccessTokenList(user.id as number, values);
   }
 
+  /**
+   * Cierra la sesión del usuario: quita de Redis sus tokens de login y deja
+   * solo los de inspección que sigan vigentes.
+   */
   public async removeAccessToken(user: User) {
     //Delete from the list the tokens that have expired and those that are of type UserSingleLogin.
     let values =
@@ -400,10 +420,27 @@ export class AuthService {
         return false;
       });
     }
-    const expiredIn = this.configService.get('ACCESS_TOKEN_EXPIRE_IN') * 1000;
-    await this.cacheManager.set(`AccessTokenUser${user.id}`, values, expiredIn);
+    await this.saveAccessTokenList(user.id as number, values);
   }
 
+  /**
+   * Guarda en Redis la lista de tokens de acceso del usuario hasta que caduque
+   * el último emitido (todos duran `ACCESS_TOKEN_EXPIRE_IN`).
+   */
+  private async saveAccessTokenList(
+    userId: number,
+    values: AccessTokenInfo[],
+  ): Promise<void> {
+    // cache-manager-redis-store only honours the TTL passed as { ttl } (seconds)
+    await this.cacheManager.set(`AccessTokenUser${userId}`, values, {
+      ttl: Number(this.configService.get('ACCESS_TOKEN_EXPIRE_IN')),
+    } as any);
+  }
+
+  /**
+   * Si el usuario ya tenía una sesión abierta, le envía una notificación
+   * `LogOut` para que la cierre (se llama antes de un login nuevo).
+   */
   public async checkAndNotifyCloseActiveSession(user: User) {
     const activeTokenInfo = await this.getActiveAccessTokenInfo(
       user.id as number,
@@ -416,6 +453,7 @@ export class AuthService {
     }
   }
 
+  /** Crea y publica la notificación de cierre de sesión al propio usuario. */
   private async notifySessionClosing(
     currentUser: JWTPayload,
     accessTokenInfo: AccessTokenInfo,
@@ -435,6 +473,11 @@ export class AuthService {
     );
   }
 
+  /**
+   * Genera y guarda un secreto TOTP sin activar el 2FA todavía (eso lo hace
+   * `finishConfigure2FA`). Devuelve la URL `otpauth://` para el código QR;
+   * el emisor está fijo como `GoldenSoft`.
+   */
   async generate2FASecret(currentUser: JWTPayload) {
     const secret = authenticator.generateSecret();
     // Store this secret in the user's profile or database
@@ -448,6 +491,11 @@ export class AuthService {
     return otpAuthUrl;
   }
 
+  /**
+   * Comprueba un código TOTP de un usuario con el 2FA ya configurado. Tras
+   * `MAX_TWO_FACTOR_ATTEMPTS` fallos bloquea los intentos durante
+   * `TWO_FACTOR_LOCKOUT_SECONDS`; un acierto reinicia el contador.
+   */
   async verify2FACode(id: number, token2fa: string): Promise<User> {
     const user = await this.usersService.findOne(id);
 
@@ -459,6 +507,37 @@ export class AuthService {
       throw new UnauthorizedError(`You don't have a secret code`);
     }
 
+    await this.checkTwoFactorCode(id, token2fa, user.twoFASecret);
+    return user;
+  }
+
+  /**
+   * Confirma el emparejamiento con un código válido del secreto generado y
+   * deja el 2FA configurado y activo. Mismo límite de intentos que
+   * `verify2FACode`.
+   */
+  async finishConfigure2FA(id: number, token2fa: string): Promise<User> {
+    const user = await this.usersService.findOne(id);
+
+    if (!user.twoFASecret) {
+      throw new UnauthorizedError(`You don't have a secret code`);
+    }
+    await this.checkTwoFactorCode(id, token2fa, user.twoFASecret);
+    await this.usersService.finishConfigure2FA(id);
+
+    return user;
+  }
+
+  /**
+   * Comprueba un código TOTP contra `secret`. Tras `MAX_TWO_FACTOR_ATTEMPTS`
+   * fallos bloquea los intentos durante `TWO_FACTOR_LOCKOUT_SECONDS`; un
+   * acierto reinicia el contador.
+   */
+  private async checkTwoFactorCode(
+    id: number,
+    token2fa: string,
+    secret: string,
+  ): Promise<void> {
     const attemptsKey = `TwoFactorAttempts${id}`;
     const attempts = (await this.cacheManager.get<number>(attemptsKey)) ?? 0;
     if (attempts >= MAX_TWO_FACTOR_ATTEMPTS) {
@@ -467,7 +546,7 @@ export class AuthService {
       );
     }
 
-    const is2FAVerified = authenticator.check(token2fa ?? '', user.twoFASecret);
+    const is2FAVerified = authenticator.check(token2fa ?? '', secret);
     if (!is2FAVerified) {
       // cache-manager-redis-store only honours the TTL passed as { ttl } (seconds)
       await this.cacheManager.set(attemptsKey, attempts + 1, {
@@ -477,24 +556,10 @@ export class AuthService {
     }
 
     await this.cacheManager.del(attemptsKey);
-    return user;
   }
 
-  async finishConfigure2FA(id: number, token2fa: string): Promise<User> {
-    const user = await this.usersService.findOne(id);
-
-    if (!user.twoFASecret) {
-      throw new UnauthorizedError(`You don't have a secret code`);
-    }
-    const is2FAVerified = authenticator.check(token2fa ?? '', user.twoFASecret);
-    if (!is2FAVerified) {
-      throw new UnauthorizedError('Invalid 2FA code');
-    }
-    await this.usersService.finishConfigure2FA(id);
-
-    return user;
-  }
-
+  // Operaciones de administrador (SUPER, lo exige el resolver): delegan en
+  // UsersService.
   async reset2FASettings(id: number): Promise<User> {
     return this.usersService.reset2FASettings(id);
   }
@@ -508,7 +573,8 @@ export class AuthService {
   }
 
   /**
-   * Lets a user turn off their own 2FA, proving they still hold the device
+   * Desactiva el 2FA del propio usuario, que demuestra con un código que aún
+   * tiene el dispositivo.
    */
   async disableOwn2FA(id: number, token2fa: string): Promise<User> {
     await this.verify2FACode(id, token2fa);

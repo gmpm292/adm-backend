@@ -3,6 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import * as TelegramBot from 'node-telegram-bot-api';
 import { Message } from 'node-telegram-bot-api';
 
+/** Respuesta genérica (frase al azar) a los mensajes que no son comandos. */
 @Injectable()
 export class RegularMessage {
   private readonly logger = new Logger(RegularMessage.name);

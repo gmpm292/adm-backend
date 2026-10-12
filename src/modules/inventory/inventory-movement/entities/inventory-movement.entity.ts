@@ -31,7 +31,4 @@ export class InventoryMovement extends SecurityBaseEntity {
 
   @Column({ type: 'varchar', length: 255, nullable: true })
   referenceId?: string; // ID de la venta, orden, etc. que causó la reserva
-
-  // @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
-  // timestamp: Date;
 }

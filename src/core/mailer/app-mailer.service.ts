@@ -6,6 +6,10 @@ import { EmailService } from '../../modules/email/servises/email.service';
 import { SendEmailInput } from '../../modules/email/dto/send-email.input';
 import { ConfigService } from '../../common/config';
 
+/**
+ * Correos de la aplicación sobre `EmailService`, con plantillas por nombre.
+ * Si el envío falla, se escribe en consola y el error se relanza.
+ */
 @Injectable()
 export class AppMailerService implements IAppMailer {
   constructor(
@@ -14,6 +18,10 @@ export class AppMailerService implements IAppMailer {
     private readonly confServ: ConfigService,
   ) {}
 
+  /**
+   * Aviso de alta. Si el usuario tiene token de confirmación, incluye el
+   * enlace para fijar la contraseña y cuántas horas vale.
+   */
   public async notifyUserCreation(user: User): Promise<any> {
     try {
       const templateId = 'user-creation'; // Name de la plantilla en la base de datos
@@ -44,6 +52,7 @@ export class AppMailerService implements IAppMailer {
     }
   }
 
+  /** Enlace para recuperar la contraseña (`FRONTEND_CHANGE_PASSWORD_URL`). */
   public async notifyPasswordRecovery(user: User): Promise<any> {
     try {
       const templateId = 'password-recovery';
@@ -70,6 +79,7 @@ export class AppMailerService implements IAppMailer {
     }
   }
 
+  /** Confirma al usuario que su contraseña quedó fijada. */
   public async notifySuccessSettingPassword(user: User): Promise<any> {
     try {
       const templateId = 'password-set-success';
@@ -92,31 +102,7 @@ export class AppMailerService implements IAppMailer {
     }
   }
 
-  public async notifyCustomerCreation(user: User): Promise<any> {
-    try {
-      const templateId = 'customer-welcome';
-      const loginLink = `${process.env.FRONTEND_URL}/login`;
-
-      const context = {
-        name: user.name,
-        lastName: user.lastName,
-        email: user.email,
-        companyName: user.business?.name || 'Nuestra compañía',
-        loginLink,
-        temporaryPassword: user.password, // Solo si se envía contraseña temporal
-      };
-
-      return await this.emailService.sendEmail({
-        to: user.email,
-        templateId,
-        context,
-      } as SendEmailInput);
-    } catch (error) {
-      console.error('Failed to send customer creation email', error);
-      throw error;
-    }
-  }
-
+  /** Correo libre (asunto y texto), sin plantilla. */
   public async notifyUserGeneral(
     email: string,
     subject: string,

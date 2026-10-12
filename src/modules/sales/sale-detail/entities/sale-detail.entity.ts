@@ -5,7 +5,7 @@ import { Product } from '../../../inventory/product/entities/product.entity';
 import { ProductPaymentOptions } from '../../../inventory/product/types/product-payment-options.type';
 import { Worker } from '../../../payroll/worker/entities/worker.entity';
 import { SaleDetailStatus } from '../enums/sale-detail-status.enum';
-import { DecimalTransformer } from '../../../../core/utils/decimal-transformer-for-typeorm';
+import { decimalTransformer } from '../../../../core/transformers/decimal.transformer';
 
 /**
  * Description: Products sold in a transaction.
@@ -22,7 +22,7 @@ export class SaleDetail extends SecurityBaseEntity {
     type: 'decimal',
     precision: 10,
     scale: 3,
-    transformer: new DecimalTransformer(),
+    transformer: decimalTransformer,
   })
   quantity: number;
 

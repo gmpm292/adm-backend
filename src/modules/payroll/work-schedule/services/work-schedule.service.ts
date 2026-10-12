@@ -15,6 +15,10 @@ import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
 import { ScopedAccessService } from '../../../scoped-access/services/scoped-access.service';
 import { OfficeService } from '../../../company/office/services/office.service';
 
+/**
+ * Horarios de trabajo: un rango de fechas con sus días laborables. Con oficina
+ * valen para ella; sin oficina, para toda la empresa.
+ */
 @Injectable()
 export class WorkScheduleService extends BaseService<WorkSchedule> {
   constructor(
@@ -27,6 +31,10 @@ export class WorkScheduleService extends BaseService<WorkSchedule> {
     super(workScheduleRepository);
   }
 
+  /**
+   * Crea el horario. Con oficina toma la empresa de ella; sin oficina usa
+   * `businessId`.
+   */
   async create(
     createWorkScheduleInput: CreateWorkScheduleInput,
     cu?: JWTPayload,
@@ -118,6 +126,10 @@ export class WorkScheduleService extends BaseService<WorkSchedule> {
     });
   }
 
+  /**
+   * Horarios propios de una oficina (no los de toda la empresa), del más
+   * reciente al más antiguo. Antes comprueba que la oficina es visible.
+   */
   async findByOffice(
     officeId: number,
     cu?: JWTPayload,
@@ -132,6 +144,11 @@ export class WorkScheduleService extends BaseService<WorkSchedule> {
     });
   }
 
+  /**
+   * Cambia los campos que llegan; la oficina puede cambiarse (el horario
+   * pasa a la empresa de la nueva) o quitarse (se queda en su empresa).
+   * Valida el rango con las fechas resultantes.
+   */
   async update(
     id: number,
     updateWorkScheduleInput: UpdateWorkScheduleInput,
@@ -164,6 +181,8 @@ export class WorkScheduleService extends BaseService<WorkSchedule> {
         scopes,
         manager,
       );
+      // El horario pasa a la empresa de su oficina, como al crearlo
+      if (data.office.business) data.business = data.office.business;
     }
 
     this.assertValidRange(
@@ -187,6 +206,7 @@ export class WorkScheduleService extends BaseService<WorkSchedule> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<WorkSchedule[]> {
+    // Borrado lógico, sin comprobar si hay asistencias que lo usan.
     return super.baseDeleteMany({
       ids,
       cu,

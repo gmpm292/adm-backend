@@ -8,6 +8,11 @@ import { Team } from '../../modules/company/team/entities/co_team.entity';
 import { BaseEntity } from './base.entity';
 import { UserRelation } from '../../modules/user-relation/entities/user-relation.entity';
 
+/**
+ * Entidad con dueño: quién la creó, editó o eliminó y a qué empresa,
+ * oficina, departamento y equipo pertenece. Sobre estos campos se calcula el
+ * alcance de cada usuario (`ScopedAccessService`).
+ */
 export abstract class SecurityBaseEntity extends BaseEntity {
   @ManyToOne(() => User, {
     nullable: true,

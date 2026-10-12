@@ -97,13 +97,4 @@ extend type Mutation {
   rollbackSalePayments(
     rollbackSalePaymentsInput: RollbackSalePaymentsInput!
   ): RollbackSalePaymentsResult!
-
-  # TODO: Implementar luego
-  # approvePayments(paymentIds: [Int!]!): Int!
-
-  # TODO: Implementar luego
-  # rejectPayments(
-  #   paymentIds: [Int!]!
-  #   reason: String!
-  # ): Int!
 }

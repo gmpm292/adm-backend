@@ -1,26 +1,20 @@
-/* eslint-disable @typescript-eslint/no-floating-promises */
 /* eslint-disable @typescript-eslint/require-await */
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-/* eslint-disable @typescript-eslint/no-unused-expressions */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Injectable, LoggerService } from '@nestjs/common';
 import { createLogger, format, Logger, transports } from 'winston';
 
-//import { LogPostgresService } from './log/services/log-postgres.service';
 import { Log } from './log/entities/log.entity';
 
 const { combine, timestamp, simple } = format;
 
+/**
+ * Logger de la aplicación: winston a consola (en Heroku, stdout queda en sus
+ * registros). Nivel `info`: `debug` y `verbose` no se escriben.
+ */
 @Injectable()
 export class AppLoggerService implements LoggerService {
-  //future environment variable. write in console.
-  private con = false;
   private logger: Logger;
 
-  private internalServerErrors: Array<Log> = [];
-
-  public constructor(/*private logService: LogPostgresService*/) {
+  public constructor() {
     this.logger = createLogger({
       transports: [
         new transports.Console({
@@ -31,10 +25,10 @@ export class AppLoggerService implements LoggerService {
   }
 
   /**
-   * Write logs
+   * Escribe en consola con nivel info.
    *
-   * @param level Level message log
-   * @param message Summary message
+   * @param message Resumen del mensaje
+   * @param meta Información adicional (contexto)
    */
   public log(message: string, meta: any): void {
     this.logger.info(message, meta);
@@ -47,9 +41,8 @@ export class AppLoggerService implements LoggerService {
    * @param meta Extra log information (context)
    */
   public fatal(message: string, meta: any): void {
-    this.con
-      ? this.logger.crit(message, meta)
-      : this.saveInDB('critical', message, meta);
+    // Los niveles de winston (npm) no tienen `crit`.
+    this.logger.error(message, meta);
   }
 
   /**
@@ -59,9 +52,7 @@ export class AppLoggerService implements LoggerService {
    * @param meta Extra log information (context)
    */
   public verbose(message: string, meta: any): void {
-    this.con
-      ? this.logger.verbose(message, meta)
-      : this.saveInDB('verbose', message, meta);
+    this.logger.verbose(message, meta);
   }
 
   /**
@@ -71,9 +62,7 @@ export class AppLoggerService implements LoggerService {
    * @param meta Extra log information (context)
    */
   public debug(message: string, meta: Record<string, unknown>): void {
-    this.con
-      ? this.logger.debug(message, meta)
-      : this.saveInDB('debug', message, meta);
+    this.logger.debug(message, meta);
   }
 
   /**
@@ -83,10 +72,7 @@ export class AppLoggerService implements LoggerService {
    * @param meta Extra log information (context)
    */
   public async error(message: string, meta: Record<string, unknown>) {
-    // console.log('En error ');
-    this.con
-      ? this.logger.error(message, meta)
-      : await this.saveInDB('error', message, meta);
+    this.logger.error(message, meta);
   }
 
   /**
@@ -96,9 +82,7 @@ export class AppLoggerService implements LoggerService {
    * @param meta Extra log information (context)
    */
   public async info(message: string, meta: Record<string, unknown>) {
-    this.con
-      ? this.logger.info(message, meta)
-      : await this.saveInDB('info', message, meta);
+    this.logger.info(message, meta);
   }
 
   /**
@@ -108,92 +92,24 @@ export class AppLoggerService implements LoggerService {
    * @param meta Extra log information (context)
    */
   public async warn(message: string, meta: Record<string, unknown>) {
-    this.con
-      ? this.logger.warn(message, meta)
-      : await this.saveInDB('warning', message, meta);
+    this.logger.warn(message, meta);
   }
 
-  public async internalServerError(
-    message: string,
-    meta: Record<string, unknown>,
-    intServErrorId: string,
-  ): Promise<Log> {
-    if (this.con) {
-      this.logger.error(message, meta);
-      //TODO: este return no estaba pero sin el da error .
-      return {
-        level: 'internalServerError',
-        message,
-        meta,
-      };
-    } else {
-      const error = this.findInternalServerError(intServErrorId);
-      return this.saveInDB('internalServerError', message, {
-        ...meta,
-        error,
-        intServErrorId,
-      });
-    }
-  }
-
+  /**
+   * Escribe en consola el detalle de un error 500 (pila incluida): al cliente
+   * solo le llega el `intServErrorId` de `meta`, que sirve para buscarlo.
+   */
   public saveInternalServerError(
     message: string,
     meta: Record<string, unknown>,
   ): Log {
-    const createdAt = new Date();
     const log: Log = {
-      createdAt,
+      createdAt: new Date(),
       level: 'internalServerError',
       message,
       meta,
     };
-    this.internalServerErrors.push(log);
-    // Delete expiration logs
-    const expirationTimeInMinutes = 5;
-    const now = new Date();
-    const expirationTime = expirationTimeInMinutes * 60 * 1000;
-    this.internalServerErrors = this.internalServerErrors.filter(
-      (e) => now.getTime() - (e.createdAt?.getTime() ?? 0) < expirationTime,
-    );
-
+    this.logger.error(`Internal Server Error: ${message}`, meta);
     return log;
-  }
-
-  public findInternalServerError(intServErrorId: string): Log | undefined {
-    const index = this.internalServerErrors.findIndex(
-      (e) => e.meta.intServErrorId === intServErrorId,
-    );
-    if (index !== -1) {
-      const [removedElement] = this.internalServerErrors.splice(index, 1);
-      return removedElement;
-    }
-    return undefined;
-  }
-
-  private async saveInDB(
-    level: string,
-    message: string,
-    meta: Record<string, unknown>,
-  ): Promise<Log> {
-    const createdAt = new Date();
-    const log: Log = {
-      level,
-      createdAt,
-      message,
-      meta,
-    };
-    if (meta?.intServErrorId)
-      log.intServErrorId = meta.intServErrorId as string;
-    if (meta?.user) log.userId = (meta as any).user?.sub;
-
-    try {
-      //const logResult = await this.logService.create(log);
-      //return logResult;
-      return log; //TODO: quitar este return dejar solo el de arriba.
-    } catch (error) {
-      console.log(error);
-      console.log({ level, createdAt, message, meta });
-      return { level, createdAt, message, meta };
-    }
   }
 }

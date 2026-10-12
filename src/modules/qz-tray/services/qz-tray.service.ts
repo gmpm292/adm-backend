@@ -12,11 +12,16 @@ import { BadRequestError } from '../../../core/errors/appErrors/BadRequestError.
 export class QZTrayService {
   constructor(private configService: ConfigService) {}
 
+  /** Certificado público para QZ Tray; vacío si no está configurado. */
   getPublicKey(): { publicKey: string } {
     const key = this.readKey('QZ_PUBLIC_KEY', 'CERTIFICATE');
     return { publicKey: key ?? '' };
   }
 
+  /**
+   * Firma en base64 la petición que manda QZ Tray desde el navegador. Lanza
+   * 400 si no hay clave privada (o es la de ejemplo) o no es válida.
+   */
   signRequest(signRequestDto: SignRequestDto): string {
     const { request } = signRequestDto;
     if (!request) {
@@ -51,6 +56,11 @@ export class QZTrayService {
     return this.cleanPemFormat(key, keyType);
   }
 
+  /**
+   * Rehace el PEM con cabecera y pie y un salto de línea entre cada tramo del
+   * contenido: así vale una clave pegada en una sola línea desde
+   * Configuración, con `\r\n` o con `\n` escritos como texto.
+   */
   private cleanPemFormat(key: string, keyType: string): string {
     const pemHeader = `-----BEGIN ${keyType}-----`;
     const pemFooter = `-----END ${keyType}-----`;
@@ -63,10 +73,13 @@ export class QZTrayService {
       content = key.slice(startIdx, endIdx);
     }
 
+    // `\n` literales a saltos; cada tramo de espacios (también `\r\n`) a un
+    // solo salto, sin líneas vacías que el decodificador rechaza.
     const cleanContent = content
+      .replace(/\\n/g, '\n')
       .trim()
-      .replace(/\n/g, '\n')
-      .replace(/\s/g, '\n');
+      .split(/\s+/)
+      .join('\n');
 
     return `${pemHeader}\n${cleanContent}\n${pemFooter}`;
   }

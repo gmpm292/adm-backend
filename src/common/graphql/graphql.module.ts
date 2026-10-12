@@ -28,6 +28,11 @@ import { AuthParameterKey } from '../../modules/auth/enums/auth-parameter-key.en
 import { join } from 'path';
 import { saveQuerys } from './helpers/saveQuerys.helper';
 
+/**
+ * GraphQL con Apollo en modo schema-first (`*.graphql` de cada módulo). Al
+ * construir el esquema registra cada operación en la tabla de permisos;
+ * las suscripciones van por `graphql-ws` y se autentican con la cookie.
+ */
 @Module({
   imports: [
     GraphQLModule.forRootAsync<ApolloDriverConfig>({
@@ -39,7 +44,6 @@ import { saveQuerys } from './helpers/saveQuerys.helper';
         configService: ConfigService,
       ) => ({
         transformSchema: async (schema: GraphQLSchema) => {
-          // eslint-disable-next-line @typescript-eslint/await-thenable
           await saveQuerys(schema, loggerService, configService);
           return schema;
         },
@@ -54,11 +58,7 @@ import { saveQuerys } from './helpers/saveQuerys.helper';
         resolvers: { JSON: new JsonScalar() },
         customScalarTypeMapping: { DateTime: 'Date' },
 
-        //playground: playground(loggerService, configService),
-        playground: true,
-        // plugins: playground(loggerService, configService)
-        //   ? [ApolloServerPluginLandingPageLocalDefault()]
-        //   : [],
+        playground: playground(loggerService, configService),
         introspection: introspection(loggerService, configService),
         cors: {
           credentials: true,
@@ -68,6 +68,8 @@ import { saveQuerys } from './helpers/saveQuerys.helper';
           formatError(formattedError, error, loggerService),
         subscriptions: {
           'graphql-ws': {
+            // Sin cookie de acceso se rechaza la conexión; con ella, el token
+            // queda en `extra` para que `context.helper` lo entregue al guard.
             onConnect: (context: Context) => {
               const { connectionParams, extra } = context;
               const cookie = extractSubscriptionCookies({ extra });

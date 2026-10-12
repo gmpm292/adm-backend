@@ -57,6 +57,11 @@ export class AttendanceService extends BaseService<Attendance> {
     super(attendanceRepository);
   }
 
+  /**
+   * Anota la asistencia de un trabajador en un día no futuro (uno por día).
+   * Normaliza las horas, deduce el estado y las horas trabajadas, y copia el
+   * lugar del trabajador.
+   */
   async create(
     createAttendanceInput: CreateAttendanceInput,
     cu?: JWTPayload,
@@ -157,6 +162,7 @@ export class AttendanceService extends BaseService<Attendance> {
     });
   }
 
+  /** Registros de todos los trabajadores visibles en el día de esa fecha. */
   async findDailyAttendance(
     date: Date,
     cu?: JWTPayload,
@@ -177,6 +183,10 @@ export class AttendanceService extends BaseService<Attendance> {
     return result.data as Attendance[];
   }
 
+  /**
+   * Registros de un trabajador entre dos días, ambos incluidos. Comprueba
+   * antes que el trabajador está al alcance del usuario.
+   */
   async findWorkerAttendance(
     workerId: number,
     startDate: Date,
@@ -261,6 +271,10 @@ export class AttendanceService extends BaseService<Attendance> {
     return updated;
   }
 
+  /**
+   * Edita un registro no pagado. Si cambia el trabajador, el lugar se toma del
+   * nuevo; entrada, salida, estado y horas se recalculan como al crear.
+   */
   async update(
     id: number,
     updateAttendanceInput: UpdateAttendanceInput,
@@ -354,6 +368,7 @@ export class AttendanceService extends BaseService<Attendance> {
     });
   }
 
+  /** Borrado lógico por lote; falla entero si alguno ya está pagado. */
   async remove(
     ids: number[],
     cu?: JWTPayload,
@@ -395,6 +410,7 @@ export class AttendanceService extends BaseService<Attendance> {
 
   // ========== Apoyo ==========
 
+  /** Registro de un trabajador en el día de esa fecha, o null si no hay. */
   public async findDailyAttendanceForWorker(
     workerId: number,
     date: Date,
@@ -482,6 +498,7 @@ export class AttendanceService extends BaseService<Attendance> {
     return false;
   }
 
+  /** Fecha como «YYYY-MM-DD» en la zona horaria del servidor. */
   public getLocalDateString(date: Date): string {
     const year = date.getFullYear();
     const month = (date.getMonth() + 1).toString().padStart(2, '0');
@@ -537,6 +554,7 @@ export class AttendanceService extends BaseService<Attendance> {
     ];
   }
 
+  /** Rechaza días posteriores a hoy; hoy mismo se admite. */
   private assertNotFuture(date: Date): void {
     if (this.getLocalDateString(date) > this.getLocalDateString(new Date())) {
       throw new BadRequestError('La fecha no puede ser futura');

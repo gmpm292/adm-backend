@@ -4,6 +4,7 @@
 import { CustomScalar, Scalar } from '@nestjs/graphql';
 import { Kind, ValueNode } from 'graphql';
 
+/** Escalar `JSON`: pasa el valor tal cual; los literales se convierten. */
 @Scalar('JSON', () => Object)
 export class JsonScalar implements CustomScalar<any, any> {
   description = 'JSON custom scalar type';

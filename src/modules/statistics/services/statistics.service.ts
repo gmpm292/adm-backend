@@ -11,10 +11,13 @@ import { BadRequestError } from '../../../core/errors/appErrors/BadRequestError.
 import { Role } from '../../../core/enums/role.enum';
 import { SaleStatus } from '../../sales/sale/enums/sale-status.enum';
 
-/** Sales that count as income: confirmed, even if part was later refunded */
+/**
+ * Ventas que cuentan como ingreso: cobradas, aunque luego se devolviera una
+ * parte (lo devuelto, `refundedAmount`, se resta del total).
+ */
 const REVENUE_STATUSES = [SaleStatus.CONFIRMED, SaleStatus.PARTIALLY_REFUNDED];
 
-/** Longest period reported day by day; longer ones are grouped by month */
+/** Periodo más largo que se informa día a día; los demás, por mes. */
 const MAX_DAILY_POINTS = 92;
 const MAX_PERIOD_DAYS = 366 * 5;
 const RANKING_SIZE = 10;
@@ -24,13 +27,13 @@ const DAY_IN_MS = 24 * 60 * 60 * 1000;
 type Row = Record<string, any>;
 
 /**
- * A query being built: the scope conditions of each table share one
- * parameter list
+ * Parámetros de una consulta en construcción: las condiciones de alcance de
+ * cada tabla comparten una sola lista de valores ($1, $2...).
  */
 class QueryParams {
   public readonly values: unknown[] = [];
 
-  /** Registers a value and returns its placeholder */
+  /** Añade un valor y devuelve su marcador (`$n`). */
   public add(value: unknown): string {
     this.values.push(value);
     return `$${this.values.length}`;
@@ -46,15 +49,19 @@ interface Scope {
 
 interface Period {
   from: string;
-  /** Day after the last one, so the range is [from, toExclusive) */
+  /** Día siguiente al último: el rango es [from, toExclusive). */
   toExclusive: string;
   to: string;
   days: number;
-  /** Minutes to add to stored timestamps to read them in the user's clock */
+  /** Minutos a sumar a las fechas guardadas para leerlas en la hora local. */
   shiftMinutes: number;
   granularity: 'day' | 'month';
 }
 
+/**
+ * Estadísticas de solo lectura calculadas con SQL directo. Nunca suma
+ * importes de monedas distintas: cada consulta informa en una sola moneda.
+ */
 @Injectable()
 export class StatisticsService {
   constructor(
@@ -62,6 +69,11 @@ export class StatisticsService {
     private readonly manager: EntityManager,
   ) {}
 
+  /**
+   * Panel de inicio: ingresos del periodo frente al anterior, ventas por
+   * estado, serie de ingresos, stock bajo, borradores, nómina, asistencia y
+   * recuentos de trabajadores, productos y clientes.
+   */
   public async dashboard(cu: JWTPayload, input: StatisticsFilterInput) {
     const scope = this.resolveScope(cu, input);
     const period = this.resolvePeriod(input);
@@ -86,7 +98,7 @@ export class StatisticsService {
     ] = await Promise.all([
       this.salesTotals(scope, period, currency),
       this.salesTotals(scope, previous, currency),
-      this.salesByStatus(scope, period),
+      this.salesByStatus(scope, period, currency),
       this.revenueSeries(scope, period, currency),
       this.lowStock(scope),
       this.lowStockCount(scope),
@@ -127,6 +139,10 @@ export class StatisticsService {
     };
   }
 
+  /**
+   * Detalle de ventas del periodo: totales, entregas, rankings de productos,
+   * categorías, vendedores y clientes, métodos de pago y clientes nuevos.
+   */
   public async sales(cu: JWTPayload, input: StatisticsFilterInput) {
     const scope = this.resolveScope(cu, input);
     const period = this.resolvePeriod(input);
@@ -151,7 +167,7 @@ export class StatisticsService {
       this.sellerRanking(scope, period, currency),
       this.customerRanking(scope, period, currency),
       this.paymentMethods(scope, period, currency),
-      this.salesByStatus(scope, period),
+      this.salesByStatus(scope, period, currency),
       this.customerMix(scope, period, currency),
     ]);
 
@@ -170,13 +186,13 @@ export class StatisticsService {
   }
 
   // ---------------------------------------------------------------------------
-  // Scope and period
+  // Alcance y periodo
   // ---------------------------------------------------------------------------
 
   /**
-   * What the user may see: SUPER everything (optionally narrowed by the
-   * filter), everybody else only their own business, office, department or
-   * team, according to their role.
+   * Lo que el usuario puede ver: SUPER todo (puede acotar por empresa y
+   * oficina); PRINCIPAL su empresa (puede acotar por oficina); ADMIN su
+   * oficina; MANAGER su departamento; el resto su equipo. Todo del token.
    */
   private resolveScope(cu: JWTPayload, input: StatisticsFilterInput): Scope {
     const roles = cu.role ?? [];
@@ -203,6 +219,10 @@ export class StatisticsService {
     return scope;
   }
 
+  /**
+   * Periodo a partir de los días `YYYY-MM-DD` del usuario y su desfase
+   * horario. Lanza BadRequestError si está al revés o supera 5 años.
+   */
   private resolvePeriod(input: StatisticsFilterInput): Period {
     const from = this.parseDay(input.dateFrom);
     const to = this.parseDay(input.dateTo);
@@ -215,8 +235,8 @@ export class StatisticsService {
       throw new BadRequestError('The period is too long');
     }
 
-    // Timestamps are stored in the server's clock. Shifting them by the
-    // difference with the user's clock makes a day start when the user's does.
+    // Las fechas se guardan en la hora del servidor. Desplazarlas la diferencia
+    // con la hora del usuario hace que el día empiece cuando empieza el suyo.
     const serverOffset = -new Date().getTimezoneOffset();
     const shiftMinutes =
       (input.utcOffsetMinutes ?? serverOffset) - serverOffset;
@@ -231,7 +251,7 @@ export class StatisticsService {
     };
   }
 
-  /** The period of the same length that ends right before the given one */
+  /** Periodo de la misma duración que termina justo antes del dado. */
   private previousPeriod(period: Period): Period {
     const from = this.parseDay(period.from);
     return {
@@ -268,6 +288,7 @@ export class StatisticsService {
     };
   }
 
+  /** La moneda pedida o, si no, la más usada en las ventas del alcance. */
   private pickCurrency(
     requested: string | undefined,
     currencies: string[],
@@ -277,10 +298,10 @@ export class StatisticsService {
   }
 
   // ---------------------------------------------------------------------------
-  // SQL fragments
+  // Fragmentos SQL
   // ---------------------------------------------------------------------------
 
-  /** Conditions that keep a table inside the user's scope and not deleted */
+  /** Condiciones que dejan una tabla dentro del alcance y sin eliminados. */
   private scopeSql(alias: string, scope: Scope, params: QueryParams): string {
     const conditions = [`${alias}."deletedAt" IS NULL`];
     for (const key of [
@@ -297,12 +318,15 @@ export class StatisticsService {
     return conditions.join(' AND ');
   }
 
-  /** Moment a sale counts for, read in the user's clock */
+  /**
+   * Momento en que cuenta una venta (`effectiveDate` o, si falta,
+   * `createdAt`), en la hora del usuario.
+   */
   private saleMomentSql(period: Period, params: QueryParams): string {
     return `(COALESCE(s."effectiveDate", s."createdAt") + make_interval(mins => ${params.add(period.shiftMinutes)}::int))`;
   }
 
-  /** Sales of the period inside the scope, whatever their status */
+  /** Ventas del periodo dentro del alcance, en cualquier estado. */
   private salesInPeriodSql(
     scope: Scope,
     period: Period,
@@ -316,7 +340,7 @@ export class StatisticsService {
     ].join(' AND ');
   }
 
-  /** Sales of the period that count as income in the given currency */
+  /** Ventas del periodo que cuentan como ingreso en la moneda indicada. */
   private revenueSalesSql(
     scope: Scope,
     period: Period,
@@ -335,9 +359,13 @@ export class StatisticsService {
   }
 
   // ---------------------------------------------------------------------------
-  // Sales
+  // Ventas
   // ---------------------------------------------------------------------------
 
+  /**
+   * Monedas con ventas que cuentan como ingreso, la más usada primero. Mira
+   * todo el historial del alcance, no solo el periodo.
+   */
   private async findCurrencies(scope: Scope): Promise<string[]> {
     const params = new QueryParams();
     const rows = await this.query(
@@ -353,6 +381,7 @@ export class StatisticsService {
     return rows.map((row) => row.currency);
   }
 
+  /** Ingreso neto de devoluciones, número de ventas y ticket medio. */
   private async salesTotals(
     scope: Scope,
     period: Period,
@@ -374,11 +403,20 @@ export class StatisticsService {
     };
   }
 
-  private async salesByStatus(scope: Scope, period: Period) {
+  /**
+   * Ventas del periodo por estado, en cualquier moneda. El importe es el neto
+   * de devoluciones y solo suma las ventas en la moneda informada.
+   */
+  private async salesByStatus(
+    scope: Scope,
+    period: Period,
+    currency: string | null,
+  ) {
     const params = new QueryParams();
     const rows = await this.query(
       `SELECT s."saleStatus" AS key, count(*) AS count,
-              COALESCE(sum(s."totalAmount"), 0) AS amount
+              COALESCE(sum(s."totalAmount" - COALESCE(s."refundedAmount", 0))
+                FILTER (WHERE s."totalAmountCurrency" = ${params.add(currency)}), 0) AS amount
          FROM sl_sales s
         WHERE ${this.salesInPeriodSql(scope, period, params)}
         GROUP BY 1
@@ -392,7 +430,7 @@ export class StatisticsService {
     }));
   }
 
-  /** One point per day or month of the period, including the empty ones */
+  /** Un punto por día o mes del periodo, también los que no tienen ventas. */
   private async revenueSeries(
     scope: Scope,
     period: Period,
@@ -429,6 +467,7 @@ export class StatisticsService {
     }));
   }
 
+  /** Ventas cobradas del periodo que llevan mensajería. */
   private async deliveriesCount(
     scope: Scope,
     period: Period,
@@ -446,8 +485,9 @@ export class StatisticsService {
   }
 
   /**
-   * Units sold by product or by category. The amount is the base price of
-   * each line, counted only when it is expressed in the reported currency.
+   * Unidades vendidas por producto o por categoría (las 10 primeras). El
+   * importe usa el precio base de cada línea y solo cuenta si está en la
+   * moneda informada: el detalle no guarda el precio cobrado.
    */
   private async productRanking(
     scope: Scope,
@@ -489,6 +529,7 @@ export class StatisticsService {
     return rows.map((row) => this.toRanking(row));
   }
 
+  /** Los 10 vendedores que más ingreso generan en el periodo. */
   private async sellerRanking(
     scope: Scope,
     period: Period,
@@ -518,6 +559,7 @@ export class StatisticsService {
     return rows.map((row) => this.toRanking(row));
   }
 
+  /** Los 10 clientes que más compran; las ventas sin cliente no cuentan. */
   private async customerRanking(
     scope: Scope,
     period: Period,
@@ -545,7 +587,10 @@ export class StatisticsService {
     return rows.map((row) => this.toRanking(row));
   }
 
-  /** What was collected with each payment method, in the reported currency */
+  /**
+   * Lo cobrado con cada método de pago: solo los pagos hechos en la moneda
+   * informada, sin restar devoluciones.
+   */
   private async paymentMethods(
     scope: Scope,
     period: Period,
@@ -575,7 +620,10 @@ export class StatisticsService {
     }));
   }
 
-  /** New customers bought for the first time inside the period */
+  /**
+   * Compradores del periodo: nuevos (su primera compra cae en él),
+   * recurrentes (compraron antes) y número de ventas sin cliente.
+   */
   private async customerMix(
     scope: Scope,
     period: Period,
@@ -615,6 +663,7 @@ export class StatisticsService {
     };
   }
 
+  /** Borradores pendientes del alcance, de cualquier fecha. */
   private async draftSalesCount(scope: Scope): Promise<number> {
     const params = new QueryParams();
     const [row] = await this.query(
@@ -628,9 +677,10 @@ export class StatisticsService {
   }
 
   // ---------------------------------------------------------------------------
-  // Inventory, payroll and attendance
+  // Inventario, nómina y asistencia
   // ---------------------------------------------------------------------------
 
+  /** Inventarios con mínimo definido y existencias en él o por debajo. */
   private lowStockSql(scope: Scope, params: QueryParams): string {
     return `FROM in_inventories i
             JOIN in_products p ON p.id = i."productId" AND p."deletedAt" IS NULL
@@ -667,7 +717,7 @@ export class StatisticsService {
     return Number(row.count);
   }
 
-  /** Payments to workers that have not been carried out yet */
+  /** Pagos a trabajadores aún sin hacer, de cualquier fecha, por moneda. */
   private async pendingWorkerPayments(scope: Scope) {
     const params = new QueryParams();
     const rows = await this.query(
@@ -682,6 +732,7 @@ export class StatisticsService {
     return rows.map((row) => this.toAmount(row));
   }
 
+  /** Pagos a trabajadores hechos dentro del periodo, por moneda. */
   private async payrollPaid(scope: Scope, period: Period) {
     const params = new QueryParams();
     const paidAt = `(wp."paidDate" + make_interval(mins => ${params.add(period.shiftMinutes)}::int))`;
@@ -698,6 +749,7 @@ export class StatisticsService {
     return rows.map((row) => this.toAmount(row));
   }
 
+  /** Registros de asistencia del periodo por estado. */
   private async attendance(scope: Scope, period: Period) {
     const params = new QueryParams();
     const rows = await this.query(
@@ -717,6 +769,10 @@ export class StatisticsService {
     }));
   }
 
+  /**
+   * Filas no eliminadas de una tabla dentro del alcance. `table` va tal cual
+   * en el SQL: solo nombres fijos del código, nunca datos del cliente.
+   */
   private async countRows(table: string, scope: Scope): Promise<number> {
     const params = new QueryParams();
     const [row] = await this.query(
@@ -727,7 +783,7 @@ export class StatisticsService {
   }
 
   // ---------------------------------------------------------------------------
-  // Mapping
+  // Conversión de filas
   // ---------------------------------------------------------------------------
 
   private toRanking(row: Row) {

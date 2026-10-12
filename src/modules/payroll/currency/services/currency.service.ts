@@ -36,6 +36,10 @@ export class CurrencyService extends BaseService<Currency> {
     super(currencyRepository);
   }
 
+  /**
+   * Da de alta una moneda con el código en mayúsculas. El código no puede
+   * repetirse, tampoco con una moneda eliminada.
+   */
   async create(
     createCurrencyInput: CreateCurrencyInput,
     cu?: JWTPayload,
@@ -67,6 +71,8 @@ export class CurrencyService extends BaseService<Currency> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<ListSummary> {
+    // Sin alcances explícitos se usan todos menos PERSONAL: las monedas no
+    // son de ningún usuario y deben verse siempre.
     const effectiveScopes =
       scopes ??
       Object.values(ScopedAccessEnum).filter(
@@ -95,6 +101,7 @@ export class CurrencyService extends BaseService<Currency> {
     });
   }
 
+  /** Busca por código (p. ej. «USD»); devuelve null si no existe. */
   findByCode(
     code: string,
     cu?: JWTPayload,
@@ -158,6 +165,7 @@ export class CurrencyService extends BaseService<Currency> {
     return updated;
   }
 
+  /** Activa o desactiva por código, con las mismas reglas que `update`. */
   async updateStatus(
     code: string,
     isActive: boolean,
@@ -196,6 +204,11 @@ export class CurrencyService extends BaseService<Currency> {
     }
   }
 
+  /**
+   * Cuántas unidades de la moneda destino vale una de la de origen. Ambas
+   * deben existir y estar activas. Se guarda 5 minutos en caché en memoria,
+   * que `update` vacía.
+   */
   async getExchangeRate(
     fromCurrencyCode: string,
     toCurrencyCode: string,

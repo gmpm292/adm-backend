@@ -347,7 +347,6 @@ export class UsersResolver {
     const result = await this.uals.forUpdateUserRole(
       user,
       updateUserRoleInput.id,
-      updateUserRoleInput,
     );
     const updatedUser = await this.usersService.updateUserRole(
       result.id,

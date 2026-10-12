@@ -35,6 +35,7 @@ export class UnitOfMeasureService extends BaseService<UnitOfMeasure> {
     super(unitOfMeasureRepository);
   }
 
+  /** Crea la unidad (activa por defecto) tras comprobar nombre y símbolo. */
   async create(
     createUnitOfMeasureInput: CreateUnitOfMeasureInput,
     cu?: JWTPayload,
@@ -50,7 +51,7 @@ export class UnitOfMeasureService extends BaseService<UnitOfMeasure> {
       description: description?.trim() || undefined,
       isActive: isActive ?? true,
     };
-    await this.checkUnique(data);
+    await this.checkUnique(data, undefined, manager);
 
     return super.baseCreate({ data, cu, scopes: GLOBAL, manager });
   }
@@ -73,6 +74,7 @@ export class UnitOfMeasureService extends BaseService<UnitOfMeasure> {
     return super.baseFindOne({ id, cu, scopes: GLOBAL, manager });
   }
 
+  /** Cambia solo los campos que llegan, sin repetir nombre ni símbolo. */
   async update(
     id: number,
     updateUnitOfMeasureInput: UpdateUnitOfMeasureInput,
@@ -93,7 +95,7 @@ export class UnitOfMeasureService extends BaseService<UnitOfMeasure> {
       }),
       ...(isActive !== undefined && { isActive }),
     };
-    await this.checkUnique(data, id);
+    await this.checkUnique(data, id, manager);
 
     return super.baseUpdate({ id, data, cu, scopes: GLOBAL, manager });
   }
@@ -140,6 +142,7 @@ export class UnitOfMeasureService extends BaseService<UnitOfMeasure> {
     });
   }
 
+  /** Restaura solo las eliminadas de la lista; devuelve cuántas. */
   async restore(
     ids: number[],
     cu?: JWTPayload,
@@ -167,6 +170,7 @@ export class UnitOfMeasureService extends BaseService<UnitOfMeasure> {
     });
   }
 
+  /** Activa la unidad si está inactiva y al revés. */
   async toggleActive(
     id: number,
     cu?: JWTPayload,
@@ -187,11 +191,14 @@ export class UnitOfMeasureService extends BaseService<UnitOfMeasure> {
   private async checkUnique(
     data: { name?: string; symbol?: string },
     exceptId?: number,
+    manager?: EntityManager,
   ) {
+    const repository =
+      manager?.getRepository(UnitOfMeasure) ?? this.unitOfMeasureRepository;
     for (const field of ['name', 'symbol'] as const) {
       const value = data[field];
       if (!value) continue;
-      const existing = await this.unitOfMeasureRepository
+      const existing = await repository
         .createQueryBuilder('u')
         .withDeleted()
         // El símbolo distingue mayúsculas (m y M son unidades distintas)

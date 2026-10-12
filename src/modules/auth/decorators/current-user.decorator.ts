@@ -4,6 +4,10 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 import { GqlExecutionContext } from '@nestjs/graphql';
 
+/**
+ * Lo que dejó la estrategia en `req.user`: el payload del JWT o, en login y
+ * refresh, la entidad `User`.
+ */
 export const CurrentUser = createParamDecorator(
   (data: unknown, context: ExecutionContext) => {
     const ctx = GqlExecutionContext.create(context);
@@ -11,6 +15,10 @@ export const CurrentUser = createParamDecorator(
   },
 );
 
+/**
+ * Como `CurrentUser`, más `currentQueryOrEndpoint`: el nombre de la operación
+ * (lo usan los niveles de acceso por operación).
+ */
 export const CurrentUserWithContext = createParamDecorator(
   (data: unknown, context: ExecutionContext) => {
     // Obtener el usuario

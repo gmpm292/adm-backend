@@ -7,6 +7,7 @@ import { AttendanceStatus } from '../../payroll/attendance/enums/attendance-stat
 import { SystemUtilsService } from '../../../core/services/system-utils.service';
 import { Role } from '../../../core/enums/role.enum';
 
+/** Handler de la tarea `GENERATE_DAILY_ATTENDANCES`. */
 @Injectable()
 export class AttendanceGeneratorService {
   private readonly logger = new Logger(AttendanceGeneratorService.name);

@@ -28,6 +28,11 @@ import { Role } from '../enums/role.enum';
 import { ForbiddenError } from '@nestjs/apollo';
 import { ScopedAccessService } from '../../modules/scoped-access/services/scoped-access.service';
 
+/**
+ * CRUD genérico del que heredan los servicios. Con `cu` (usuario actual) y
+ * `scopedAccessService` aplica el alcance por empresa, oficina, etc.; con
+ * `manager` trabaja dentro de la transacción recibida.
+ */
 export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
   // Variable privada para controlar el nivel de detalle en errores
   private readonly showErrorDetails: boolean;
@@ -59,6 +64,12 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
     return this.repository.metadata.name;
   }
 
+  /**
+   * Listado paginado con las opciones del cliente (filtros, orden, página)
+   * más los filtros de alcance del usuario. Sin opciones devuelve los 10
+   * primeros; con `take: 0` solo cuenta. Si las opciones vienen de `@Opts`,
+   * de `relationsToLoad` solo une las que pide la consulta o usan los filtros.
+   */
   public async baseFind(params: {
     options?: ListOptions;
     relationsToLoad?: Array<keyof Entity | string>;
@@ -79,11 +90,7 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
     // Apply scope filters if user and scopes are provided.
     const scopeFilters =
       cu && this.scopedAccessService
-        ? await this.scopedAccessService.forBaseFind(
-            cu,
-            this.repository,
-            scopes,
-          )
+        ? this.scopedAccessService.forBaseFind(cu, this.repository, scopes)
         : [];
 
     // Merge scope filters with existing options.
@@ -122,6 +129,7 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
     return { data, totalCount };
   }
 
+  /** Todos los registros, sin paginar ni filtrar. Solo SUPER (si no, lanza). */
   public async baseFindAll(params: {
     withDeleted?: boolean;
     manager?: EntityManager;
@@ -138,6 +146,10 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
     return data ? data : [];
   }
 
+  /**
+   * Un registro por id dentro del alcance del usuario (si llega `cu`, aunque
+   * no se pasen `scopes`). Lanza NotFoundError si no existe o no lo ve.
+   */
   public async baseFindOne(params: {
     id: number;
     relationsToLoad?: FindOptionsRelations<Entity>;
@@ -160,17 +172,16 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
 
     const entityName = this.getEntityName();
 
-    const where: FindOptionsWhere<Entity> = { id } as FindOptionsWhere<Entity>;
+    let where: FindOptionsWhere<Entity> | FindOptionsWhere<Entity>[] = {
+      id,
+    } as FindOptionsWhere<Entity>;
     if (cu && this.scopedAccessService) {
       const scopeFilters = this.scopedAccessService.forBaseFindOne(
         cu,
         repository,
         scopes,
       );
-
-      if (scopeFilters.length > 0) {
-        Object.assign(where, ...scopeFilters);
-      }
+      where = this.withScopeAlternatives(where, scopeFilters);
     }
     const findOptions: FindOneOptions<Entity> = {
       where,
@@ -190,6 +201,10 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
     return data;
   }
 
+  /**
+   * El primer registro que cumple los filtros. A diferencia de `baseFindOne`,
+   * el alcance solo se aplica si se pasan `scopes`. Lanza NotFoundError.
+   */
   public async baseFindOneByFilters(params: {
     filters: FindOptionsWhere<Entity>;
     relationsToLoad?: FindOptionsRelations<Entity>;
@@ -213,7 +228,9 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
     const entityName = this.getEntityName();
 
     // Start with base filters
-    const where: FindOptionsWhere<Entity> = { ...filters };
+    let where: FindOptionsWhere<Entity> | FindOptionsWhere<Entity>[] = {
+      ...filters,
+    };
 
     if (cu && this.scopedAccessService && scopes?.length) {
       const scopeFilters = this.scopedAccessService.forBaseFindOne(
@@ -221,7 +238,7 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
         repository,
         scopes,
       );
-      Object.assign(where, ...scopeFilters);
+      where = this.withScopeAlternatives(where, scopeFilters);
     }
 
     const data = await repository.findOne({
@@ -241,6 +258,10 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
     return data;
   }
 
+  /**
+   * Los registros de esos ids dentro del alcance. Los que no existen o no se
+   * ven se omiten sin error; solo lanza NotFoundError si no queda ninguno.
+   */
   public async baseFindByIds(params: {
     ids: number[];
     relationsToLoad?: FindOptionsRelations<Entity>;
@@ -264,7 +285,7 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
     const entityName = this.getEntityName();
 
     // Prepare base where condition
-    const where: FindOptionsWhere<Entity> = {
+    let where: FindOptionsWhere<Entity> | FindOptionsWhere<Entity>[] = {
       id: In(ids),
     } as FindOptionsWhere<Entity>;
 
@@ -276,11 +297,7 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
         repository,
         scopes,
       );
-
-      if (scopeFilters.length > 0) {
-        // Merge all scope filters with AND logic
-        Object.assign(where, ...scopeFilters);
-      }
+      where = this.withScopeAlternatives(where, scopeFilters);
     }
 
     // Execute query with combined conditions
@@ -299,6 +316,12 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
     return data;
   }
 
+  /**
+   * Crea el registro. Con `uniqueFields` lanza ConflictError si ya hay otro
+   * con el mismo valor (sin contar eliminados ni mirar el alcance). Con `cu`
+   * completa empresa, oficina, etc. según el alcance; un fallo al guardar
+   * sale como InternalServerError.
+   */
   public async baseCreate(params: {
     data: DeepPartial<Entity>;
     uniqueFields?: string[];
@@ -367,6 +390,11 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
     }
   }
 
+  /**
+   * Mezcla los datos nuevos con los guardados y guarda. Exige que el registro
+   * esté en el alcance del usuario; las reglas de alcance sobre los datos
+   * solo se aplican con `isSecurityBaseEntity: true` (aquí no es el defecto).
+   */
   public async baseUpdate(params: {
     id: number;
     data: DeepPartial<Entity>;
@@ -418,6 +446,10 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
       : await this.repository.save(entity);
   }
 
+  /**
+   * Elimina los registros de esos ids que el usuario ve: borrado lógico por
+   * defecto, definitivo con `softRemove: false`.
+   */
   public async baseDeleteMany(params: {
     ids: number[];
     softRemove?: boolean;
@@ -441,6 +473,7 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
       : repository.remove(entities);
   }
 
+  /** Como `baseDeleteMany` para un solo id; lanza NotFoundError si no lo ve. */
   public async baseDeleteOne(params: {
     id: number;
     softRemove?: boolean;
@@ -477,6 +510,10 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
       : repository.remove(entity);
   }
 
+  /**
+   * Restaura los eliminados de esos ids dentro del alcance y devuelve
+   * cuántos. Lanza NotFoundError si ninguno estaba eliminado.
+   */
   public async baseRestoreDeletedMany(params: {
     ids: number[];
     manager?: EntityManager;
@@ -521,5 +558,19 @@ export class BaseService<Entity extends BaseEntity | SecurityBaseEntity> {
 
   public getRepository() {
     return this.repository;
+  }
+
+  /**
+   * `forBaseFindOne` devuelve alternativas (GENERAL, PERSONAL, jerárquico)
+   * que valen con OR, como en `baseFind`: cada una se combina con la
+   * condición base y TypeORM une con OR los elementos del array. Mezclarlas
+   * en un objeto las cruzaba con AND (y una pisaba las claves de otra).
+   */
+  private withScopeAlternatives(
+    where: FindOptionsWhere<Entity>,
+    scopeFilters: FindOptionsWhere<Entity>[],
+  ): FindOptionsWhere<Entity> | FindOptionsWhere<Entity>[] {
+    if (scopeFilters.length === 0) return where;
+    return scopeFilters.map((scope) => ({ ...where, ...scope }));
   }
 }

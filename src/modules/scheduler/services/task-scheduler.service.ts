@@ -9,6 +9,10 @@ import { UpdateScheduledTaskInput } from '../dto/update-scheduled-task.input';
 import { CreateScheduledTaskInput } from '../dto/create-scheduled-task.input';
 import { ConditionalOperator } from '../../../core/graphql/remote-operations/enums/conditional-operation.enum';
 
+/**
+ * Programa en memoria (cron) las tareas guardadas en `scheduled_task`. Al
+ * arrancar sincroniza las tareas por defecto y programa las activas.
+ */
 @Injectable()
 export class TaskSchedulerService implements OnModuleInit {
   private readonly logger = new Logger(TaskSchedulerService.name);
@@ -25,15 +29,14 @@ export class TaskSchedulerService implements OnModuleInit {
     await this.initializeScheduledTasks(); // <-- cargamos las tareas existentes
   }
 
+  /**
+   * Deja en la base exactamente las tareas por defecto de esta lista: crea las
+   * que faltan y elimina (borrado lógico) las marcadas `isDefault` que ya no
+   * están. Se identifican por `handlerType` + `cronExpression`, así que
+   * cambiar aquí la hora de una tarea la sustituye por otra.
+   */
   private async initializeDefaultTasks() {
     const defaultTasks: CreateScheduledTaskInput[] = [
-      // {
-      //   name: 'Tarea cada 10 segundos',
-      //   description: 'Tarea cada 10 segundos',
-      //   handlerType: 'SOFT_DELETE_EXPIRED_RELATIONS',
-      //   cronExpression: '*/10 * * * * *', // cada 10 segundos
-      //   isActive: true,
-      // },
       {
         name: 'Generar registros de asistencia diarios',
         description:
@@ -66,10 +69,10 @@ export class TaskSchedulerService implements OnModuleInit {
     });
 
     // Crear un mapa de las tareas por defecto esperadas
-    const expectedTaskKeys = new Map<string, string>();
+    const expectedTaskKeys = new Map<string, CreateScheduledTaskInput>();
     defaultTasks.forEach((task) => {
       const key = `${task.handlerType}-${task.cronExpression}`;
-      expectedTaskKeys.set(key, task.name);
+      expectedTaskKeys.set(key, task);
     });
 
     // Identificar tareas para crear y eliminar
@@ -90,17 +93,7 @@ export class TaskSchedulerService implements OnModuleInit {
     }
 
     // Las tareas restantes en expectedTaskKeys son las que necesitan ser creadas
-    expectedTaskKeys.forEach((name, key) => {
-      const [handlerType, cronExpression] = key.split('-');
-      const taskToCreate = defaultTasks.find(
-        (task) =>
-          task.handlerType === handlerType &&
-          task.cronExpression === cronExpression,
-      );
-      if (taskToCreate) {
-        tasksToCreate.push(taskToCreate);
-      }
-    });
+    tasksToCreate.push(...expectedTaskKeys.values());
 
     // Ejecutar operaciones de eliminación
     if (tasksToDelete.length > 0) {
@@ -112,11 +105,18 @@ export class TaskSchedulerService implements OnModuleInit {
 
     // Ejecutar operaciones de creación
     for (const taskInput of tasksToCreate) {
-      const task = await this.taskRegistry.create({
-        ...taskInput,
-        isDefault: true, // Marcar como tarea por defecto
-      });
-      this.logger.log(`Tarea por defecto creada: ${task.name}`);
+      try {
+        const task = await this.taskRegistry.create({
+          ...taskInput,
+          isDefault: true, // Marcar como tarea por defecto
+        });
+        this.logger.log(`Tarea por defecto creada: ${task.name}`);
+      } catch (error) {
+        // Ya hay una tarea creada a mano con el mismo handler y cron.
+        this.logger.warn(
+          `Tarea por defecto no creada (${taskInput.name}): ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     }
 
     // Si no hay cambios, registrar
@@ -130,18 +130,35 @@ export class TaskSchedulerService implements OnModuleInit {
     tasks.forEach((task) => this.scheduleTask(task));
   }
 
+  /**
+   * Crea y arranca el cron de la tarea si está activa. Se registra por su id
+   * (`scheduled-task-<id>`), así dos tareas con el mismo nombre no chocan en
+   * `SchedulerRegistry`; si ya estaba programada, se sustituye.
+   */
   scheduleTask(task: ScheduledTask) {
+    this.removeTask(task.id as number);
+    if (!task.isActive) return;
+
     const job = new CronJob(task.cronExpression, async () => {
       await this.executeAndTrackTask(task);
     });
 
-    this.schedulerRegistry.addCronJob(task.name, job);
+    const jobKey = this.jobKey(task.id as number);
+    this.schedulerRegistry.addCronJob(jobKey, job);
     job.start();
 
-    this.jobs.set(task.name, job);
+    this.jobs.set(jobKey, job);
     this.logger.log(`Tarea programada: ${task.name}`);
   }
 
+  private jobKey(taskId: number): string {
+    return `scheduled-task-${taskId}`;
+  }
+
+  /**
+   * Ejecuta la tarea y guarda `lastRun` y `nextRun`. Los errores del handler
+   * los registra `TaskHandlerService` y no detienen el cron.
+   */
   async executeAndTrackTask(task: ScheduledTask) {
     await this.taskHandler.executeTask(task);
 
@@ -162,22 +179,29 @@ export class TaskSchedulerService implements OnModuleInit {
         task as UpdateScheduledTaskInput,
       );
     } catch (error) {
-      console.log('Error in executeAndTrackTask: ', `${error}`);
+      this.logger.error(
+        `Error al guardar la ejecución de ${task.name}: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
+  /**
+   * Reprograma la tarea con sus datos nuevos (para y rehace el cron); si
+   * quedó inactiva, solo la para.
+   */
   updateTask(task: ScheduledTask) {
-    this.removeTask(task.name);
     this.scheduleTask(task);
   }
 
-  removeTask(taskName: string) {
-    if (this.jobs.has(taskName)) {
-      const job = this.jobs.get(taskName);
-      void job?.stop();
-      this.schedulerRegistry.deleteCronJob(taskName);
-      this.jobs.delete(taskName);
-      this.logger.log(`Tarea eliminada: ${taskName}`);
+  /** Para el cron de la tarea con ese id; si no está programada, nada. */
+  removeTask(taskId: number) {
+    const jobKey = this.jobKey(taskId);
+    const job = this.jobs.get(jobKey);
+    if (job) {
+      void job.stop();
+      this.schedulerRegistry.deleteCronJob(jobKey);
+      this.jobs.delete(jobKey);
+      this.logger.log(`Tarea detenida: ${taskId}`);
     }
   }
 }

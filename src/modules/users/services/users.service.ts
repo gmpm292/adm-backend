@@ -46,6 +46,10 @@ import { Department } from '../../company/department/entities/co_department.enti
 
 const SYSTEM_USER_EMAIL = 'system@admin.com';
 
+/**
+ * Cuentas de usuario: alta, rol y lugar en la empresa, contraseñas, 2FA y
+ * refresh token. La cuenta `system@admin.com` no se lista ni se modifica.
+ */
 @Injectable()
 export class UsersService extends BaseService<User> {
   public constructor(
@@ -59,6 +63,11 @@ export class UsersService extends BaseService<User> {
     super(usersRepository);
   }
 
+  /**
+   * Fija la contraseña con un enlace de confirmación vigente: consume el
+   * token, activa la cuenta y anula el refresh token (las sesiones abiertas
+   * no pueden renovarse).
+   */
   public async changePassword({
     confirmationToken,
     newPassword,
@@ -136,6 +145,10 @@ export class UsersService extends BaseService<User> {
     };
   }
 
+  /**
+   * Indica si el enlace sigue vigente (sin caducar ni usar). Lanza 404 si el
+   * token no existe.
+   */
   public async checkConfirmationToken({ confirmationToken }): Promise<boolean> {
     const user = await this.usersRepository.findOne({
       where: { confirmationTokens: { tokenValue: confirmationToken } },
@@ -157,6 +170,11 @@ export class UsersService extends BaseService<User> {
     return false;
   }
 
+  /**
+   * Fija la contraseña de otro usuario sin conocer la actual (solo SUPER, lo
+   * exige el resolver). Anula su enlace activo, activa la cuenta y, si no es
+   * uno mismo, cierra sus sesiones.
+   */
   public async changePasswordByEmail(
     { email, newPassword },
     currentUser: JWTPayload,
@@ -209,11 +227,8 @@ export class UsersService extends BaseService<User> {
   }
 
   /**
-   * Lets a user change their own password, proving they know the current one
-   *
-   * @param currentUser Access token payload
-   * @param currentPassword Password in use
-   * @param newPassword Password to set
+   * Cambia la contraseña propia comprobando la actual. No cierra las demás
+   * sesiones.
    */
   public async changeOwnPassword(
     currentUser: JWTPayload,
@@ -236,6 +251,11 @@ export class UsersService extends BaseService<User> {
     return user;
   }
 
+  /**
+   * Crea el primer usuario real (SUPER, activo, con contraseña) desde la
+   * pantalla `/cfu`. Solo funciona mientras no haya más usuarios que el del
+   * sistema; si los hay lanza `ConflictError`.
+   */
   public async createFirstUser(
     createFirstUserInput: CreateFirstUserInput,
   ): Promise<User> {
@@ -276,6 +296,11 @@ export class UsersService extends BaseService<User> {
     }
   }
 
+  /**
+   * Da de alta un usuario tras validar su rol y lugar en la empresa y que el
+   * correo y el teléfono no se repitan. Nace sin contraseña; se devuelve con
+   * `confirmationToken`, el enlace para fijarla.
+   */
   public async create(
     createUserInput: CreateUserInput,
     cu?: JWTPayload,
@@ -368,6 +393,7 @@ export class UsersService extends BaseService<User> {
     await this.cacheManager.del(`AccessTokenUser${id}`);
   }
 
+  /** Nombre y apellidos sin espacios sobrantes (se guarda en `fullName`). */
   private buildFullName(name?: string, lastName?: string | null): string {
     return [name, lastName]
       .map((part) => part?.trim())
@@ -384,13 +410,10 @@ export class UsersService extends BaseService<User> {
     }
   }
 
-  public findCustomers(options?: ListOptions): Promise<ListSummary> {
-    return super.baseFind({
-      options,
-      relationsToLoad: ['office', 'department', 'team'],
-    });
-  }
-
+  /**
+   * Usuario por correo (exacto), con su lugar en la empresa y sus tokens de
+   * confirmación. Lanza 404 si no existe.
+   */
   public async findByEmail(email: string, withDeleted = false): Promise<User> {
     const user = await this.usersRepository.findOne({
       where: { email },
@@ -411,13 +434,11 @@ export class UsersService extends BaseService<User> {
     return user;
   }
 
-  public async findByRole(role: Role): Promise<User[]> {
-    return await this.usersRepository
-      .createQueryBuilder()
-      .where(`:role = ANY (u.role)`, { role })
-      .getMany();
-  }
-
+  /**
+   * Usuario por id con su lugar en la empresa y sus tokens de confirmación.
+   * Aplica `filters` y, si llega `cu`, su alcance (`scopes`), como
+   * `baseFindOne`.
+   */
   public async findOne(
     id: number,
     filters: FindOptionsWhere<User> = {},
@@ -425,8 +446,25 @@ export class UsersService extends BaseService<User> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<User> {
-    const user = await this.usersRepository.findOne({
-      where: { id, ...filters },
+    const repository = manager?.getRepository(User) ?? this.usersRepository;
+    let where: FindOptionsWhere<User> | FindOptionsWhere<User>[] = {
+      id,
+      ...filters,
+    };
+    if (cu) {
+      // Las alternativas del alcance valen con OR (como en `baseFindOne`)
+      const scopeFilters = this.scopedAccessService.forBaseFindOne(
+        cu,
+        repository,
+        scopes,
+      );
+      if (scopeFilters.length) {
+        const base = where;
+        where = scopeFilters.map((scope) => ({ ...base, ...scope }));
+      }
+    }
+    const user = await repository.findOne({
+      where,
       relations: {
         business: true,
         office: true,
@@ -443,6 +481,10 @@ export class UsersService extends BaseService<User> {
     return user;
   }
 
+  /**
+   * Elimina (borrado lógico) usuarios y cierra sus sesiones. Nadie se elimina
+   * a sí mismo ni a la cuenta del sistema.
+   */
   public async remove(
     ids: number[],
     filters: FindOptionsWhere<User> = {},
@@ -475,6 +517,7 @@ export class UsersService extends BaseService<User> {
     return users;
   }
 
+  /** Restaura usuarios eliminados. */
   public async restore(
     ids: number[],
     cu: JWTPayload,
@@ -484,12 +527,7 @@ export class UsersService extends BaseService<User> {
     return super.baseRestoreDeletedMany({ ids, manager, cu, scopes });
   }
 
-  public async removeAll(): Promise<boolean> {
-    const deleteResult = await this.usersRepository.delete({});
-
-    return Boolean(deleteResult.affected);
-  }
-
+  /** Guarda el SHA-256 del refresh token; con `null` lo anula. */
   public async saveRefreshToken(
     id: number,
     refreshToken: string | null,
@@ -502,6 +540,10 @@ export class UsersService extends BaseService<User> {
     return Boolean(updateResult.affected);
   }
 
+  /**
+   * Guarda un secreto TOTP nuevo sin marcarlo como configurado. Lanza 403 si
+   * el usuario ya emparejó un dispositivo.
+   */
   public async save2FASecret(id: number, twoFASecret: string): Promise<User> {
     const user = await this.usersRepository.findOne({
       where: { id },
@@ -536,6 +578,7 @@ export class UsersService extends BaseService<User> {
     return user;
   }
 
+  /** Marca el 2FA como configurado y exigido (el código ya se comprobó). */
   public async finishConfigure2FA(id: number): Promise<User> {
     const user = await this.usersRepository.findOne({
       where: { id },
@@ -573,6 +616,10 @@ export class UsersService extends BaseService<User> {
     return user;
   }
 
+  /**
+   * Borra el secreto pero sigue exigiendo el 2FA: el usuario tendrá que
+   * emparejar de nuevo su dispositivo (p. ej. si lo perdió).
+   */
   async reset2FASettings(id: number): Promise<User> {
     const user = await this.usersRepository.findOne({
       where: { id },
@@ -606,6 +653,7 @@ export class UsersService extends BaseService<User> {
     return user;
   }
 
+  /** Exige el 2FA a la cuenta. Lanza 403 si ya lo exigía. */
   async enable2FA(id: number): Promise<User> {
     const user = await this.usersRepository.findOne({
       where: { id },
@@ -635,6 +683,7 @@ export class UsersService extends BaseService<User> {
     return user;
   }
 
+  /** Deja de exigir el 2FA y borra el secreto emparejado. */
   async disable2FA(id: number): Promise<User> {
     const user = await this.usersRepository.findOne({
       where: { id },
@@ -666,6 +715,11 @@ export class UsersService extends BaseService<User> {
     return user;
   }
 
+  /**
+   * Edita datos básicos (correo, nombre, apellidos, móvil, activo) de otro
+   * usuario. El rol y el lugar se cambian con `updateUserRole`. Desactivar
+   * una cuenta cierra sus sesiones; nadie se desactiva a sí mismo.
+   */
   public async update(
     id: number,
     updateUserInput: Omit<UpdateUserInput, 'id'>,
@@ -717,13 +771,6 @@ export class UsersService extends BaseService<User> {
 
     user.fullName = this.buildFullName(user.name, user.lastName);
 
-    // if password has value, it must be hashed
-    if (updateUserInput.password) {
-      Object.assign(updateUserInput, {
-        password: await hash(updateUserInput.password, 10),
-      });
-    }
-
     if (updateUserInput.email && savedUser.email != updateUserInput.email) {
       await this.validateUniqueEmail({ ...savedUser, ...rest });
     }
@@ -763,6 +810,10 @@ export class UsersService extends BaseService<User> {
     return this.findOne(id);
   }
 
+  /**
+   * El usuario edita su propio perfil (correo, nombre, apellidos, móvil);
+   * correo y móvil no pueden repetirse. Una cadena vacía borra los apellidos.
+   */
   public async updateUserProfile(
     currentUser: JWTPayload,
     updateUserProfileInput: UpdateUserProfileInput,
@@ -831,6 +882,12 @@ export class UsersService extends BaseService<User> {
     return { ...savedUser, ...user };
   }
 
+  /**
+   * Cambia a la vez el rol y el lugar en la empresa, y comprueba que el lugar
+   * sea el que exige el rol. Sin empresa se conserva la actual; oficina,
+   * departamento y equipo que no lleguen quedan vacíos. Nadie cambia su
+   * propio rol, y el rol USER (cliente) no se asigna ni se quita.
+   */
   public async updateUserRole(
     id: number,
     updateUserRoleInput: UpdateUserRoleInput,
@@ -896,6 +953,12 @@ export class UsersService extends BaseService<User> {
     return this.findOne(id);
   }
 
+  /**
+   * Valida los datos de alta o cambio de rol: cada rol lleva exactamente su
+   * lugar (SUPER ninguno; PRINCIPAL empresa; ADMIN oficina; MANAGER
+   * departamento; SUPERVISOR y AGENT equipo) y nadie asigna un rol igual o
+   * superior al suyo (salvo SUPER; PRINCIPAL solo no puede crear SUPER).
+   */
   private async checkUserInformation(
     userInput:
       | CreateUserInput
@@ -1043,6 +1106,10 @@ export class UsersService extends BaseService<User> {
     return;
   }
 
+  /**
+   * Comprueba que el usuario tiene el lugar en la empresa que exige su rol.
+   * Se usa en el login y al cambiar el rol; lanza 403 si no cuadra.
+   */
   public async chekCompanyInfo(user: User): Promise<void> {
     if (!user.role) {
       throw new ConflictError();
@@ -1101,6 +1168,10 @@ export class UsersService extends BaseService<User> {
     return;
   }
 
+  /**
+   * Correo y móvil no se repiten, contando también los usuarios eliminados.
+   * Lanza `ConflictError`.
+   */
   async validateUniqueFields(user: User) {
     let findEmail = {
       take: 0,
@@ -1149,6 +1220,7 @@ export class UsersService extends BaseService<User> {
     }
   }
 
+  /** El correo no se repite, contando los eliminados. */
   async validateUniqueEmail(user: User) {
     let options = {
       take: 0,
@@ -1173,6 +1245,7 @@ export class UsersService extends BaseService<User> {
     }
   }
 
+  /** El móvil no se repite, contando los eliminados. */
   async validateUniquePhone(user: User) {
     let options = {
       take: 0,
@@ -1195,23 +1268,5 @@ export class UsersService extends BaseService<User> {
         'The mobile of this user already exists, but this user is deleted',
       );
     }
-  }
-
-  public async findOneCustomer(id: number): Promise<User> {
-    const user = await this.usersRepository.findOne({
-      where: { id, role: `{USER}` as Role },
-      relations: {
-        office: true,
-        department: true,
-        team: true,
-        notificationLogs: true,
-      },
-    });
-
-    if (!user) {
-      throw new NotFoundError();
-    }
-
-    return user;
   }
 }

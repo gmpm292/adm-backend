@@ -1,7 +1,7 @@
-/* eslint-disable no-constant-condition */
 import { ConfigService, Environment } from '../../config';
 import { AppLoggerService } from '../../logger/logger.service';
 
+/** Playground activo salvo con `NODE_ENV=production`. */
 export function playground(
   loggerService: AppLoggerService,
   configService: ConfigService,

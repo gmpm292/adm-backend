@@ -2,6 +2,7 @@
 import { Injectable } from '@nestjs/common';
 import { CurrencyService } from '../../../currency/services/currency.service';
 import { soldLines } from '../../helpers/sold-lines.helper';
+import { onlyRuleWorkers } from '../../helpers/rule-workers.helper';
 import { BasePaymentProcessor } from './base-processor';
 import {
   RealTimeCalculationResult,
@@ -25,6 +26,7 @@ import { PaymentAccumulator } from '../../../payment_accumulator/entities/paymen
 import { Attendance } from '../../../attendance/entities/attendance.entity';
 import { AttendanceStatus } from '../../../attendance/enums/attendance-status.enum';
 
+/** Comisión según el tramo de precio de cada producto (`PRICE_RANGE`). */
 @Injectable()
 export class PriceRangeProcessor extends BasePaymentProcessor {
   protected readonly supportedPaymentType = PaymentType.PRICE_RANGE;
@@ -38,6 +40,15 @@ export class PriceRangeProcessor extends BasePaymentProcessor {
     super();
   }
 
+  /**
+   * Cada unidad vendida paga el importe fijo o el porcentaje del tramo en que
+   * cae su precio (en la moneda de la regla); fuera de todo tramo no paga. El
+   * total se reparte a partes iguales entre los mismos trabajadores que en
+   * `PercentageProcessor`. El `currency` de cada tramo no se usa: el
+   * formulario guarda en él la moneda de la regla, que es en la que se
+   * comparan los precios y se paga. Solo calcula: los pagos los crea el
+   * servicio.
+   */
   async realTimeCalculate(
     rule: PaymentRule,
     sale: Sale,
@@ -125,6 +136,7 @@ export class PriceRangeProcessor extends BasePaymentProcessor {
         const range = sortedRanges[i];
         const nextRange = sortedRanges[i + 1];
 
+        // El máximo es exclusivo; sin máximo, el tramo llega hasta el siguiente
         const rangeMin = range.min || 0;
         const rangeMax = range.max ?? nextRange?.min ?? Infinity;
 
@@ -190,8 +202,10 @@ export class PriceRangeProcessor extends BasePaymentProcessor {
 
     // 5. OBTENER WORKERS QUE APLICAN A ESTA REGLA
     let applicableWorkers: Worker[] = [];
+    // Los tipos distintos de AGENT y PUBLICIST siempre reparten
+    let distributeProfits = rule.distributeProfits;
 
-    if (!rule.distributeProfits) {
+    if (!distributeProfits) {
       // DISTRIBUTE_PROFITS = FALSE
       if (rule.workerType === WorkerType.AGENT) {
         // Solo el agente que vendió
@@ -214,11 +228,11 @@ export class PriceRangeProcessor extends BasePaymentProcessor {
         applicableWorkers = Array.from(publicists.values());
       } else {
         // Otros tipos de workers: forzar distribución
-        rule.distributeProfits = true;
+        distributeProfits = true;
       }
     }
 
-    if (rule.distributeProfits) {
+    if (distributeProfits) {
       // DISTRIBUTE_PROFITS = TRUE
       // Buscar todos los workers del mismo tipo que tengan asistencia
       const filters: any[] = [
@@ -227,11 +241,6 @@ export class PriceRangeProcessor extends BasePaymentProcessor {
           operator: ConditionalOperator.EQUAL,
           value: rule.workerType,
         },
-        // {
-        //   property: 'isActive',
-        //   operator: ConditionalOperator.EQUAL,
-        //   value: 'true',
-        // },
       ];
 
       if (rule.workerType === WorkerType.OTHER && rule.otherType) {
@@ -321,6 +330,7 @@ export class PriceRangeProcessor extends BasePaymentProcessor {
         }
       }
     }
+    applicableWorkers = onlyRuleWorkers(rule, applicableWorkers);
 
     if (applicableWorkers.length === 0) {
       return {
@@ -331,7 +341,7 @@ export class PriceRangeProcessor extends BasePaymentProcessor {
           ruleType: rule.paymentType,
           totalAmount: 0,
           totalWorkers: 0,
-          distributeProfitsApplied: rule.distributeProfits,
+          distributeProfitsApplied: distributeProfits,
           baseCalculation: {
             amount: baseAmount,
             currency: rule.paymentCurrency,
@@ -420,7 +430,7 @@ export class PriceRangeProcessor extends BasePaymentProcessor {
         ruleType: rule.paymentType,
         totalAmount: baseAmount,
         totalWorkers: applicableWorkers.length,
-        distributeProfitsApplied: rule.distributeProfits,
+        distributeProfitsApplied: distributeProfits,
         baseCalculation: {
           amount: baseAmount,
           currency: rule.paymentCurrency,

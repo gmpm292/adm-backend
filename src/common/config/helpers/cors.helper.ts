@@ -1,6 +1,6 @@
 /**
- * Returns an array with different origins configured in CORS_ORIGIN environment
- * variable
+ * Orígenes permitidos por CORS según `CORS_ORIGIN`: lista separada por comas,
+ * o `*` para aceptar cualquiera (devuelve `true`). Sin la variable, ninguno.
  */
 export function parseOriginFromEnvironment(): string[] | boolean {
   const { CORS_ORIGIN } = process.env;

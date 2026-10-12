@@ -8,8 +8,13 @@ import { Request } from 'express';
 
 import { classicLocalStrategyName } from '../strategies/classic-local.strategy';
 
+/** Login web con correo y contraseña (estrategia `classic-local`). */
 @Injectable()
 export class ClassicLocalAuthGuard extends AuthGuard(classicLocalStrategyName) {
+  /**
+   * Copia `email` y `password` del argumento `input` de GraphQL al cuerpo de
+   * la petición, que es donde los busca passport-local.
+   */
   public getRequest(context: ExecutionContext): Request {
     const ctx = GqlExecutionContext.create(context);
     const gqlReq = ctx.getContext().req;

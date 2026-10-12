@@ -12,6 +12,7 @@ import { EmailService } from './email.service';
 import { EmailHealthService } from './email-health.service';
 import { BadRequestError } from '../../../core/errors/appErrors/BadRequestError.error';
 
+/** Flujo de autorización de Google para enviar correo con Gmail (OAuth2). */
 @Injectable()
 export class OAuth2Service {
   private readonly logger = new Logger(OAuth2Service.name);
@@ -27,6 +28,7 @@ export class OAuth2Service {
     private readonly healthService: EmailHealthService,
   ) {}
 
+  /** Rehace el transporte y reinicia el correo; los errores van al log. */
   async reload() {
     try {
       this.logger.log('Initializing Email module...');
@@ -56,6 +58,10 @@ export class OAuth2Service {
     });
   }
 
+  /**
+   * URL de consentimiento de Google. Pide acceso `offline` y fuerza el
+   * consentimiento para que Google entregue siempre un refresh token.
+   */
   async generateAuthUrl(): Promise<string> {
     // Con los datos actuales: pueden haber cambiado en Configuración
     this.initializeOAuth2Client();
@@ -65,7 +71,6 @@ export class OAuth2Service {
       );
     }
 
-    //const SCOPES = ['https://mail.google.com/'];
     const SCOPES = [
       'https://mail.google.com/',
       'openid', // ← Esto asegura que se incluya el ID Token
@@ -79,6 +84,11 @@ export class OAuth2Service {
     });
   }
 
+  /**
+   * Canjea el código de Google por tokens, comprueba que la cuenta sea
+   * `EMAIL_USER`, guarda el refresh token y recarga el correo. Los fallos se
+   * devuelven como `success: false`, no se lanzan.
+   */
   async handleCallback(
     code: string,
   ): Promise<{ success: boolean; message: string }> {
@@ -135,13 +145,22 @@ export class OAuth2Service {
     }
   }
 
+  /**
+   * Estado del token activo de `EMAIL_USER`, el mismo que busca el envío
+   * (`EmailTransportService`); el de otra cuenta no cuenta.
+   */
   async getCurrentTokenStatus(): Promise<{
     isConfigured: boolean;
     email?: string;
     expiresAt?: Date;
   }> {
+    const userEmail = this.configService.get<string>('EMAIL_USER');
+    if (!userEmail) {
+      return { isConfigured: false };
+    }
+
     const token = await this.oauthTokenRepository.findOne({
-      where: { isActive: true },
+      where: { email: userEmail, isActive: true },
     });
 
     if (!token) {

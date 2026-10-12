@@ -16,6 +16,10 @@ import { JWTPayload } from '../../auth/dto/jwt-payload.dto';
 import { AccessTokenAuthGuard } from '../../auth/guards/access-token-auth.guard';
 import { RoleGuard } from '../../auth/guards/role.guard';
 
+/**
+ * Rutas REST: `/appInfo` (con sesión) y las de salud `/readiness` (comprueba
+ * PostgreSQL) y `/liveness` (responde si el proceso vive).
+ */
 @Controller()
 export class AppInfoController {
   constructor(

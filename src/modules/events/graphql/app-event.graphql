@@ -2,16 +2,6 @@ type AppEvent {
   message: String
 }
 
-input AppEventInput {
-  notify: [String]!
-  message: String!
-}
-
-type Mutation {
-  publish(appEventInput: AppEventInput!): AppEvent
-#  publishNotification(id: Int!): String!
-}
-
 type Subscription {
   appEvents(token: String): AppEvent
 }

@@ -2,6 +2,10 @@ import { GraphQLSchema } from 'graphql';
 import { ConfigService } from '../../config';
 import { AppLoggerService } from '../../logger/logger.service';
 
+/**
+ * Registra en la tabla de permisos cada query, mutación y suscripción del
+ * esquema que aún no esté. Un fallo se escribe en consola y no para el resto.
+ */
 export async function saveQuerys(
   schema: GraphQLSchema,
   loggerService: AppLoggerService,

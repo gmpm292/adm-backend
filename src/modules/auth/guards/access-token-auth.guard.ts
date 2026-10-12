@@ -9,6 +9,10 @@ import { parse } from 'cookie';
 import { Request } from 'express';
 import { Reflector } from '@nestjs/core';
 
+/**
+ * Exige un token de acceso válido y de la sesión activa (estrategia
+ * `access-token-single-login`). Deja el payload en `req.user`.
+ */
 @Injectable()
 export class AccessTokenAuthGuard extends AuthGuard(
   'access-token-single-login',
@@ -17,6 +21,11 @@ export class AccessTokenAuthGuard extends AuthGuard(
     super();
   }
 
+  /**
+   * Prepara la petición GraphQL para Passport: parsea las cookies y anota si
+   * la operación lleva `@NotProtectByTwoFactorAuth()` (la estrategia lo lee
+   * para dejar pasar sin el segundo factor).
+   */
   public getRequest(context: ExecutionContext): Request {
     const ctx = GqlExecutionContext.create(context);
     const { req } = ctx.getContext();

@@ -8,6 +8,10 @@ import { HelpCommand } from './commands/help.command';
 import { RegularMessage } from './commands/regular-message';
 import { RegisterCommand } from './commands/register.command';
 
+/**
+ * Atiende lo que los usuarios escriben a los bots: Telegram llama al webhook,
+ * el update se pasa al bot y estos handlers lo reparten entre los comandos.
+ */
 @Injectable()
 export class TelegramWebhooksService {
   private bots: Map<string, TelegramBot>;
@@ -21,6 +25,7 @@ export class TelegramWebhooksService {
     private readonly regularMessage: RegularMessage,
   ) {}
 
+  /** Se llama tras `TelegramTransportService.init`, cuando ya hay bots. */
   async init(): Promise<void> {
     try {
       this.bots = this.transportService.getBots();
@@ -34,6 +39,11 @@ export class TelegramWebhooksService {
     }
   }
 
+  /**
+   * Engancha a cada bot: contacto compartido y botones (registro), los
+   * comandos `/start`, `/help` y `/register`, las respuestas a mensajes de un
+   * flujo y, para el resto de textos, una respuesta genérica.
+   */
   private setupMessageHandlers(): void {
     this.bots.forEach((bot, botName) => {
       try {
@@ -86,15 +96,7 @@ export class TelegramWebhooksService {
 
         // Mensajes regulares
         bot.on('message', (msg) => {
-          if (
-            !msg.text?.startsWith('/') &&
-            !msg.reply_to_message?.text &&
-            !/^\(.{2,5}\).*$/.test(msg.reply_to_message?.text || '')
-          ) {
-            const a =
-              msg.reply_to_message?.text &&
-              /^\(.{2,5}\).*$/.test(msg.reply_to_message.text);
-            console.log('a', a);
+          if (!msg.text?.startsWith('/') && !msg.reply_to_message?.text) {
             this.regularMessage
               .execute(bot, msg)
               .catch((err) =>
@@ -104,22 +106,6 @@ export class TelegramWebhooksService {
               );
           }
         });
-        // // Mensajes regulares
-        // bot.on('message', (msg) => {
-        //   // Verificar si es un mensaje de respuesta (reply) y cumple con el patrón
-        //   if (
-        //     msg.reply_to_message?.text &&
-        //     /^\(.{2,5}\).*$/.test(msg.reply_to_message.text)
-        //   ) {
-        //     this.regularMessage
-        //       .execute(bot, msg)
-        //       .catch((err) =>
-        //         this.logger.error(
-        //           `Error al manejar mensaje regular: ${err.message}`,
-        //         ),
-        //       );
-        //   }
-        // });
 
         this.logger.log(`Handlers configurados para bot: ${botName}`);
       } catch (error) {
@@ -130,6 +116,10 @@ export class TelegramWebhooksService {
     });
   }
 
+  /**
+   * Entrega al bot `botName` un update recibido por el webhook (el
+   * controlador ya comprobó el `TELEGRAM_SECRET_TOKEN` de la cabecera).
+   */
   handleUpdate(botName: string, update: TelegramBot.Update): void {
     const bot = this.bots.get(botName);
     if (!bot) {

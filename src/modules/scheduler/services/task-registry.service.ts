@@ -13,8 +13,13 @@ import {
 } from '../../../core/graphql/remote-operations';
 import { ConditionalOperator } from '../../../core/graphql/remote-operations/enums/conditional-operation.enum';
 import { NotFoundError } from '../../../core/errors/appErrors/NotFoundError.error';
+import { ConflictError } from '../../../core/errors/appErrors/ConflictError.error';
 import { UpdateScheduledTaskInput } from '../dto/update-scheduled-task.input';
 
+/**
+ * Persistencia de las tareas programadas (`scheduled_task`). No programa
+ * nada: eso lo hace `TaskSchedulerService`.
+ */
 @Injectable()
 export class TaskRegistryService extends BaseService<ScheduledTask> {
   constructor(
@@ -32,7 +37,6 @@ export class TaskRegistryService extends BaseService<ScheduledTask> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<ScheduledTask> {
-    // 🔎 Validar que no exista tarea con mismo handlerType y cronExpression
     await this.validateUniqueTask(createTaskInput, cu, scopes, manager);
 
     const task: DeepPartial<ScheduledTask> = {
@@ -65,6 +69,7 @@ export class TaskRegistryService extends BaseService<ScheduledTask> {
     return super.baseFindOne({ id, cu, scopes, manager });
   }
 
+  /** Tareas activas no eliminadas, sin alcance de usuario (para arrancar). */
   async getAllActiveTasks(): Promise<ScheduledTask[]> {
     return this.taskRepository.find({ where: { isActive: true } });
   }
@@ -94,6 +99,7 @@ export class TaskRegistryService extends BaseService<ScheduledTask> {
     });
   }
 
+  /** Borrado lógico; lanza NotFound si no encuentra ninguna. */
   async remove(
     ids: number[],
     cu?: JWTPayload,
@@ -131,12 +137,16 @@ export class TaskRegistryService extends BaseService<ScheduledTask> {
     });
   }
 
+  /**
+   * Rechaza (Conflict) una tarea con el mismo `handlerType` y `cronExpression`
+   * que otra no eliminada: se ejecutarían las dos a la vez.
+   */
   private async validateUniqueTask(
     createTaskInput: CreateScheduledTaskInput,
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
-  ): Promise<boolean> {
+  ): Promise<void> {
     const dataInDB = await this.baseFind({
       options: {
         take: 0,
@@ -159,11 +169,9 @@ export class TaskRegistryService extends BaseService<ScheduledTask> {
     });
 
     if (dataInDB.totalCount > 0) {
-      console.log(
-        `A task with same handlerType and cronExpression already exists`,
+      throw new ConflictError(
+        'A task with same handlerType and cronExpression already exists',
       );
     }
-
-    return true;
   }
 }

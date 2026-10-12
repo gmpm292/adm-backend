@@ -3,6 +3,10 @@ import { validateSync } from 'class-validator';
 
 import { EnvironmentVariables } from '../environment-variables';
 
+/**
+ * Valida el entorno al arrancar contra `EnvironmentVariables`: si falta una
+ * variable obligatoria, lanza y la aplicación no arranca.
+ */
 export function validate(
   config: Record<string, unknown>,
 ): EnvironmentVariables {

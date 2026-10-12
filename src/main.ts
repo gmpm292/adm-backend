@@ -3,6 +3,10 @@ import { AppModule } from './app.module';
 import { parseOriginFromEnvironment } from './common/config';
 import { ValidationPipe } from '@nestjs/common';
 
+/**
+ * Arranca la API: CORS con cookies para los orígenes de `CORS_ORIGIN` y
+ * validación global de los DTO, que convierte los tipos de forma implícita.
+ */
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 

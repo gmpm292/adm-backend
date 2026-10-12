@@ -11,6 +11,10 @@ import { Repository } from 'typeorm';
 import { EmailOAuth2Token } from '../entities/email-oauth2-token.entity';
 import * as crypto from 'crypto';
 
+/**
+ * Crea y guarda el transporte de nodemailer (Gmail con OAuth2 o SMTP) y
+ * custodia el refresh token de Google, cifrado en `email_oauth2_token`.
+ */
 @Injectable()
 export class EmailTransportService {
   private transporter: Transporter | undefined;
@@ -25,6 +29,7 @@ export class EmailTransportService {
     private readonly oauthTokenRepository: Repository<EmailOAuth2Token>,
   ) {}
 
+  /** Rehace el cliente de Google; sin id o secreto queda sin cliente. */
   public initializeOAuth2Client(): void {
     const clientId = this.configService.get<string>('EMAIL_CLIENT_ID');
     const clientSecret = this.configService.get<string>('EMAIL_SECRET_KEY');
@@ -45,6 +50,11 @@ export class EmailTransportService {
     this.transporterVersion = -1;
   }
 
+  /**
+   * Devuelve el transporte en caché mientras no cambie la versión de la
+   * configuración; si cambió, lo rehace según `EMAIL_PROVIDER`. Devuelve
+   * `undefined` (sin lanzar) si el correo no está configurado o falla.
+   */
   async getTransporter(): Promise<Transporter | undefined> {
     const version = this.configService.getConfigVersion();
     if (this.transporter && this.transporterVersion === version) {
@@ -80,6 +90,11 @@ export class EmailTransportService {
     }
   }
 
+  /**
+   * Transporte de Gmail: usa el refresh token activo de `EMAIL_USER`, pide un
+   * access token y lo guarda. Si Google responde `invalid_grant`, desactiva el
+   * token y hay que volver a autorizar la cuenta.
+   */
   private async createOAuth2Transport(): Promise<Transporter | undefined> {
     if (!this.oauth2Client) {
       this.logger.error('OAuth2 client not initialized');
@@ -151,6 +166,7 @@ export class EmailTransportService {
     );
   }
 
+  /** Transporte SMTP con `EMAIL_*`; acepta certificados no válidos. */
   private createSmtpTransport(): Transporter {
     const options: SMTPTransport.Options = {
       host: this.configService.get<string>('EMAIL_HOST'),
@@ -168,6 +184,10 @@ export class EmailTransportService {
     return createTransport(options);
   }
 
+  /**
+   * Cifra con AES-256-CBC y una clave derivada de `ENCRYPTION_KEY`. El
+   * resultado es `iv:cifrado` en hexadecimal.
+   */
   private encryptToken(token: string): string {
     const iv = crypto.randomBytes(16); // 128-bit IV
     const encryptionKey = this.configService.get<string>('ENCRYPTION_KEY');
@@ -186,6 +206,7 @@ export class EmailTransportService {
     return `${iv.toString('hex')}:${encrypted.toString('hex')}`;
   }
 
+  /** Inverso de `encryptToken`; si falla lanza un error sin detalles. */
   private decryptToken(encryptedToken: string): string {
     try {
       if (!encryptedToken) {
@@ -225,6 +246,7 @@ export class EmailTransportService {
     }
   }
 
+  /** Guarda cifrado el nuevo refresh token y desactiva los anteriores. */
   async saveNewRefreshToken(
     email: string,
     refreshToken: string,
@@ -247,6 +269,10 @@ export class EmailTransportService {
     this.logger.log(`New refresh token saved for ${email}`);
   }
 
+  /**
+   * Indica si `EMAIL_USER` tiene un token activo. Si no lo tiene, y hay
+   * `EMAIL_REDIRECT_URI`, devuelve la URL para autorizar la cuenta.
+   */
   public async isOAuthConfigured(): Promise<{
     configured: boolean;
     authUrl?: string;

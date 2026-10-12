@@ -18,9 +18,6 @@ export class Product extends SecurityBaseEntity {
   @Column({ type: 'varchar', length: 100 })
   name: string;
 
-  // @Column({ type: 'varchar', length: 50 })
-  // unitOfMeasure: string; // e.g., grams, units
-
   @ManyToOne(() => UnitOfMeasure, (unitOfMeasure) => unitOfMeasure.products)
   unitOfMeasure: UnitOfMeasure;
 

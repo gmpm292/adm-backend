@@ -43,7 +43,11 @@ export async function assertNotInUse(
   }
 }
 
-/** Dentro de un mismo nivel superior no se repite el nombre. */
+/**
+ * Dentro de un mismo nivel superior no se repite el nombre. Compara sin
+ * distinguir mayúsculas (los comodines de LIKE se escapan) y no cuenta los
+ * eliminados; `exceptId` excluye la propia unidad al editarla.
+ */
 export async function assertUniqueName<Entity extends ObjectLiteral>(
   manager: EntityManager,
   entity: EntityTarget<Entity>,
@@ -74,5 +78,6 @@ export function cleanText(value: string | undefined | null): string | null {
   return value?.trim() || null;
 }
 
+/** Etiqueta con singular o plural según la cantidad, para `Dependents`. */
 export const plural = (singular: string, pluralForm: string) => (n: number) =>
   `${n} ${n === 1 ? singular : pluralForm}`;

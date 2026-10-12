@@ -11,6 +11,7 @@ import { AuthService } from '../services/auth.service';
 import { User } from '../../users/entities/user.entity';
 import { ConfigService } from '../../../common/config';
 
+/** Valida el refresh token de la cabecera o la cookie `Refresh`. */
 @Injectable()
 export class RefreshTokenStrategy extends PassportStrategy(
   Strategy,
@@ -33,10 +34,9 @@ export class RefreshTokenStrategy extends PassportStrategy(
   }
 
   /**
-   * Returns the token payload
-   *
-   * @param req
-   * @param payload Access token payload
+   * Devuelve el usuario (no el payload) si el token es el vigente o el recién
+   * sustituido. Deja el payload en `req.refreshPayload` para que `refresh`
+   * conserve `twoFactorAuthPassed`.
    */
   public validate(req: Request, payload: JWTPayload): Promise<User> {
     const token = extractJWT(req, AuthParameterKey.RefreshToken);

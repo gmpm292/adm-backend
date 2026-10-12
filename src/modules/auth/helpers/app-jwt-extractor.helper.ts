@@ -4,6 +4,10 @@ import { AuthParameterKey } from '../enums/auth-parameter-key.enum';
 
 import { removeBearerPrefix } from './bearer-token.helper';
 
+/**
+ * Lee el token de la cabecera o, si no viene, de la cookie con el mismo
+ * nombre (`Authorization` o `Refresh`), y le quita el prefijo `Bearer`.
+ */
 export function extractJWT(
   req: Request,
   tokenParamKey: AuthParameterKey,

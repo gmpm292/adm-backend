@@ -18,7 +18,16 @@ import { ConditionalOperator } from '../../../../core/graphql/remote-operations/
 import { PeriodSalesProcessingResult } from '../types/period-sales-processing-result.type';
 import { Sale } from '../../../sales/sale/entities/sale.entity';
 import { PayrollPeriod } from '../../payroll-period/entities/payroll-period.entity';
+import { SortDirection } from '../../../../core/graphql/remote-operations/enums/sort-direction.enum';
 
+/** Ventas que se leen de cada vez al calcular un período */
+const SALES_PAGE_SIZE = 200;
+
+/**
+ * Punto de entrada del cálculo de nómina que usa el resolver: delega en
+ * `RealTimePaymentService` (comisiones por venta), `PaymentPeriodService`
+ * (importe fijo por período) y `PaymentRollbackService` (reversiones).
+ */
 @Injectable()
 export class PaymentProcessingService {
   constructor(
@@ -36,8 +45,9 @@ export class PaymentProcessingService {
   ) {}
 
   /**
-   * MÉTODO PRINCIPAL: Procesar pagos de una venta en tiempo real
-   * Este es el método que llamará SaleService cuando se confirme una venta
+   * Calcula (o recalcula) las comisiones de una venta cobrada. No lanza: si
+   * falla devuelve `success: false` con el motivo en `details`. Hoy solo se
+   * llama desde el resolver y desde `processBatchSalePayments`.
    */
   async processSalePayment(
     input: ProcessSalePaymentInput,
@@ -99,6 +109,10 @@ export class PaymentProcessingService {
     }
   }
 
+  /**
+   * Procesa varias ventas una a una con `processSalePayment`; una que falla no
+   * detiene las demás. `success` solo es true si no falló ninguna.
+   */
   async processBatchSalePayments(
     saleIds: number[],
     cu?: JWTPayload,
@@ -191,8 +205,9 @@ export class PaymentProcessingService {
   }
 
   /**
-   * Procesar todas las ventas de un período específico
-   * Busca todas las ventas confirmadas del período y las procesa en batch
+   * Recalcula las comisiones de las ventas cobradas del período (por
+   * `effectiveDate`, de la empresa del período) y las imputa a ese período.
+   * Las lee todas, por lotes. No lanza: los errores van en `results`.
    */
   async processPeriodSales(
     payrollPeriodId: number,
@@ -242,26 +257,33 @@ export class PaymentProcessingService {
         });
       }
 
-      // 3. Obtener todas las ventas del período
+      // 3. Obtener todas las ventas del período, por lotes
       console.log(
         `[PaymentProcessing] Buscando ventas confirmadas del período ${payrollPeriodId}`,
       );
 
-      const sales = (
-        await this.saleService.find(
-          {
-            filters,
-            take: 1000, // Límite razonable, podríamos hacer paginación si es necesario
-          },
-          cu,
-          scopes,
-          manager,
-        )
-      ).data as Array<Sale>;
-
-      const saleIds: Array<number> = sales
-        .map((sale) => sale.id)
-        .filter((id): id is number => id !== undefined);
+      const saleIds: Array<number> = [];
+      for (let skip = 0; ; skip += SALES_PAGE_SIZE) {
+        const page = (
+          await this.saleService.find(
+            {
+              filters,
+              skip,
+              take: SALES_PAGE_SIZE,
+              sorts: [{ property: 'id', direction: SortDirection.ASC }],
+            },
+            cu,
+            scopes,
+            manager,
+          )
+        ).data as Array<Sale>;
+        saleIds.push(
+          ...page
+            .map((sale) => sale.id)
+            .filter((id): id is number => id !== undefined),
+        );
+        if (page.length < SALES_PAGE_SIZE) break;
+      }
 
       console.log(
         `[PaymentProcessing] Encontradas ${saleIds.length} ventas confirmadas en el período ${payrollPeriodId}`,
@@ -346,8 +368,8 @@ export class PaymentProcessingService {
   }
 
   /**
-   * MÉTODO PeriodPayments: Procesar pagos de un período completo
-   * Para reglas FIXED_AMOUNT u otras asociadas al periodo completo.
+   * Crea los pagos de las reglas de período (hoy solo `FIXED_AMOUNT`); ver
+   * `PaymentPeriodService.processPeriodPayments`.
    */
   async processPeriodPayments(
     input: ProcessPeriodPaymentsInput,
@@ -386,8 +408,8 @@ export class PaymentProcessingService {
   }
 
   /**
-   * REVERTIR PAGOS: Para devoluciones de venta
-   * Delega toda la lógica al servicio especializado
+   * Revierte los pagos de una venta; ver
+   * `PaymentRollbackService.rollbackSalePayments`.
    */
   async rollbackSalePayments(
     input: RollbackSalePaymentsInput,

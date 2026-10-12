@@ -11,6 +11,7 @@ import {
 } from '../../../../core/graphql/remote-operations';
 import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
 import { PaymentMethod } from '../enums/payment-method.enum';
+import { PaymentConcept } from '../enums/payment-concept.enum';
 import { JWTPayload } from '../../../auth/dto/jwt-payload.dto';
 import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
 import { ScopedAccessService } from '../../../scoped-access/services/scoped-access.service';
@@ -20,6 +21,10 @@ import { CurrencyService } from '../../currency/services/currency.service';
 import { Sale } from '../../../sales/sale/entities/sale.entity';
 import { PaymentRule } from '../../payment-rule/entities/payment-rule.entity';
 
+/**
+ * Pagos a trabajadores dentro de un período de nómina. Un pago con
+ * `paidDate` ya está hecho; los de un período cerrado no se tocan.
+ */
 @Injectable()
 export class WorkerPaymentService extends BaseService<WorkerPayment> {
   constructor(
@@ -35,7 +40,51 @@ export class WorkerPaymentService extends BaseService<WorkerPayment> {
     super(workerPaymentRepository);
   }
 
+  /**
+   * Registra un pago (importe > 0) en un período abierto. Si no llega tasa se
+   * guarda la de la moneda a CUP, y el lugar se copia del trabajador.
+   */
   async create(
+    createWorkerPaymentInput: CreateWorkerPaymentInput,
+    cu?: JWTPayload,
+    scopes?: ScopedAccessEnum[],
+    manager?: EntityManager,
+  ): Promise<WorkerPayment> {
+    if (!(createWorkerPaymentInput.amount > 0)) {
+      throw new BadRequestError('El importe debe ser mayor que cero');
+    }
+    return this.save(createWorkerPaymentInput, cu, scopes, manager);
+  }
+
+  /**
+   * Descuento que anula un pago ya hecho de una venta devuelta: importe
+   * negativo, concepto `DISCOUNT` y `breakdown.ruleType: 'COMPENSATION'` (así
+   * recalcular la venta no lo borra). Solo para `PaymentRollbackService`: la
+   * API no lo expone, y `create` sigue sin admitir importes negativos.
+   */
+  async createCompensation(
+    input: CreateWorkerPaymentInput,
+    cu?: JWTPayload,
+    scopes?: ScopedAccessEnum[],
+    manager?: EntityManager,
+  ): Promise<WorkerPayment> {
+    if (!(input.amount < 0)) {
+      throw new BadRequestError('Una compensación descuenta: importe negativo');
+    }
+    return this.save(
+      {
+        ...input,
+        paymentConcept: PaymentConcept.DISCOUNT,
+        breakdown: { ...input.breakdown, ruleType: 'COMPENSATION' },
+      },
+      cu,
+      scopes,
+      manager,
+    );
+  }
+
+  /** Guarda un pago ya validado en un período abierto */
+  private async save(
     createWorkerPaymentInput: CreateWorkerPaymentInput,
     cu?: JWTPayload,
     scopes?: ScopedAccessEnum[],
@@ -51,9 +100,6 @@ export class WorkerPaymentService extends BaseService<WorkerPayment> {
       throw new BadRequestError(
         'El período está cerrado: no admite pagos nuevos',
       );
-    }
-    if (!(createWorkerPaymentInput.amount > 0)) {
-      throw new BadRequestError('El importe debe ser mayor que cero');
     }
     const currency = await this.validCurrency(
       createWorkerPaymentInput.currency,
@@ -84,7 +130,7 @@ export class WorkerPaymentService extends BaseService<WorkerPayment> {
     });
   }
 
-  /** La moneda existe y está activa */
+  /** La moneda existe (no comprueba que esté activa) */
   private async validCurrency(code: string) {
     const currency = await this.currencyService
       .findByCode(code)
@@ -95,7 +141,10 @@ export class WorkerPaymentService extends BaseService<WorkerPayment> {
     return currency;
   }
 
-  /** Marca pagos como hechos, todos o ninguno */
+  /**
+   * Marca pagos como hechos, todos o ninguno (en una transacción). Los que ya
+   * tenían fecha se saltan y no se devuelven; sin `paidDate` se usa ahora.
+   */
   async markAsPaid(
     ids: number[],
     paidDate: Date | undefined,
@@ -151,6 +200,7 @@ export class WorkerPaymentService extends BaseService<WorkerPayment> {
         'payrollPeriod',
         'paymentRule',
         'sale',
+        'business',
       ],
       cu,
       scopes,
@@ -182,6 +232,10 @@ export class WorkerPaymentService extends BaseService<WorkerPayment> {
     });
   }
 
+  /**
+   * Pagos de un trabajador, del más reciente al más antiguo. El alcance se
+   * comprueba sobre el trabajador, no sobre cada pago.
+   */
   async findByWorker(
     workerId: number,
     cu?: JWTPayload,
@@ -196,6 +250,10 @@ export class WorkerPaymentService extends BaseService<WorkerPayment> {
     });
   }
 
+  /**
+   * Pagos de un período, del más reciente al más antiguo. El alcance se
+   * comprueba sobre el período, no sobre cada pago.
+   */
   async findByPeriod(
     periodId: number,
     cu?: JWTPayload,
@@ -211,8 +269,10 @@ export class WorkerPaymentService extends BaseService<WorkerPayment> {
   }
 
   /**
-   * Un pago hecho solo admite notas o deshacer el pago (`paidDate: null`);
-   * los de un período cerrado no se tocan.
+   * Un pago hecho no cambia trabajador, período, importe, moneda ni concepto
+   * salvo que a la vez se deshaga el pago (`paidDate: null`); el resto de
+   * campos sí. Los de un período cerrado no se tocan. Cambiar el trabajador
+   * copia también su lugar (empresa, oficina, departamento y equipo).
    */
   async update(
     id: number,
@@ -262,12 +322,20 @@ export class WorkerPaymentService extends BaseService<WorkerPayment> {
     }
     if (rest.currency) await this.validCurrency(rest.currency);
     if (workerId) {
-      data.worker = await this.workerService.findOne(
+      const worker = await this.workerService.findOne(
         workerId,
         cu,
         scopes,
         manager,
       );
+      // El pago es del lugar del trabajador, como al crearlo
+      Object.assign(data, {
+        worker,
+        business: worker.business,
+        office: worker.office ?? null,
+        department: worker.department ?? null,
+        team: worker.team ?? null,
+      });
     }
     if (payrollPeriodId) {
       const period = await this.payrollPeriodService.findOne(

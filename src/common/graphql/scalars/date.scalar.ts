@@ -9,6 +9,10 @@ import { Kind, ValueNode } from 'graphql';
 import { BadRequestError } from '../../../core/errors/appErrors/BadRequestError.error';
 import { ConflictError } from '../../../core/errors/appErrors/ConflictError.error';
 
+/**
+ * Escalar `Date`: solo acepta fechas ISO 8601 en UTC exactas (las que da
+ * `toISOString()`, con milisegundos y `Z`); si no, BadRequestError.
+ */
 @Scalar('Date', () => Date)
 export class DateScalar implements CustomScalar<string, Date> {
   description = 'Date custom scalar type';

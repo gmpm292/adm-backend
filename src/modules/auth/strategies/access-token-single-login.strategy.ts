@@ -10,6 +10,10 @@ import { extractJWT } from '../helpers/app-jwt-extractor.helper';
 import { AuthService } from '../services/auth.service';
 import { UnauthorizedError } from '../../../core/errors/appErrors/UnauthorizedError.error';
 
+/**
+ * Valida el token de acceso (firma y caducidad), que pertenezca a la sesión
+ * activa del usuario y, salvo en operaciones marcadas, que haya pasado el 2FA.
+ */
 @Injectable()
 export class AccessTokenSingleLoginStrategy extends PassportStrategy(
   Strategy,
@@ -31,9 +35,8 @@ export class AccessTokenSingleLoginStrategy extends PassportStrategy(
   }
 
   /**
-   * Returns the token payload
-   *
-   * @param payload Access token payload
+   * Devuelve el payload del token (queda en `req.user`). Lanza 401 si el
+   * token no está en Redis o si la cuenta exige 2FA y aún no lo pasó.
    */
   public async validate(
     req: Request,

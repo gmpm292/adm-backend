@@ -16,6 +16,10 @@ import {
 } from '../../../../core/graphql/remote-operations';
 import { ConfigService } from '../../../../common/config';
 
+/**
+ * Enlaces de un solo uso para fijar o recuperar la contraseña: un UUID con
+ * caducidad, marcado como usado al consumirlo.
+ */
 @Injectable()
 export class ConfirmationTokenService extends BaseService<ConfirmationToken> {
   public constructor(
@@ -29,11 +33,10 @@ export class ConfirmationTokenService extends BaseService<ConfirmationToken> {
   }
 
   /**
-   * Creates a confirmation token for the given user
-   *
-   * @param userId User's ID
-   * @param replaceActive When true, an active token is invalidated instead of
-   * rejecting the request (a user who lost the email can ask for another one)
+   * Crea un token de confirmación que caduca a los
+   * `CONFIRMATION_TOKEN_EXPIRE_IN` segundos. Si el usuario ya tiene uno
+   * activo, lanza `ConfirmationTokenUserError`; con `replaceActive` lo anula
+   * y crea otro (quien perdió el correo puede pedir uno nuevo).
    */
   public async createConfirmationToken(
     userId: number,
@@ -61,7 +64,7 @@ export class ConfirmationTokenService extends BaseService<ConfirmationToken> {
       }
     }
 
-    // CONFIRMATION_TOKEN_EXPIRE_IN is expressed in seconds, like the JWT ones
+    // CONFIRMATION_TOKEN_EXPIRE_IN va en segundos, como las de los JWT
     const expireIn =
       Number(
         await this.configService.getAsync('CONFIRMATION_TOKEN_EXPIRE_IN'),

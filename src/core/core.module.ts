@@ -5,6 +5,7 @@ import { User } from '../modules/users/entities/user.entity';
 import { AppMailerModule } from './mailer/app-mailer.module';
 import { ConfigModule } from '@nestjs/config';
 
+/** Servicios comunes (usuario del sistema, correo). */
 @Global()
 @Module({
   imports: [TypeOrmModule.forFeature([User]), ConfigModule, AppMailerModule],

@@ -25,6 +25,10 @@ import {
   plural,
 } from '../../helpers/company-structure.helper';
 
+/**
+ * Empresas: el nivel superior de la estructura (empresa → oficina →
+ * departamento → equipo).
+ */
 @Injectable()
 export class BusinessService extends BaseService<Business> {
   constructor(
@@ -35,10 +39,15 @@ export class BusinessService extends BaseService<Business> {
     super(businessRepository);
   }
 
+  /** El de la transacción en curso o, si no hay, el del repositorio. */
   private managerOf(manager?: EntityManager): EntityManager {
     return manager ?? this.businessRepository.manager;
   }
 
+  /**
+   * Crea la empresa limpiando los textos (correo en minúsculas). El nombre no
+   * se repite entre empresas.
+   */
   async create(
     createBusinessInput: CreateBusinessInput,
     cu?: JWTPayload,
@@ -65,6 +74,7 @@ export class BusinessService extends BaseService<Business> {
     return super.baseCreate({ data: business, cu, scopes, manager });
   }
 
+  /** Listado con sus oficinas; por defecto ordenado por nombre. */
   async find(
     options?: ListOptions,
     cu?: JWTPayload,
@@ -84,6 +94,7 @@ export class BusinessService extends BaseService<Business> {
     });
   }
 
+  /** Una empresa con sus oficinas, dentro del alcance del usuario. */
   async findOne(
     id: number,
     cu?: JWTPayload,
@@ -101,6 +112,7 @@ export class BusinessService extends BaseService<Business> {
     });
   }
 
+  /** Cambia solo los campos que llegan y devuelve la empresa actualizada. */
   async update(
     id: number,
     updateBusinessInput: UpdateBusinessInput,
@@ -180,6 +192,7 @@ export class BusinessService extends BaseService<Business> {
     });
   }
 
+  /** Restaura solo las eliminadas de la lista; devuelve cuántas. */
   async restore(
     ids: number[],
     cu?: JWTPayload,

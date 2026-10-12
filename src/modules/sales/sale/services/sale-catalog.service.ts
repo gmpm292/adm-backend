@@ -64,6 +64,11 @@ export class SaleCatalogService {
     private readonly productService: ProductService,
   ) {}
 
+  /**
+   * Catálogo de una tienda. Quien tiene oficina en su sesión siempre ve la
+   * suya; el resto la pedida o, si no pide ninguna, la primera disponible.
+   * Sin tienda devuelve el catálogo vacío con la lista de oficinas.
+   */
   async getCatalog(cu: JWTPayload, officeId?: number): Promise<SaleCatalog> {
     const offices = await this.availableOffices(cu);
     const office =
@@ -87,6 +92,7 @@ export class SaleCatalogService {
     };
     if (!office) return empty;
 
+    // De la tienda: lo de su oficina o lo de la empresa sin oficina asignada.
     const inStore = <T>(): FindOptionsWhere<T>[] =>
       [
         { office: { id: office.id } },
@@ -96,7 +102,11 @@ export class SaleCatalogService {
     const [products, workers, activeCurrencies] = await Promise.all([
       this.manager.find(Product, {
         where: inStore<Product>(),
-        relations: { category: true, unitOfMeasure: true, inventories: true },
+        relations: {
+          category: true,
+          unitOfMeasure: true,
+          inventories: { office: true },
+        },
         order: { name: 'ASC' },
       }),
       this.manager.find(Worker, {
@@ -121,10 +131,10 @@ export class SaleCatalogService {
         categoryId: product.category?.id ?? null,
         categoryName: product.category?.name ?? null,
         unit: product.unitOfMeasure?.symbol ?? null,
-        stock: (product.inventories ?? []).reduce(
-          (sum, inventory) => sum + inventory.currentStock,
-          0,
-        ),
+        // Solo el stock de la tienda: la venta reserva de sus inventarios.
+        stock: (product.inventories ?? [])
+          .filter((inventory) => inventory.office?.id === office.id)
+          .reduce((sum, inventory) => sum + inventory.currentStock, 0),
         baseCurrency: product.baseCurrency,
         prices: paymentOptions.map((option) => ({
           currency: option.currency,
@@ -142,7 +152,8 @@ export class SaleCatalogService {
       }
     }
 
-    // Solo las monedas en las que se vende algo, la más usada primero.
+    // Solo las monedas en las que se vende algo, la más usada primero. Ser
+    // moneda base de un producto pesa 1000 veces más que solo aceptarla.
     const usage = new Map<string, number>();
     for (const product of catalogProducts) {
       usage.set(
@@ -187,7 +198,10 @@ export class SaleCatalogService {
     };
   }
 
-  /** Tiendas en las que el usuario puede vender. */
+  /**
+   * Tiendas en las que el usuario puede vender: la de su sesión si tiene
+   * oficina; si no, todas (SUPER) o las de su empresa.
+   */
   private async availableOffices(cu: JWTPayload): Promise<CatalogOffice[]> {
     const where: FindOptionsWhere<Office> = cu.officeId
       ? { id: cu.officeId }
@@ -211,6 +225,7 @@ export class SaleCatalogService {
       }));
   }
 
+  /** Nombre del usuario vinculado, el del trabajador o «Trabajador #id». */
   private workerName(worker: Worker): string {
     const user = worker.user;
     const fromUser =

@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-return */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
@@ -10,7 +8,14 @@ import { AppLoggerService } from '../../logger/logger.service';
 import { v4 as uuid } from 'uuid';
 import { AppErrorInput } from '../../../core/errors/interfaces/appError.input';
 import { AppErrorCode } from '../../../core/errors/AppErrorCode.enum';
+import { Environment } from '../../config/enums/environment.enum';
 
+/**
+ * Da a todo error GraphQL la forma `{ message, extensions: { code } }`. Los
+ * `AppError` ya traen ese JSON en el mensaje; los de Nest y GraphQL se
+ * traducen a su código HTTP. Lo que no se reconoce sale como 500 con un id
+ * (`intServErrorId`); el detalle se escribe en consola con ese id.
+ */
 export function formatError(
   formattedError: GraphQLFormattedError,
   error: any,
@@ -70,30 +75,48 @@ export function formatError(
               message: `Internal Server Error. Id: ${intServErrorId}`,
               code: AppErrorCode.InternalServerError,
             };
-            return {
-              message: errorJSON.message,
-              extensions: {
-                code: errorJSON.code,
-                stack: error.stack,
-                intServErrorId,
+            return withDetails(
+              {
+                message: errorJSON.message,
+                extensions: { code: errorJSON.code, intServErrorId },
               },
+              error,
               origin,
-            } as any;
+            );
           }
         }
       }
     }
 
-    return {
-      message: errorJSON.message,
-      extensions: {
-        code: errorJSON.code,
-        stack: error.stack,
+    return withDetails(
+      {
+        message: errorJSON.message,
+        extensions: { code: errorJSON.code },
       },
+      error,
       origin,
-    } as any;
+    );
   }
-  return { ...error, origin };
+  return withDetails({ ...error }, error, origin);
+}
+
+/**
+ * Pila y origen del error solo fuera de producción: revelan rutas y
+ * mensajes internos. El cliente decide por `message` y `extensions.code`.
+ */
+function withDetails(
+  formatted: Record<string, any>,
+  error: any,
+  origin: unknown,
+): GraphQLFormattedError {
+  if (process.env.NODE_ENV === Environment.Production) {
+    return formatted as GraphQLFormattedError;
+  }
+  return {
+    ...formatted,
+    extensions: { ...formatted.extensions, stack: error?.stack },
+    origin,
+  } as unknown as GraphQLFormattedError;
 }
 
 export const findTerm = (message: string, term: string) => {

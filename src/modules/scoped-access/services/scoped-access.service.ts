@@ -17,6 +17,12 @@ import { Department } from '../../company/department/entities/co_department.enti
 import { Team } from '../../company/team/entities/co_team.entity';
 import { ResourceScopedAccessService } from './resource-scoped-access.service';
 
+/**
+ * Traduce el alcance (empresa, oficina, departamento, equipo, propio...) a
+ * filtros y datos para el `BaseService`. El alcance sale, por este orden, del
+ * que pasa el servicio, del nivel de acceso de la empresa para la operación
+ * o, por defecto, de todos menos GENERAL y PERSONAL. SUPER no se filtra.
+ */
 @Injectable()
 export class ScopedAccessService {
   // Variable para controlar el nivel de detalle en errores
@@ -53,6 +59,11 @@ export class ScopedAccessService {
     return configured ? undefined : fallback;
   }
 
+  /**
+   * Condiciones `where` de TypeORM para buscar un registro: cada elemento del
+   * array es una alternativa (OR). Solo filtra por las columnas que tenga la
+   * entidad y los datos que lleve el token.
+   */
   public forBaseFindOne<Entity extends ObjectLiteral>(
     cu: JWTPayload,
     repository: Repository<Entity>,
@@ -75,7 +86,8 @@ export class ScopedAccessService {
     // Obtener nombre de la entidad para mensajes de error
     const entityName = repository.metadata.name;
 
-    // If SUPER or Scopes includes GENERAL, no filters.
+    // SUPER no tiene filtros (GENERAL no quita filtros: añade los registros
+    // sin empresa, oficina, departamento ni equipo).
     if (cu.role?.some((r) => r === Role.SUPER)) {
       return [{}]; // Empty filter means no restrictions
     }
@@ -174,7 +186,8 @@ export class ScopedAccessService {
       };
     }
 
-    if (hierarchicalFilter) {
+    // Un `{}` no restringe nada: solo cuenta si lleva algún nivel.
+    if (Object.keys(hierarchicalFilter).length > 0) {
       filters.push(hierarchicalFilter);
     }
 
@@ -193,17 +206,14 @@ export class ScopedAccessService {
   }
 
   /**
-   * Applies filters based on allowed scopes and user roles.
-   * @param cu Current user (JWTPayload) with multiple roles.
-   * @param repository TypeORM repository of the entity.
-   * @param scopes Allowed scopes for the operation (e.g., [ScopedAccessEnum.OFFICE, ScopedAccessEnum.PERSONAL]).
-   * @returns Object with WHERE filters for TypeORM.
+   * Filtros de listado (`ListFilter`) según el alcance efectivo. SUPER no
+   * tiene filtros; si no se puede aplicar ninguno, lanza 401.
    */
-  public async forBaseFind<T extends ObjectLiteral>(
+  public forBaseFind<T extends ObjectLiteral>(
     cu: JWTPayload,
     repository: Repository<T>,
     scopes?: ScopedAccessEnum[],
-  ): Promise<ListFilter[]> {
+  ): ListFilter[] {
     const filters: Array<ListFilter> = [];
     const dbScopes: ScopedAccessEnum[] | undefined =
       this.resourceScopedAccessService.findByBusinessAndQueryOrEndpoint(
@@ -221,7 +231,7 @@ export class ScopedAccessService {
     // Obtener nombre de la entidad para el mensaje de error
     const entityName = repository.metadata.name;
 
-    // If SUPER or Scopes includes GENERAL, no filters.
+    // SUPER no tiene filtros (GENERAL no los quita: añade un filtro más).
     if (cu.role?.some((r) => r === Role.SUPER)) return [];
 
     // Company filters
@@ -234,10 +244,8 @@ export class ScopedAccessService {
       filters.push(companyFilters);
     }
 
-    // RELATED filters
-    if (effectiveScopes.includes(ScopedAccessEnum.RELATED)) {
-      await this.forBaseFindRelatedFilters(cu, repository, filters);
-    }
+    // RELATED no está implementado: no añade filtros, así que con solo ese
+    // nivel se deniega el acceso.
 
     // If no applicable filters and user is not SUPER, deny access.
     if (filters.length === 0 && !cu.role.some((r) => r === Role.SUPER)) {
@@ -253,6 +261,11 @@ export class ScopedAccessService {
     return filters;
   }
 
+  /**
+   * Grupos de filtros unidos con OR: GENERAL (sin empresa, oficina,
+   * departamento ni equipo), PERSONAL (creado o modificado por el usuario) y
+   * el jerárquico (cada nivel del alcance igual al del token, todos con AND).
+   */
   private forBaseFindCompanyFilters<T extends ObjectLiteral>(
     cu: JWTPayload,
     repository: Repository<T>,
@@ -392,45 +405,12 @@ export class ScopedAccessService {
     return newFilter;
   }
 
-  private async forBaseFindRelatedFilters<T extends ObjectLiteral>(
-    cu: JWTPayload,
-    repository: Repository<T>,
-    filters: ListFilter[],
-  ): Promise<void> {
-    // // 1. Obtener todas las entidades relacionadas con el usuario
-    // const relations = await this.relationService.getRelatedEntitiesForUser(
-    //   cu.sub,
-    // );
-    // if (!relations || relations.length === 0) return;
-    // // 2. Agrupar por tipo de entidad
-    // const entityGroups = relations.reduce(
-    //   (acc, rel) => {
-    //     if (!acc[rel.entityType]) {
-    //       acc[rel.entityType] = [];
-    //     }
-    //     acc[rel.entityType].push(rel.entityId);
-    //     return acc;
-    //   },
-    //   {} as Record<string, number[]>,
-    // );
-    // // 3. Para cada tipo de entidad, crear condición IN
-    // for (const [entityType, ids] of Object.entries(entityGroups)) {
-    //   if (repository.metadata.targetName === entityType && ids.length > 0) {
-    //     filters.push({
-    //       property: 'id',
-    //       operator: ConditionalOperator.IN,
-    //       value: ids.join(','),
-    //       logicalOperator: LogicalOperator.OR,
-    //     });
-    //   }
-    // }
-  }
-
   /**
-   * Validates and completes hierarchy fields in create DTO based on user role and scopes
-   * @param cu Current user payload
-   * @param createDto The DTO being validated
-   * @param scopes Allowed scopes for the operation
+   * Completa el DTO de creación: `createdBy`/`updatedBy` y, según el rol, los
+   * niveles de la empresa tomados del token (los que el alcance incluya).
+   * SUPER los indica a mano. ADMIN debe indicar el departamento y MANAGER el
+   * equipo (si el alcance los incluye); USER, o sin rol de empresa, no puede
+   * crear. Devuelve los `*Id` convertidos en relaciones.
    */
   public forBaseCreate(
     cu: JWTPayload,
@@ -573,8 +553,8 @@ export class ScopedAccessService {
   }
 
   /**
-   * Transforms ID fields into relation objects (e.g., businessId -> business: { id })
-   * @param createDto The DTO to transform
+   * Cambia `businessId`, `officeId`, `departmentId` y `teamId` por relaciones
+   * (`business: { id }`...). Devuelve una copia.
    */
   private transformIdsToRelations(createDto: any) {
     const transformedDto = { ...createDto };
@@ -606,10 +586,9 @@ export class ScopedAccessService {
   }
 
   /**
-   * Validates and transforms update DTO based on user role and scopes
-   * @param cu Current user payload
-   * @param updateDto The DTO being validated
-   * @param scopes Allowed scopes for the operation
+   * Pone `updatedBy` y comprueba quién cambia de lugar un registro: empresa
+   * solo SUPER; oficina SUPER y PRINCIPAL; departamento además ADMIN; equipo
+   * además MANAGER. El alcance debe incluir ese nivel. Lanza 401 si no.
    */
   public forBaseUpdate(
     cu: JWTPayload,

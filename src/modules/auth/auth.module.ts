@@ -6,7 +6,6 @@ import { UsersModule } from '../users/users.module';
 
 import { AuthResolver } from './resolvers/auth.resolver';
 import { AuthService } from './services/auth.service';
-import { AccessTokenStrategy } from './strategies/access-token.strategy';
 import { ClassicLocalStrategy } from './strategies/classic-local.strategy';
 import { RefreshTokenStrategy } from './strategies/refresh-token.strategy';
 import { MobileLocalStrategy } from './strategies/mobile-local.strategy';
@@ -27,7 +26,6 @@ import { LoggerModule } from '../../common/logger';
     AuthResolver,
     ClassicLocalStrategy,
     MobileLocalStrategy,
-    AccessTokenStrategy,
     RefreshTokenStrategy,
     AccessTokenSingleLoginStrategy,
   ],

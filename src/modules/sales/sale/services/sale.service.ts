@@ -1,5 +1,11 @@
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
-import { DeepPartial, EntityManager, In, Repository } from 'typeorm';
+import {
+  DeepPartial,
+  EntityManager,
+  FindOptionsWhere,
+  In,
+  Repository,
+} from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CreateSaleInput } from '../dto/create-sale.input';
 import { UpdateSaleInput } from '../dto/update-sale.input';
@@ -22,7 +28,6 @@ import { SaleDetail } from '../../sale-detail/entities/sale-detail.entity';
 import { Worker } from '../../../payroll/worker/entities/worker.entity';
 import { ConditionalOperator } from '../../../../core/graphql/remote-operations/enums/conditional-operation.enum';
 import { SortDirection } from '../../../../core/graphql/remote-operations/enums/sort-direction.enum';
-import { ConflictError } from '../../../../core/errors/appErrors/ConflictError.error';
 import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
 import { SaleStatus } from '../enums/sale-status.enum';
 import { SaleDetailStatus } from '../../sale-detail/enums/sale-detail-status.enum';
@@ -67,6 +72,10 @@ const WORKER_RELATIONS = {
   team: true,
 };
 
+/**
+ * Ventas de una tienda (empresa + oficina): borrador con stock reservado,
+ * cobro, cancelación y devolución. Las líneas van en SaleDetailService.
+ */
 @Injectable()
 export class SaleService extends BaseService<Sale> {
   constructor(
@@ -85,6 +94,10 @@ export class SaleService extends BaseService<Sale> {
     super(saleRepository);
   }
 
+  /**
+   * Alcance a aplicar: el recibido o, si no llega, SALE_SCOPES (empresa +
+   * oficina), salvo que la empresa tenga configurado uno para la operación.
+   */
   private scopesFor(cu?: JWTPayload, scopes?: ScopedAccessEnum[]) {
     return scopes ?? this.scopedAccessService.scopesOrDefault(cu, SALE_SCOPES);
   }
@@ -189,6 +202,11 @@ export class SaleService extends BaseService<Sale> {
     return this.findOne(saleId, cu, scopes, manager);
   }
 
+  /**
+   * Listado paginado de ventas con importes calculados. Un vendedor sin mando
+   * solo ve las suyas (como vendedor o, sin trabajador vinculado, creadas por
+   * él).
+   */
   async find(
     options?: ListOptions,
     cu?: JWTPayload,
@@ -305,6 +323,10 @@ export class SaleService extends BaseService<Sale> {
     return sale;
   }
 
+  /**
+   * Venta con todas sus relaciones y las líneas ordenadas. A un vendedor sin
+   * mando una venta ajena le responde NotFoundError, como si no existiera.
+   */
   async findOne(
     id: number,
     cu?: JWTPayload,
@@ -341,6 +363,10 @@ export class SaleService extends BaseService<Sale> {
     return this.withAmounts(sale);
   }
 
+  /**
+   * Ventas de un cliente, las más recientes primero. El alcance se comprueba
+   * con el cliente; un vendedor sin mando solo ve las suyas (como en `find`).
+   */
   async findByCustomer(
     customerId: number,
     cu?: JWTPayload,
@@ -348,9 +374,17 @@ export class SaleService extends BaseService<Sale> {
     manager?: EntityManager,
   ): Promise<Sale[]> {
     await this.customerService.findOne(customerId, cu, scopes, manager);
+    const ownWorker = isSellerOnly(cu)
+      ? await this.findOwnWorker(cu, manager)
+      : null;
+    const own: FindOptionsWhere<Sale> = !isSellerOnly(cu)
+      ? {}
+      : ownWorker
+        ? { salesWorker: { id: ownWorker.id } }
+        : { createdBy: { id: cu?.sub } };
     const repository = manager?.getRepository(Sale) ?? this.saleRepository;
     const sales = await repository.find({
-      where: { customer: { id: customerId } },
+      where: { customer: { id: customerId }, ...own },
       relations: {
         salesWorker: { user: true },
         customer: true,
@@ -362,6 +396,10 @@ export class SaleService extends BaseService<Sale> {
     return sales.map((sale) => this.withAmounts(sale));
   }
 
+  /**
+   * Cambia solo los campos que llegan. Vendedor y cliente solo en borrador;
+   * mensajero, mensajería, notas y factura en cualquier estado.
+   */
   async update(
     id: number,
     updateSaleInput: UpdateSaleInput,
@@ -428,6 +466,10 @@ export class SaleService extends BaseService<Sale> {
     return this.findOne(id, cu, scopes, manager);
   }
 
+  /**
+   * Borrado lógico por lote, en una transacción. Rechaza las ventas cobradas
+   * (se devuelven); un borrador suelta su reserva y queda cancelado.
+   */
   async remove(
     ids: number[],
     cu?: JWTPayload,
@@ -492,6 +534,10 @@ export class SaleService extends BaseService<Sale> {
     });
   }
 
+  /**
+   * Restaura ventas eliminadas junto con sus líneas. No vuelve a reservar
+   * stock: un borrador eliminado se restaura cancelado. Devuelve cuántas.
+   */
   async restore(
     ids: number[],
     cu?: JWTPayload,
@@ -567,6 +613,11 @@ export class SaleService extends BaseService<Sale> {
     return this.findOne(saleId, cu, scopes, manager);
   }
 
+  /**
+   * Cobro común a createSale y makeSale (dentro de su transacción): valida
+   * estado, mensajero y pagos, convierte las reservas en salidas y guarda
+   * total, fecha efectiva y número de factura.
+   */
   private async finalize(
     saleId: number,
     payments: SalePayment[],
@@ -670,10 +721,13 @@ export class SaleService extends BaseService<Sale> {
           cu,
           STOCK_SCOPES,
         );
-        line.available = (product.inventories ?? []).reduce(
-          (sum, inventory) => sum + inventory.currentStock,
-          0,
-        );
+        // Con tienda en la sesión, solo su stock (el que reservará la venta).
+        line.available = (product.inventories ?? [])
+          .filter(
+            (inventory) =>
+              !cu?.officeId || inventory.office?.id === cu.officeId,
+          )
+          .reduce((sum, inventory) => sum + inventory.currentStock, 0);
 
         const paymentOptions =
           await this.productService.calculatePaymentOptions(
@@ -749,124 +803,6 @@ export class SaleService extends BaseService<Sale> {
     });
 
     return this.findOne(saleId, cu, scopes, manager);
-  }
-
-  async getSalesByScope(
-    params: {
-      businessId?: number;
-      officeId?: number;
-      departmentId?: number;
-      teamId?: number;
-      worker?: Worker;
-      ownSales?: boolean;
-      scope: ScopedAccessEnum;
-      startDate: Date;
-      endDate: Date;
-      productId?: number;
-      categoryId?: number;
-    },
-    cu?: JWTPayload,
-    scopes?: ScopedAccessEnum[],
-    manager?: EntityManager,
-  ): Promise<Sale[]> {
-    const {
-      businessId,
-      officeId,
-      departmentId,
-      teamId,
-      worker,
-      ownSales = false,
-      scope,
-      startDate,
-      endDate,
-      productId,
-      categoryId,
-    } = params;
-
-    // Validar que el worker tenga el ID del scope requerido o se pase el ID de acuerdo al scope.
-    let scopeProp: string | undefined;
-    let scopeId: number | undefined;
-    switch (scope) {
-      case ScopedAccessEnum.BUSINESS:
-        scopeProp = 'business.id';
-        scopeId = worker?.business?.id || businessId;
-        break;
-      case ScopedAccessEnum.OFFICE:
-        scopeProp = 'office.id';
-        scopeId = worker?.office?.id || officeId;
-        break;
-      case ScopedAccessEnum.DEPARTMENT:
-        scopeProp = 'department.id';
-        scopeId = worker?.department?.id || departmentId;
-        break;
-      case ScopedAccessEnum.TEAM:
-        scopeProp = 'team.id';
-        scopeId = worker?.team?.id || teamId;
-        break;
-      default:
-        scopeId = undefined;
-    }
-    if (!scopeId || !scopeProp) {
-      throw new ConflictError(
-        `Worker or requested scope does not have required scope ID for ${scope}`,
-      );
-    }
-
-    const filters: ListFilter[] = [
-      {
-        property: 'effectiveDate',
-        operator: ConditionalOperator.IS_NOT_NULL,
-      } as ListFilter,
-      {
-        property: 'effectiveDate',
-        operator: ConditionalOperator.GREATER_EQUAL_THAN,
-        value: startDate.toISOString(),
-      },
-      {
-        property: 'effectiveDate',
-        operator: ConditionalOperator.LESS_EQUAL_THAN,
-        value: endDate.toISOString(),
-      },
-      {
-        property: scopeProp,
-        operator: ConditionalOperator.EQUAL,
-        value: String(scopeId),
-      },
-    ];
-
-    // Solo filtrar por salesWorker si ownSales es true
-    if (ownSales) {
-      if (!worker)
-        throw new ConflictError('For find ownSales, the worker is required.');
-      filters.push({
-        property: 'salesWorker.id',
-        operator: ConditionalOperator.EQUAL,
-        value: String(worker.id),
-      });
-    }
-
-    // Si existe productId filtrar para este producto.
-    if (productId) {
-      filters.push({
-        property: 'product.id',
-        operator: ConditionalOperator.EQUAL,
-        value: String(productId),
-      });
-    }
-
-    // Si existe categoryId filtrar para este producto.
-    if (categoryId) {
-      filters.push({
-        property: 'category.id',
-        operator: ConditionalOperator.EQUAL,
-        value: String(categoryId),
-      });
-    }
-
-    const sales = (await this.find({ filters }, cu, scopes, manager))
-      .data as Array<Sale>;
-
-    return sales;
   }
 
   /**
@@ -974,6 +910,7 @@ export class SaleService extends BaseService<Sale> {
     });
   }
 
+  /** Trabajador por id; si no existe o es de otra empresa, NotFoundError. */
   private async findWorker(
     id: number,
     cu: JWTPayload | undefined,
@@ -1024,6 +961,10 @@ export class SaleService extends BaseService<Sale> {
     }
   }
 
+  /**
+   * Junta las líneas del mismo producto: suma cantidades y une publicistas
+   * sin repetirlos.
+   */
   private mergeDetails(
     details: Array<{
       productId: number;
@@ -1050,7 +991,10 @@ export class SaleService extends BaseService<Sale> {
     return [...merged.values()];
   }
 
-  /** Consecutivo por empresa y año: F2026-0001. */
+  /**
+   * Consecutivo por empresa y año: F2026-0001. Cuenta también las ventas
+   * eliminadas para no repetir números.
+   */
   private async nextInvoiceNumber(
     sale: Sale,
     date: Date,
