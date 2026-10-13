@@ -2,6 +2,7 @@ import { UseGuards } from '@nestjs/common';
 import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { AccessTokenAuthGuard } from '../../../auth/guards/access-token-auth.guard';
 import { CreateInventoryMovementInput } from '../dto/create-inventory-movement.input';
+import { TransferInventoryInput } from '../dto/transfer-inventory.input';
 import { RoleGuard } from '../../../auth/guards/role.guard';
 import { Roles } from '../../../auth/decorators/roles.decorator';
 import { CurrentUser } from '../../../auth/decorators/current-user.decorator';
@@ -30,6 +31,17 @@ export class InventoryMovementResolver {
     createInput: CreateInventoryMovementInput,
   ) {
     return this.movementService.register(createInput, user);
+  }
+
+  // Traslado entre dos inventarios de la misma empresa: administrador o más.
+  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
+  @UseGuards(AccessTokenAuthGuard, RoleGuard)
+  @Mutation('transferInventory')
+  async transfer(
+    @CurrentUser() user: JWTPayload,
+    @Args('transferInventoryInput') transferInput: TransferInventoryInput,
+  ) {
+    return this.movementService.transfer(transferInput, user);
   }
 
   @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER, Role.SUPERVISOR)

@@ -10,7 +10,6 @@ import { UnauthorizedError } from '../../../core/errors/appErrors/UnauthorizedEr
 import { ListFilter } from '../../../core/graphql/remote-operations';
 import { ConditionalOperator } from '../../../core/graphql/remote-operations/enums/conditional-operation.enum';
 import { LogicalOperator } from '../../../core/graphql/remote-operations/enums/logical-operator.enum';
-import { BadRequestError } from '../../../core/errors/appErrors/BadRequestError.error';
 import { Business } from '../../company/business/entities/co_business.entity';
 import { Office } from '../../company/office/entities/co_office.entity';
 import { Department } from '../../company/department/entities/co_department.entity';
@@ -408,9 +407,10 @@ export class ScopedAccessService {
   /**
    * Completa el DTO de creación: `createdBy`/`updatedBy` y, según el rol, los
    * niveles de la empresa tomados del token (los que el alcance incluya).
-   * SUPER los indica a mano. ADMIN debe indicar el departamento y MANAGER el
-   * equipo (si el alcance los incluye); USER, o sin rol de empresa, no puede
-   * crear. Devuelve los `*Id` convertidos en relaciones.
+   * SUPER los indica a mano. Los niveles por debajo del rol (el departamento
+   * de un ADMIN, el equipo de un MANAGER) son opcionales: lo que crea un ADMIN
+   * puede ser de toda su oficina. USER, o sin rol de empresa, no puede crear.
+   * Devuelve los `*Id` convertidos en relaciones.
    */
   public forBaseCreate(
     cu: JWTPayload,
@@ -471,7 +471,7 @@ export class ScopedAccessService {
       return this.transformIdsToRelations(createDto);
     }
 
-    // ADMIN users - set businessId and officeId, require departmentId
+    // ADMIN users - set businessId and officeId
     if (cu.role?.some((r) => r === Role.ADMIN)) {
       if (effectiveScopes.includes(ScopedAccessEnum.BUSINESS)) {
         createDto.businessId = cu.businessId;
@@ -479,25 +479,10 @@ export class ScopedAccessService {
       if (effectiveScopes.includes(ScopedAccessEnum.OFFICE)) {
         createDto.officeId = cu.officeId;
       }
-
-      if (
-        !createDto.departmentId &&
-        effectiveScopes.includes(ScopedAccessEnum.DEPARTMENT)
-      ) {
-        const details = this.showErrorDetails
-          ? ` (User: ${userId}, Roles: ${userRoles})`
-          : '';
-        throw new BadRequestError(
-          this.buildErrorMessage(
-            'ADMIN users must provide departmentId',
-            details,
-          ),
-        );
-      }
       return this.transformIdsToRelations(createDto);
     }
 
-    // MANAGER users - set businessId, officeId and departmentId, require teamId
+    // MANAGER users - set businessId, officeId and departmentId
     if (cu.role?.some((r) => r === Role.MANAGER)) {
       if (effectiveScopes.includes(ScopedAccessEnum.BUSINESS)) {
         createDto.businessId = cu.businessId;
@@ -507,18 +492,6 @@ export class ScopedAccessService {
       }
       if (effectiveScopes.includes(ScopedAccessEnum.DEPARTMENT)) {
         createDto.departmentId = cu.departmentId;
-      }
-
-      if (
-        !createDto.teamId &&
-        effectiveScopes.includes(ScopedAccessEnum.TEAM)
-      ) {
-        const details = this.showErrorDetails
-          ? ` (User: ${userId}, Roles: ${userRoles})`
-          : '';
-        throw new BadRequestError(
-          this.buildErrorMessage('MANAGER users must provide teamId', details),
-        );
       }
       return this.transformIdsToRelations(createDto);
     }

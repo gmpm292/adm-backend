@@ -47,6 +47,22 @@ input CreateInventoryMovementInput {
   referenceId: String
 }
 
+input TransferInventoryInput {
+  "Inventario del que salen las existencias"
+  fromInventoryId: Int!
+  "Inventario al que entran: el mismo producto y la misma empresa"
+  toInventoryId: Int!
+  quantity: Int!
+  "Nota opcional que acompaña a los dos movimientos"
+  note: String
+}
+
+"Los dos movimientos de un traslado: la salida del origen y la entrada al destino"
+type InventoryTransfer {
+  outgoing: InventoryMovement!
+  incoming: InventoryMovement!
+}
+
 extend type Query {
   inventoryMovements(options: ListOptions): InventoryMovementsSummary!
   inventoryMovement(id: Int!): InventoryMovement
@@ -57,5 +73,8 @@ extend type Mutation {
   createInventoryMovement(
     createInventoryMovementInput: CreateInventoryMovementInput!
   ): InventoryMovement!
+  transferInventory(
+    transferInventoryInput: TransferInventoryInput!
+  ): InventoryTransfer!
 }
 
