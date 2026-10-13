@@ -8,7 +8,11 @@ import { JWTPayload } from '../../auth/dto/jwt-payload.dto';
 import { ChangePasswordByEmailInput } from '../dto/change-password-by-email.input';
 import { Role } from '../../../core/enums/role.enum';
 import { User } from '../entities/user.entity';
-import { ListOptions } from '../../../core/graphql/remote-operations';
+import {
+  ListFilter,
+  ListOptions,
+} from '../../../core/graphql/remote-operations';
+import { ConditionalOperator } from '../../../core/graphql/remote-operations/enums/conditional-operation.enum';
 import { BadRequestError } from '../../../core/errors/appErrors/BadRequestError.error';
 import { CreateUserInput } from '../dto/create-user.input';
 import { ForbiddenResourceError } from '../../../core/errors/appErrors/ForbiddenResourceError';
@@ -16,7 +20,8 @@ import { ForbiddenResourceError } from '../../../core/errors/appErrors/Forbidden
 /**
  * Ajustes previos de `UsersResolver` según quién hace la petición (método
  * `forX` para cada operación X). La administración de usuarios es solo para
- * SUPER, así que los métodos de búsqueda no añaden filtros.
+ * SUPER, pero `users` y `user` también los leen los mandos (para vincular
+ * cuentas a trabajadores o clientes): cada uno solo ve las de su lugar.
  */
 @Injectable()
 export class UserAccessLevelService {
@@ -41,15 +46,24 @@ export class UserAccessLevelService {
     return changePasswordByEmailInput;
   }
 
-  /** Garantiza `options.filters`; no añade filtros. */
+  /**
+   * Limita el listado al lugar de quien pregunta. Los filtros del cliente ya
+   * llegan agrupados (`@Opts`), así que un OR suyo no salta este AND.
+   */
   public async forFind(
     currentUser: JWTPayload,
     options?: ListOptions,
   ): Promise<ListOptions> {
-    if (!options || !options.filters) {
-      options = { ...options, filters: [] } as ListOptions;
+    const place = this.placeOf(currentUser);
+    const filters: ListFilter[] = [...(options?.filters ?? [])];
+    if (place) {
+      filters.push({
+        property: `${place.relation}.id`,
+        operator: ConditionalOperator.EQUAL,
+        value: String(place.id),
+      });
     }
-    return options;
+    return { ...options, filters } as ListOptions;
   }
 
   /**
@@ -97,14 +111,46 @@ export class UserAccessLevelService {
     return true;
   }
 
-  // forFindOne, forUpdateUserRole y forRemove devuelven filtros vacíos: la
-  // administración de usuarios es solo para SUPER.
+  /** Un usuario, solo si está en el lugar de quien pregunta. */
   public async forFindOne(
     currentUser: JWTPayload,
     id: number,
   ): Promise<{ id: number; filters: FindOptionsWhere<User> }> {
-    return { id, filters: {} };
+    const place = this.placeOf(currentUser);
+    return {
+      id,
+      filters: place ? { [place.relation]: { id: place.id } } : {},
+    };
   }
+
+  /**
+   * Hasta dónde ve cuentas cada rol: SUPER todas; PRINCIPAL su empresa; ADMIN
+   * su oficina; MANAGER su departamento; SUPERVISOR su equipo. Sin ese dato
+   * en el token no ve ninguna.
+   */
+  private placeOf(currentUser: JWTPayload): {
+    relation: 'business' | 'office' | 'department' | 'team';
+    id: number;
+  } | null {
+    const roles = currentUser.role ?? [];
+    if (roles.includes(Role.SUPER)) return null;
+    const levels = [
+      [Role.PRINCIPAL, 'business', currentUser.businessId],
+      [Role.ADMIN, 'office', currentUser.officeId],
+      [Role.MANAGER, 'department', currentUser.departmentId],
+      [Role.SUPERVISOR, 'team', currentUser.teamId],
+    ] as const;
+    const level = levels.find(([role]) => roles.includes(role));
+    if (!level || !level[2]) {
+      throw new ForbiddenResourceError(
+        'No tienes acceso a las cuentas de usuario',
+      );
+    }
+    return { relation: level[1], id: level[2] };
+  }
+
+  // forUpdateUserRole y forRemove devuelven filtros vacíos: esas operaciones
+  // son solo para SUPER.
 
   public async forUpdateUserRole(
     currentUser: JWTPayload,

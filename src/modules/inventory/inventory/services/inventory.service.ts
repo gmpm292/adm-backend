@@ -177,7 +177,7 @@ export class InventoryService extends BaseService<Inventory> {
     if (duplicated) {
       throw new ConflictError(
         location
-          ? `Este producto ya tiene un inventario en «${location}» de esa oficina`
+          ? `Este producto ya tiene un inventario en «${location}» de esa oficina: indica otra ubicación (almacén, estante...)`
           : 'Este producto ya tiene un inventario sin ubicación en esa oficina: indica una ubicación distinta',
       );
     }

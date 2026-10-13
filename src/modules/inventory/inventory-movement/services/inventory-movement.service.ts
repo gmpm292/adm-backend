@@ -16,7 +16,13 @@ import {
   ListSummary,
 } from '../../../../core/graphql/remote-operations';
 import { ConditionalOperator } from '../../../../core/graphql/remote-operations/enums/conditional-operation.enum';
-import { MANUAL_MOVEMENT_REASONS } from '../enums/movement-reason';
+import {
+  INVENTORY_TRANSFER_REASON,
+  MANUAL_MOVEMENT_REASONS,
+} from '../enums/movement-reason';
+import { TransferInventoryInput } from '../dto/transfer-inventory.input';
+import { Inventory } from '../../inventory/entities/inventory.entity';
+import { randomUUID } from 'crypto';
 
 /**
  * Movimientos de inventario: la única vía para cambiar existencias. No se
@@ -61,6 +67,83 @@ export class InventoryMovementService extends BaseService<InventoryMovement> {
       },
       cu,
     );
+  }
+
+  /**
+   * Traslada existencias entre dos inventarios del mismo producto y la misma
+   * empresa: una salida del origen y una entrada al destino, en una sola
+   * transacción y unidas por `reservationId`. Los dos tienen que estar en el
+   * alcance del usuario.
+   */
+  async transfer(
+    input: TransferInventoryInput,
+    cu?: JWTPayload,
+    scopes?: ScopedAccessEnum[],
+  ): Promise<{ outgoing: InventoryMovement; incoming: InventoryMovement }> {
+    if (input.fromInventoryId === input.toInventoryId) {
+      throw new BadRequestError('Elige dos inventarios distintos');
+    }
+
+    return this.movementRepository.manager.transaction(async (manager) => {
+      const [from, to] = await Promise.all([
+        this.inventoryService.findOne(
+          input.fromInventoryId,
+          cu,
+          scopes,
+          manager,
+        ),
+        this.inventoryService.findOne(input.toInventoryId, cu, scopes, manager),
+      ]);
+
+      if (!from.business?.id || from.business.id !== to.business?.id) {
+        throw new BadRequestError(
+          'Solo se traslada entre inventarios de la misma empresa',
+        );
+      }
+      if (from.product?.id !== to.product?.id) {
+        throw new BadRequestError(
+          'Los dos inventarios tienen que ser del mismo producto',
+        );
+      }
+
+      const place = (inventory: Inventory) =>
+        [inventory.location, inventory.office?.name]
+          .filter(Boolean)
+          .join(' · ') || 'sin ubicación';
+      const note = input.note?.trim();
+      const reference = (text: string) =>
+        (note ? `${text}. ${note}` : text).slice(0, 255);
+      const base = {
+        quantity: input.quantity,
+        reason: INVENTORY_TRANSFER_REASON,
+        reservationId: randomUUID(),
+      };
+
+      // La salida va primero: si no hay existencias, no entra nada.
+      const outgoing = await this.create(
+        {
+          ...base,
+          inventoryId: from.id as number,
+          type: 'OUT',
+          referenceId: reference(`Hacia ${place(to)}`),
+        },
+        cu,
+        scopes,
+        manager,
+      );
+      const incoming = await this.create(
+        {
+          ...base,
+          inventoryId: to.id as number,
+          type: 'IN',
+          referenceId: reference(`Desde ${place(from)}`),
+        },
+        cu,
+        scopes,
+        manager,
+      );
+      return { outgoing, incoming };
+    });
   }
 
   /**

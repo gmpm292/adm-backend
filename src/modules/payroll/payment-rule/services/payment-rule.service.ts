@@ -136,6 +136,10 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
           (x, y) => x.min - y.min,
         );
         if (!ranges.length) fail('Añade al menos un rango de precios');
+        // Los tramos se comparan entre sí: todos en la misma moneda de venta
+        if (new Set(ranges.map((range) => range.currency)).size > 1) {
+          fail('Todos los rangos de precios van en la misma moneda');
+        }
         ranges.forEach((range, index) => {
           if (range.min < 0) {
             fail('El precio mínimo de un rango no puede ser negativo');

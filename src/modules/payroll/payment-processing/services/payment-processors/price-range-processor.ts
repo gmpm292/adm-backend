@@ -42,11 +42,13 @@ export class PriceRangeProcessor extends BasePaymentProcessor {
 
   /**
    * Cada unidad vendida paga el importe fijo o el porcentaje del tramo en que
-   * cae su precio (en la moneda de la regla); fuera de todo tramo no paga. El
-   * total se reparte a partes iguales entre los mismos trabajadores que en
-   * `PercentageProcessor`. El `currency` de cada tramo no se usa: el
-   * formulario guarda en él la moneda de la regla, que es en la que se
-   * comparan los precios y se paga. Solo calcula: los pagos los crea el
+   * cae su precio; fuera de todo tramo no paga. Hay dos monedas: la de los
+   * tramos (`currency`, la misma en todos), en la que se mide el precio de
+   * venta, y la de la regla (`paymentCurrency`), en la que se paga. El
+   * importe fijo ya va en la moneda de pago; el porcentaje sale del precio y
+   * se convierte con la tasa de cambio. El total se reparte a partes iguales
+   * entre los mismos trabajadores que en `PercentageProcessor`. Solo
+   * calcula: los pagos los crea el
    * servicio.
    */
   async realTimeCalculate(
@@ -83,13 +85,25 @@ export class PriceRangeProcessor extends BasePaymentProcessor {
 
     const saleDate = sale.effectiveDate || new Date();
 
-    // 2. LO VENDIDO (SIN DEVOLUCIONES), CON SU PRECIO EN LA MONEDA DE LA REGLA
+    // 2. LO VENDIDO (SIN DEVOLUCIONES), CON SU PRECIO EN LA MONEDA DE LOS
+    // TRAMOS. Las reglas antiguas guardaban en ellos la moneda de pago.
+    const saleCurrency = priceRanges[0].currency || rule.paymentCurrency;
     const productDetails = await soldLines(
       sale,
       rule,
-      rule.paymentCurrency,
+      saleCurrency,
       this.currencyService,
     );
+    // Lo que da un porcentaje está en la moneda de venta: se pasa a la de pago
+    const toPaymentCurrency = priceRanges.some(
+      (range) => range.percentage !== undefined && range.percentage !== null,
+    )
+      ? await this.currencyService.getExchangeRate(
+          saleCurrency,
+          rule.paymentCurrency,
+          manager,
+        )
+      : 1;
 
     if (productDetails.length === 0) {
       return {
@@ -144,12 +158,13 @@ export class PriceRangeProcessor extends BasePaymentProcessor {
           applicableRange = range;
 
           // Construir descripción del rango
+          const limits = `${rangeMin}-${rangeMax} ${saleCurrency}`;
           if (range.amount !== undefined) {
-            rangeDescription = `$${rangeMin}-${rangeMax} = $${range.amount} fijo`;
+            rangeDescription = `${limits} = ${range.amount} ${rule.paymentCurrency} fijo`;
           } else if (range.percentage !== undefined) {
-            rangeDescription = `$${rangeMin}-${rangeMax} = ${range.percentage}%`;
+            rangeDescription = `${limits} = ${range.percentage}%`;
           } else {
-            rangeDescription = `$${rangeMin}-${rangeMax}`;
+            rangeDescription = limits;
           }
           break;
         }
@@ -163,8 +178,10 @@ export class PriceRangeProcessor extends BasePaymentProcessor {
           // Monto fijo por producto
           amountPerUnit = applicableRange.amount;
         } else if (applicableRange.percentage !== undefined) {
-          // Porcentaje del precio
-          amountPerUnit = (unitPrice * applicableRange.percentage) / 100;
+          // Porcentaje del precio, pasado a la moneda de pago
+          amountPerUnit =
+            ((unitPrice * applicableRange.percentage) / 100) *
+            toPaymentCurrency;
         }
 
         // Calcular total para este producto (monto por unidad × cantidad)
