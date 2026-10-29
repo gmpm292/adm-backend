@@ -1,11 +1,11 @@
 import {
   IsEmail,
   IsOptional,
-  IsPhoneNumber,
   IsString,
   MinLength,
   ValidateIf,
 } from 'class-validator';
+import { IsPhone } from '../../../core/validations/phone.validator';
 
 export class UpdateUserProfileInput {
   @IsOptional()
@@ -24,6 +24,6 @@ export class UpdateUserProfileInput {
   lastName?: string;
 
   @IsOptional()
-  @IsPhoneNumber()
+  @IsPhone()
   mobile?: string;
 }

@@ -115,23 +115,31 @@ export class RealTimePaymentService {
       manager,
     );
 
-    // 2. Reglas activas que aplican a la venta
+    // 2. Reglas activas de la empresa de la venta y las comunes (sin empresa).
+    // No dependen de quién calcula: si no, un PRINCIPAL dejaría fuera las
+    // comunes (y al recalcular borraría sus comisiones) y un SUPER aplicaría
+    // las de otras empresas.
+    const saleBusinessId = sale.business?.id;
     const allRules = (
-      await this.paymentRuleService.find(
-        {
-          filters: [
-            {
-              property: 'isActive',
-              operator: ConditionalOperator.EQUAL,
-              value: 'true',
-            },
-          ],
-        },
-        cu,
-        scopes,
-        manager,
-      )
-    ).data as Array<PaymentRule>;
+      (
+        await this.paymentRuleService.find(
+          {
+            filters: [
+              {
+                property: 'isActive',
+                operator: ConditionalOperator.EQUAL,
+                value: 'true',
+              },
+            ],
+          },
+          undefined,
+          undefined,
+          manager,
+        )
+      ).data as Array<PaymentRule>
+    ).filter(
+      (rule) => !rule.business?.id || rule.business.id === saleBusinessId,
+    );
 
     const applicableRules = allRules.filter(
       (rule) =>
