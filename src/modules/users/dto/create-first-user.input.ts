@@ -2,16 +2,16 @@ import {
   IsEmail,
   IsNotEmpty,
   IsOptional,
-  IsPhoneNumber,
   IsString,
   MinLength,
 } from 'class-validator';
+import { IsPhone } from '../../../core/validations/phone.validator';
 
 export class CreateFirstUserInput {
   @IsEmail()
   email: string;
 
-  @IsPhoneNumber()
+  @IsPhone()
   mobile: string;
 
   @IsString()

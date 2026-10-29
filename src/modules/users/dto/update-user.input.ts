@@ -6,11 +6,11 @@ import {
   IsEnum,
   IsInt,
   IsOptional,
-  IsPhoneNumber,
   IsPositive,
   IsString,
   MinLength,
 } from 'class-validator';
+import { IsPhone } from '../../../core/validations/phone.validator';
 import { Role } from '../../../core/enums/role.enum';
 import { CreateSecurityBaseInput } from '../../../core/dtos/create-security-base.input';
 
@@ -38,7 +38,7 @@ export class UpdateUserInput extends CreateSecurityBaseInput {
   email?: string;
 
   @IsOptional()
-  @IsPhoneNumber()
+  @IsPhone()
   mobile?: string;
 
   @IsOptional()
