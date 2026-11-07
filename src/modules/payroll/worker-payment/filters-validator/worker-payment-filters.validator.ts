@@ -1,5 +1,6 @@
-import { IsIn, IsNumberString, IsString } from 'class-validator';
+import { IsDateString, IsIn, IsNumberString, IsString } from 'class-validator';
 import { BaseFiltersValidator } from '../../../../core/filters-validator/base-filters.validator';
+import { WorkerType } from '../../worker/enums/worker-type.enum';
 import { PaymentConcept } from '../enums/payment-concept.enum';
 import { PaymentMethod } from '../enums/payment-method.enum';
 
@@ -25,8 +26,15 @@ export class WorkerPaymentFiltersValidator extends BaseFiltersValidator {
   @IsString()
   'user.lastName': string;
 
+  @IsIn(Object.values(WorkerType))
+  'worker.workerType': string;
+
   @IsNumberString()
   'sale.id': string;
+
+  // Pagos de las ventas de un día (informe diario de publicistas)
+  @IsDateString()
+  'sale.effectiveDate': string;
 
   @IsIn(Object.values(PaymentConcept))
   paymentConcept: string;

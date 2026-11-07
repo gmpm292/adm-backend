@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { v4 as uuidv4 } from 'uuid';
 
 import { CreateProductInput } from '../dto/create-product.input';
+import { CreateProductVariantsInput } from '../dto/create-product-variants.input';
 import { UpdateProductInput } from '../dto/update-product.input';
 import { BaseService } from '../../../../core/services/base.service';
 import { Product } from '../entities/product.entity';
@@ -27,10 +28,12 @@ import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestErr
 import { UnitOfMeasureService } from '../../unit-of-measure/services/unit-of-measure.service';
 import { MaterialCostService } from '../../../payroll/material-cost/services/material-cost.service';
 import { MaterialCost } from '../../../payroll/material-cost/entities/material-cost.entity';
+import { CATALOG_SCOPES } from '../../catalog-scopes';
 
 /**
- * Productos: catálogo, precios por moneda y reservas de existencias para las
- * ventas (reservar, confirmar y devolver).
+ * Productos: catálogo de toda la empresa (sin oficina, `CATALOG_SCOPES`),
+ * precios por moneda y reservas de existencias para las ventas (reservar,
+ * confirmar y devolver). Las existencias son de cada oficina: sus inventarios.
  */
 @Injectable()
 export class ProductService extends BaseService<Product> {
@@ -50,9 +53,16 @@ export class ProductService extends BaseService<Product> {
     super(productRepository);
   }
 
+  /** Alcance recibido o, si no llega, el de empresa (salvo que esté configurado otro). */
+  private scopesFor(cu?: JWTPayload, scopes?: ScopedAccessEnum[]) {
+    return (
+      scopes ?? this.scopedAccessService.scopesOrDefault(cu, CATALOG_SCOPES)
+    );
+  }
+
   /**
-   * Crea el producto en una categoría y hereda de ella empresa, oficina,
-   * departamento y equipo. El nombre no se repite en la categoría (contando
+   * Crea el producto en una categoría y hereda de ella la empresa (es de toda
+   * la empresa, sin oficina). El nombre no se repite en la categoría (contando
    * los eliminados).
    */
   async create(
@@ -61,8 +71,20 @@ export class ProductService extends BaseService<Product> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Product> {
-    const { categoryId, unitOfMeasureId, materialCostId, ...rest } =
-      createProductInput;
+    scopes = this.scopesFor(cu, scopes);
+    // El lugar sale de la categoría: los ids del formulario se ignoran
+    /* eslint-disable @typescript-eslint/no-unused-vars */
+    const {
+      categoryId,
+      unitOfMeasureId,
+      materialCostId,
+      businessId,
+      officeId,
+      departmentId,
+      teamId,
+      ...rest
+    } = createProductInput;
+    /* eslint-enable @typescript-eslint/no-unused-vars */
     rest.name = rest.name.trim();
     this.assertValidRules(rest);
 
@@ -97,9 +119,6 @@ export class ProductService extends BaseService<Product> {
       unitOfMeasure,
       materialCost,
       business: category.business,
-      office: category.office,
-      department: category.department,
-      team: category.team,
     } as Product;
 
     return super.baseCreate({
@@ -111,6 +130,79 @@ export class ProductService extends BaseService<Product> {
     });
   }
 
+  /**
+   * Un producto por cada valor de una característica: «Anillo · Talla 1»,
+   * «Anillo · Talla 2»... con los mismos datos y la característica puesta en
+   * cada uno. Abre su inventario vacío en `officeIds`. Todos o ninguno.
+   */
+  async createVariants(
+    input: CreateProductVariantsInput,
+    cu?: JWTPayload,
+    manager?: EntityManager,
+  ): Promise<Product[]> {
+    if (!manager) {
+      return this.productRepository.manager.transaction((txManager) =>
+        this.createVariants(input, cu, txManager),
+      );
+    }
+
+    const variantName = input.variantName.trim();
+    const values = input.values.map((value) => value.trim());
+    if (!variantName) {
+      throw new BadRequestError(
+        'Indica qué cambia entre ellos: talla, color...',
+      );
+    }
+    if (values.some((value) => !value)) {
+      throw new BadRequestError('Hay un valor vacío');
+    }
+    const seen = new Set<string>();
+    for (const value of values) {
+      if (seen.has(value.toLowerCase())) {
+        throw new BadRequestError(`El valor «${value}» está repetido`);
+      }
+      seen.add(value.toLowerCase());
+    }
+
+    const baseName = input.product.name.trim();
+    // La característica que varía sustituye a la que ya tuviera ese nombre
+    const attributes = Object.fromEntries(
+      Object.entries(input.product.attributes ?? {}).filter(
+        ([key]) => key.trim().toLowerCase() !== variantName.toLowerCase(),
+      ),
+    );
+
+    const products: Product[] = [];
+    for (const value of values) {
+      const name = `${baseName} · ${variantName} ${value}`;
+      if (name.length > 100) {
+        throw new BadRequestError(
+          `«${name}» pasa de 100 caracteres: acorta el nombre o el valor`,
+        );
+      }
+      const product = await this.create(
+        {
+          ...input.product,
+          name,
+          attributes: { ...attributes, [variantName]: value },
+        },
+        cu,
+        undefined,
+        manager,
+      );
+      for (const officeId of new Set(input.officeIds ?? [])) {
+        await this.inventoryService.create(
+          { productId: product.id as number, officeId, currentStock: 0 },
+          cu,
+          undefined,
+          manager,
+        );
+      }
+      products.push(product);
+    }
+    return products;
+  }
+
   /** Listado con categoría, inventarios, unidad, material y lugar. */
   async find(
     options?: ListOptions,
@@ -118,6 +210,7 @@ export class ProductService extends BaseService<Product> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<ListSummary> {
+    scopes = this.scopesFor(cu, scopes);
     return await super.baseFind({
       options,
       relationsToLoad: [
@@ -142,6 +235,7 @@ export class ProductService extends BaseService<Product> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Product> {
+    scopes = this.scopesFor(cu, scopes);
     return super.baseFindOne({
       id,
       relationsToLoad: {
@@ -170,6 +264,7 @@ export class ProductService extends BaseService<Product> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Product[]> {
+    scopes = this.scopesFor(cu, scopes);
     await this.categoryService.findOne(categoryId, cu, scopes, manager);
     const repository =
       manager?.getRepository(Product) ?? this.productRepository;
@@ -180,8 +275,8 @@ export class ProductService extends BaseService<Product> {
   }
 
   /**
-   * Cambia los campos que llegan. Cambiar de categoría también le cambia el
-   * lugar en la empresa (el de la categoría nueva). Los ids de empresa,
+   * Cambia los campos que llegan. La categoría nueva debe ser de la empresa
+   * del producto. Los ids de empresa,
    * oficina, departamento y equipo del formulario se ignoran.
    */
   async update(
@@ -191,9 +286,10 @@ export class ProductService extends BaseService<Product> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Product> {
+    scopes = this.scopesFor(cu, scopes);
     const product = await super.baseFindOne({
       id,
-      relationsToLoad: { category: true },
+      relationsToLoad: { category: true, business: true },
       cu,
       scopes,
       manager,
@@ -225,11 +321,12 @@ export class ProductService extends BaseService<Product> {
         scopes,
         manager,
       );
+      if (category.business?.id !== product.business?.id) {
+        throw new BadRequestError(
+          'La categoría nueva tiene que ser de la empresa del producto',
+        );
+      }
       data.category = category;
-      data.business = category.business;
-      data.office = category.office;
-      data.department = category.department;
-      data.team = category.team;
     }
     await this.assertUniqueName(
       data.name ?? product.name,
@@ -320,6 +417,7 @@ export class ProductService extends BaseService<Product> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Product[]> {
+    scopes = this.scopesFor(cu, scopes);
     if (!manager) {
       return this.productRepository.manager.transaction((txManager) =>
         this.remove(ids, cu, scopes, txManager),
@@ -370,6 +468,7 @@ export class ProductService extends BaseService<Product> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<number> {
+    scopes = this.scopesFor(cu, scopes);
     if (ids.length === 0) return 0;
     if (!manager) {
       return this.productRepository.manager.transaction((txManager) =>

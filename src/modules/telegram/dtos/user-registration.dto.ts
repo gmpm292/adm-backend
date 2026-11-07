@@ -1,10 +1,10 @@
 import {
   IsEmail,
   IsOptional,
-  IsPhoneNumber,
   IsString,
   MinLength,
 } from 'class-validator';
+import { IsPhone } from '../../../core/validations/phone.validator';
 
 export class UserRegistrationDto {
   @IsString()
@@ -19,7 +19,7 @@ export class UserRegistrationDto {
   @IsEmail()
   email: string;
 
-  @IsPhoneNumber()
+  @IsPhone()
   mobile: string;
 }
 

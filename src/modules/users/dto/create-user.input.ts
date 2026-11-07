@@ -5,10 +5,10 @@ import {
   IsEmail,
   IsEnum,
   IsOptional,
-  IsPhoneNumber,
   IsString,
   MinLength,
 } from 'class-validator';
+import { IsPhone } from '../../../core/validations/phone.validator';
 import { Role } from '../../../core/enums/role.enum';
 import { CreateSecurityBaseInput } from '../../../core/dtos/create-security-base.input';
 
@@ -25,7 +25,7 @@ export class CreateUserInput extends CreateSecurityBaseInput {
   @IsEmail()
   email: string;
 
-  @IsPhoneNumber()
+  @IsPhone()
   mobile: string;
 
   @IsBoolean()

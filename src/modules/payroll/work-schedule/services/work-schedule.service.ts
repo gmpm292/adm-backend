@@ -46,25 +46,24 @@ export class WorkScheduleService extends BaseService<WorkSchedule> {
       createWorkScheduleInput.endDate,
       createWorkScheduleInput.workingDays,
     );
-    // Sin oficina el horario es de toda la empresa (el generador anual)
-    const office = createWorkScheduleInput.officeId
-      ? await this.officeService.findOne(
-          createWorkScheduleInput.officeId,
-          cu,
-          scopes,
-          manager,
-        )
-      : undefined;
+    const { businessId, officeId, ...input } = createWorkScheduleInput;
+    // SUPER indica la empresa (o una oficina, que la da). Sin oficina el
+    // horario es de toda la empresa.
+    const place = await this.scopedAccessService.placeForCreate(
+      cu,
+      { businessId, officeId },
+      manager ?? this.workScheduleRepository.manager,
+    );
+    // Los demás: la oficina dentro de su alcance; la empresa, del token
+    const office =
+      !place && officeId
+        ? await this.officeService.findOne(officeId, cu, scopes, manager)
+        : undefined;
 
     const workSchedule: WorkSchedule = {
-      ...createWorkScheduleInput,
-      name: createWorkScheduleInput.name.trim(),
-      office,
-      business:
-        office?.business ??
-        (createWorkScheduleInput.businessId
-          ? { id: createWorkScheduleInput.businessId }
-          : undefined),
+      ...input,
+      name: input.name.trim(),
+      ...(place ?? { office, business: office?.business }),
     } as WorkSchedule;
 
     return super.baseCreate({

@@ -17,7 +17,6 @@ import { InventoryMovementService } from '../../inventory-movement/services/inve
 import { ConflictError } from '../../../../core/errors/appErrors/ConflictError.error';
 import { BadRequestError } from '../../../../core/errors/appErrors/BadRequestError.error';
 import { NotFoundError } from '../../../../core/errors/appErrors/NotFoundError.error';
-import { Business } from '../../../company/business/entities/co_business.entity';
 import { Office } from '../../../company/office/entities/co_office.entity';
 import { Department } from '../../../company/department/entities/co_department.entity';
 import { Team } from '../../../company/team/entities/co_team.entity';
@@ -68,62 +67,43 @@ export class InventoryService extends BaseService<Inventory> {
       manager,
     );
 
-    // El inventario hereda el lugar del producto; lo que el producto deja
-    // libre lo pone el usuario (su propio lugar o el que eligió).
-    const validateScope = (
-      label: string,
-      entityId?: number,
-      userScopeId?: number,
-    ) => {
-      if (entityId && userScopeId && entityId !== userScopeId) {
-        throw new ConflictError(`El producto no pertenece a ${label}`);
-      }
-    };
-    validateScope('tu empresa', product.business?.id, cu?.businessId);
-    validateScope('tu oficina', product.office?.id, cu?.officeId);
-    validateScope('tu departamento', product.department?.id, cu?.departmentId);
-    validateScope('tu equipo', product.team?.id, cu?.teamId);
-
-    const getScopeEntity = <T extends { id?: number | null }>(
-      productEntity: T | undefined | null,
-      userScopeId: number | undefined,
-      inputScopeId: number | undefined,
-    ): T | undefined => {
-      if (productEntity?.id) return productEntity;
-      const id = userScopeId || inputScopeId;
-      return id ? ({ id } as T) : undefined;
-    };
+    // El producto es de toda la empresa; el inventario, de una oficina de
+    // ella. Quien tiene oficina en la sesión crea en la suya (igual que hará
+    // `forBaseCreate`), salvo con alcance sin OFFICE: los envíos a otra
+    // oficina. Los demás, en la indicada.
+    if (cu?.businessId && product.business?.id !== cu.businessId) {
+      throw new ConflictError('El producto no pertenece a tu empresa');
+    }
+    const inOwnOffice =
+      !!cu?.officeId && (!scopes || scopes.includes(ScopedAccessEnum.OFFICE));
+    const officeId = inOwnOffice ? cu?.officeId : rest.officeId || cu?.officeId;
+    if (!officeId) {
+      throw new BadRequestError('Indica la oficina donde está el inventario');
+    }
+    const office = await manager.getRepository(Office).findOne({
+      where: { id: officeId },
+      relations: { business: true },
+    });
+    if (!office || office.business?.id !== product.business?.id) {
+      throw new BadRequestError('La oficina no es de la empresa del producto');
+    }
+    const optional = <T>(id?: number) => (id ? ({ id } as T) : undefined);
 
     const inventory: Inventory = {
       minStock: rest.minStock,
       location,
       product,
-      business: getScopeEntity<Business>(
-        product.business,
-        cu?.businessId,
-        rest.businessId,
-      ),
-      office: getScopeEntity<Office>(
-        product.office,
-        cu?.officeId,
-        rest.officeId,
-      ),
-      department: getScopeEntity<Department>(
-        product.department,
-        cu?.departmentId,
-        rest.departmentId,
-      ),
-      team: getScopeEntity<Team>(product.team, cu?.teamId, rest.teamId),
+      business: product.business,
+      office: { id: office.id } as Office,
+      department: optional<Department>(rest.departmentId || cu?.departmentId),
+      team: optional<Team>(rest.teamId || cu?.teamId),
       // Nace a cero: el stock inicial lo suma el movimiento de abajo.
       currentStock: 0,
     };
 
-    if (!inventory.office?.id) {
-      throw new BadRequestError('Indica la oficina donde está el inventario');
-    }
     await this.assertNotDuplicated(
       productId,
-      inventory.office.id,
+      office.id as number,
       location,
       undefined,
       manager,

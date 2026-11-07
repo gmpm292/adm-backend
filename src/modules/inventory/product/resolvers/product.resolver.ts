@@ -2,6 +2,7 @@ import { UseGuards } from '@nestjs/common';
 import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { AccessTokenAuthGuard } from '../../../auth/guards/access-token-auth.guard';
 import { CreateProductInput } from '../dto/create-product.input';
+import { CreateProductVariantsInput } from '../dto/create-product-variants.input';
 import { UpdateProductInput } from '../dto/update-product.input';
 import { RoleGuard } from '../../../auth/guards/role.guard';
 import { Roles } from '../../../auth/decorators/roles.decorator';
@@ -28,6 +29,17 @@ export class ProductResolver {
     @Args('createProductInput') createProductInput: CreateProductInput,
   ) {
     return this.productService.create(createProductInput, user);
+  }
+
+  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
+  @UseGuards(AccessTokenAuthGuard, RoleGuard)
+  @Mutation('createProductVariants')
+  async createVariants(
+    @CurrentUser() user: JWTPayload,
+    @Args('createProductVariantsInput')
+    createProductVariantsInput: CreateProductVariantsInput,
+  ) {
+    return this.productService.createVariants(createProductVariantsInput, user);
   }
 
   @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN, Role.MANAGER)

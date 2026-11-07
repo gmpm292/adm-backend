@@ -1,5 +1,5 @@
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
-import { EntityManager, Repository } from 'typeorm';
+import { EntityManager, In, Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CreatePaymentRuleInput } from '../dto/create-payment-rule.input';
 import { UpdatePaymentRuleInput } from '../dto/update-payment-rule.input';
@@ -20,6 +20,9 @@ import { ConditionsInput } from '../dto/conditions/conditions-input.dto';
 import { ProductService } from '../../../inventory/product/services/product.service';
 import { CategoryService } from '../../../inventory/category/services/category.service';
 import { WorkerService } from '../../worker/services/worker.service';
+import { Product } from '../../../inventory/product/entities/product.entity';
+import { Category } from '../../../inventory/category/entities/category.entity';
+import { Worker } from '../../worker/entities/worker.entity';
 
 /**
  * Reglas de pago de nómina: a qué trabajadores se aplican, cómo se calcula el
@@ -40,9 +43,11 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
   }
 
   /**
-   * Crea la regla con sus condiciones validadas. Producto, categoría y
-   * trabajadores concretos se buscan dentro del alcance del usuario. El
-   * nombre no se repite en la empresa (lanza `ConflictError`).
+   * Crea la regla con sus condiciones validadas. La empresa es la del usuario;
+   * SUPER la elige o, con `businessId: null`, la deja común a todas. Producto,
+   * categoría y trabajadores concretos se buscan dentro del alcance del
+   * usuario y deben ser de la empresa de la regla. El nombre no se repite en
+   * la empresa (lanza `ConflictError`).
    */
   async create(
     createPaymentRuleInput: CreatePaymentRuleInput,
@@ -51,6 +56,32 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
     manager?: EntityManager,
   ): Promise<PaymentRule> {
     const paymentRule = new PaymentRule();
+    const db = manager ?? this.paymentRuleRepository.manager;
+
+    // SUPER: la empresa (o común) del formulario. Al resto se la pone el token.
+    const place = await this.scopedAccessService.placeForCreate(
+      cu,
+      {
+        businessId: createPaymentRuleInput.businessId as number | null,
+        officeId: createPaymentRuleInput.officeId,
+      },
+      db,
+      { allowCommon: true },
+    );
+    if (place) {
+      paymentRule.business = place.business as PaymentRule['business'];
+      paymentRule.office = place.office as PaymentRule['office'];
+    }
+    const businessId = place ? (place.business?.id ?? null) : cu?.businessId;
+    await this.assertSameBusiness(
+      businessId,
+      {
+        productId: createPaymentRuleInput.productId,
+        categoryId: createPaymentRuleInput.categoryId,
+        workerIds: createPaymentRuleInput.specificWorkersIds,
+      },
+      db,
+    );
 
     paymentRule.paymentType = createPaymentRuleInput.paymentType;
     paymentRule.name = createPaymentRuleInput.name.trim();
@@ -105,7 +136,7 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
 
     await this.assertUniqueName(
       paymentRule.name,
-      createPaymentRuleInput.businessId ?? cu?.businessId,
+      businessId ?? undefined,
       undefined,
       manager,
     );
@@ -229,6 +260,65 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
     }
   }
 
+  /**
+   * Producto, categoría y trabajadores concretos son de la empresa de la
+   * regla. Una regla común (`null`) no lleva ninguno: son de una empresa.
+   * Sin empresa conocida (`undefined`, sin usuario) no comprueba nada.
+   */
+  private async assertSameBusiness(
+    businessId: number | null | undefined,
+    refs: { productId?: number; categoryId?: number; workerIds?: number[] },
+    db: EntityManager,
+  ): Promise<void> {
+    if (businessId === undefined) return;
+    const { productId, categoryId } = refs;
+    const workerIds = refs.workerIds?.length ? refs.workerIds : undefined;
+    if (businessId === null) {
+      if (productId || categoryId || workerIds) {
+        throw new BadRequestError(
+          'Una regla para todas las empresas no lleva producto, categoría ni trabajadores concretos',
+        );
+      }
+      return;
+    }
+
+    const belongs = (entity?: { business?: { id?: number } | null } | null) =>
+      entity?.business?.id === businessId;
+    if (productId) {
+      const product = await db.getRepository(Product).findOne({
+        where: { id: productId },
+        relations: { business: true },
+      });
+      if (!belongs(product)) {
+        throw new BadRequestError(
+          'El producto no es de la empresa de la regla',
+        );
+      }
+    }
+    if (categoryId) {
+      const category = await db.getRepository(Category).findOne({
+        where: { id: categoryId },
+        relations: { business: true },
+      });
+      if (!belongs(category)) {
+        throw new BadRequestError(
+          'La categoría no es de la empresa de la regla',
+        );
+      }
+    }
+    if (workerIds) {
+      const workers = await db.getRepository(Worker).find({
+        where: { id: In(workerIds) },
+        relations: { business: true },
+      });
+      if (workers.length !== workerIds.length || !workers.every(belongs)) {
+        throw new BadRequestError(
+          'Los trabajadores concretos deben ser de la empresa de la regla',
+        );
+      }
+    }
+  }
+
   /** Dos reglas de la misma empresa no se llaman igual */
   private async assertUniqueName(
     name: string,
@@ -258,7 +348,7 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
   ): Promise<ListSummary> {
     return await super.baseFind({
       options,
-      relationsToLoad: ['product', 'category', 'specificWorkers'],
+      relationsToLoad: ['product', 'category', 'specificWorkers', 'business'],
       cu,
       scopes,
       manager,
@@ -315,6 +405,15 @@ export class PaymentRuleService extends BaseService<PaymentRule> {
         'Al cambiar el tipo de pago hay que indicar sus nuevas condiciones',
       );
     }
+    await this.assertSameBusiness(
+      paymentRule.business?.id ?? null,
+      {
+        productId: updatePaymentRuleInput.productId ?? undefined,
+        categoryId: updatePaymentRuleInput.categoryId ?? undefined,
+        workerIds: updatePaymentRuleInput.specificWorkersIds ?? undefined,
+      },
+      manager ?? this.paymentRuleRepository.manager,
+    );
 
     // Update fields if provided
     if (updatePaymentRuleInput.paymentType !== undefined) {

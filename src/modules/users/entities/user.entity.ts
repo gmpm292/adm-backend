@@ -1,4 +1,5 @@
-import { IsEmail, IsPhoneNumber, IsString } from 'class-validator';
+import { IsEmail, IsString } from 'class-validator';
+import { IsPhone } from '../../../core/validations/phone.validator';
 import {
   Column,
   Entity,
@@ -54,7 +55,7 @@ export class User extends BaseEntity {
   @Column({ nullable: true })
   fullName?: string;
 
-  @IsPhoneNumber()
+  @IsPhone()
   @Column({ unique: true })
   @Index()
   public mobile: string;

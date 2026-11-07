@@ -20,6 +20,12 @@ import { ConflictError } from '../../../../core/errors/appErrors/ConflictError.e
 import { SortDirection } from '../../../../core/graphql/remote-operations/enums/sort-direction.enum';
 
 /**
+ * Un período es de toda la empresa (no lleva oficina, departamento ni
+ * equipo): con el alcance por defecto un ADMIN o un MANAGER no lo verían.
+ */
+const PERIOD_SCOPES = [ScopedAccessEnum.BUSINESS];
+
+/**
  * Períodos de nómina de cada empresa: sin solapes, de 31 días como mucho.
  * Sobre ellos se calculan y se pagan los pagos a trabajadores.
  */
@@ -35,9 +41,16 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     super(payrollPeriodRepository);
   }
 
+  /** Alcance recibido o, si no llega, el de empresa (salvo que esté configurado otro). */
+  private scopesFor(cu?: JWTPayload, scopes?: ScopedAccessEnum[]) {
+    return (
+      scopes ?? this.scopedAccessService.scopesOrDefault(cu, PERIOD_SCOPES)
+    );
+  }
+
   /**
-   * Crea un período abierto. Valida las fechas y que no se solape con otro de
-   * la empresa indicada o, si no llega, de la del usuario.
+   * Crea un período abierto de toda la empresa: la del usuario; SUPER la
+   * elige. Valida las fechas y que no se solape con otro de esa empresa.
    */
   async create(
     createPayrollPeriodInput: CreatePayrollPeriodInput,
@@ -45,18 +58,26 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<PayrollPeriod> {
+    const { businessId, ...input } = createPayrollPeriodInput;
+    delete input.officeId; // El período es de toda la empresa, sin oficina
+    const place = await this.scopedAccessService.placeForCreate(
+      cu,
+      { businessId },
+      manager ?? this.payrollPeriodRepository.manager,
+    );
     const payrollPeriod = {
-      ...createPayrollPeriodInput,
-      name: createPayrollPeriodInput.name.trim(),
-      startDate: new Date(createPayrollPeriodInput.startDate),
-      endDate: new Date(createPayrollPeriodInput.endDate),
+      ...input,
+      name: input.name.trim(),
+      startDate: new Date(input.startDate),
+      endDate: new Date(input.endDate),
       isClosed: false,
+      ...(place && { business: place.business }),
     } as PayrollPeriod;
 
     this.validatePeriodIntegrity(payrollPeriod);
     await this.assertNoOverlap(
       payrollPeriod,
-      createPayrollPeriodInput.businessId ?? cu?.businessId,
+      place ? place.business?.id : cu?.businessId,
       undefined,
       manager,
     );
@@ -64,7 +85,7 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     return super.baseCreate({
       data: payrollPeriod,
       cu,
-      scopes,
+      scopes: this.scopesFor(cu, scopes),
       manager,
     });
   }
@@ -86,7 +107,7 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
         'team',
       ],
       cu,
-      scopes,
+      scopes: this.scopesFor(cu, scopes),
       manager,
     });
   }
@@ -109,7 +130,7 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
         team: true,
       },
       cu,
-      scopes,
+      scopes: this.scopesFor(cu, scopes),
       manager,
     });
   }
@@ -121,6 +142,9 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<PayrollPeriod> {
+    // Los pagos pendientes se cuentan en toda la empresa, no solo los que ve
+    // quien cierra: si no, un ADMIN cerraría con pagos de otras oficinas
+    scopes = this.scopesFor(cu, scopes);
     const period = await super.baseFindOne({ id, cu, scopes, manager });
     if (period.isClosed) {
       throw new BadRequestError('El período ya está cerrado');
@@ -174,6 +198,7 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<PayrollPeriod> {
+    scopes = this.scopesFor(cu, scopes);
     const period = await super.baseFindOne({
       id,
       relationsToLoad: { payments: true, business: true },
@@ -221,6 +246,7 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     manager?: EntityManager,
   ): Promise<PayrollPeriod[]> {
     // Solo se eliminan (borrado lógico) períodos sin pagos ni acumuladores.
+    scopes = this.scopesFor(cu, scopes);
     const periods = await super.baseFindByIds({
       ids,
       relationsToLoad: { payments: true, paymentAccumulators: true },
@@ -255,7 +281,7 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     return super.baseRestoreDeletedMany({
       ids,
       cu,
-      scopes,
+      scopes: this.scopesFor(cu, scopes),
       manager,
     });
   }

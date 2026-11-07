@@ -15,12 +15,14 @@ import { ConflictError } from '../../../../core/errors/appErrors/ConflictError.e
 import { JWTPayload } from '../../../auth/dto/jwt-payload.dto';
 import { ScopedAccessEnum } from '../../../../core/enums/scoped-access.enum';
 import { ScopedAccessService } from '../../../scoped-access/services/scoped-access.service';
+import { CATALOG_SCOPES } from '../../catalog-scopes';
 
 export type CategoryView = Category & { productCount: number };
 
 /**
- * Categorías de producto de cada empresa. El nombre no se repite dentro de la
- * empresa; una categoría con productos o reglas de pago no se elimina.
+ * Categorías de producto de cada empresa, sin oficina (`CATALOG_SCOPES`). El
+ * nombre no se repite dentro de la empresa; una categoría con productos o
+ * reglas de pago no se elimina.
  */
 @Injectable()
 export class CategoryService extends BaseService<Category> {
@@ -30,6 +32,13 @@ export class CategoryService extends BaseService<Category> {
     protected scopedAccessService: ScopedAccessService,
   ) {
     super(categoryRepository);
+  }
+
+  /** Alcance recibido o, si no llega, el de empresa (salvo que esté configurado otro). */
+  private scopesFor(cu?: JWTPayload, scopes?: ScopedAccessEnum[]) {
+    return (
+      scopes ?? this.scopedAccessService.scopesOrDefault(cu, CATALOG_SCOPES)
+    );
   }
 
   /**
@@ -42,13 +51,25 @@ export class CategoryService extends BaseService<Category> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Category> {
+    scopes = this.scopesFor(cu, scopes);
+    const { businessId: inputBusinessId, ...input } = createCategoryInput;
+    // De toda la empresa: sin oficina, departamento ni equipo
+    delete input.officeId;
+    delete input.departmentId;
+    delete input.teamId;
     const data = {
-      ...createCategoryInput,
-      name: createCategoryInput.name.trim(),
-      description: createCategoryInput.description?.trim() || undefined,
+      ...input,
+      name: input.name.trim(),
+      description: input.description?.trim() || undefined,
     } as Category;
-    // La empresa sale del usuario (o del formulario, si es SUPER)
-    const businessId = createCategoryInput.businessId ?? cu?.businessId;
+    // La empresa sale del usuario; SUPER la elige en el formulario
+    const place = await this.scopedAccessService.placeForCreate(
+      cu,
+      { businessId: inputBusinessId },
+      manager ?? this.categoryRepository.manager,
+    );
+    if (place) Object.assign(data, place);
+    const businessId = place ? place.business?.id : cu?.businessId;
     await this.checkUniqueName(data.name, businessId, undefined, true, manager);
 
     return super.baseCreate({ data, cu, scopes, manager });
@@ -61,6 +82,7 @@ export class CategoryService extends BaseService<Category> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<ListSummary> {
+    scopes = this.scopesFor(cu, scopes);
     const result = await super.baseFind({
       options,
       relationsToLoad: ['business'],
@@ -81,6 +103,7 @@ export class CategoryService extends BaseService<Category> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Category> {
+    scopes = this.scopesFor(cu, scopes);
     return super.baseFindOne({
       id,
       relationsToLoad: { business: true },
@@ -103,6 +126,7 @@ export class CategoryService extends BaseService<Category> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Category> {
+    scopes = this.scopesFor(cu, scopes);
     const category = await this.findOne(id, cu, scopes, manager);
     const { name, description } = updateCategoryInput;
     if (name !== undefined) {
@@ -139,6 +163,7 @@ export class CategoryService extends BaseService<Category> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<Category[]> {
+    scopes = this.scopesFor(cu, scopes);
     const categories = await super.baseFindByIds({
       ids,
       cu,
@@ -182,6 +207,7 @@ export class CategoryService extends BaseService<Category> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<number> {
+    scopes = this.scopesFor(cu, scopes);
     if (ids.length === 0) return 0;
 
     const categories = await super.baseFindByIds({

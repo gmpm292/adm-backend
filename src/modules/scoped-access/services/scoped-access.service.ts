@@ -2,7 +2,14 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Injectable } from '@nestjs/common';
-import { FindOptionsWhere, IsNull, ObjectLiteral, Repository } from 'typeorm';
+import {
+  EntityManager,
+  FindOptionsWhere,
+  IsNull,
+  ObjectLiteral,
+  Repository,
+} from 'typeorm';
+import { BadRequestError } from '../../../core/errors/appErrors/BadRequestError.error';
 import { ScopedAccessEnum } from '../../../core/enums/scoped-access.enum';
 import { JWTPayload } from '../../auth/dto/jwt-payload.dto';
 import { Role } from '../../../core/enums/role.enum';
@@ -405,9 +412,61 @@ export class ScopedAccessService {
   }
 
   /**
+   * Empresa y oficina de un registro nuevo que no las hereda de otro (regla,
+   * período, horario, categoría, material). A los roles de empresa se las pone
+   * `forBaseCreate` desde el token: devuelve `undefined` y no toca nada. SUPER
+   * no las tiene en el token y debe indicar la empresa; con `allowCommon`,
+   * `businessId: null` (a propósito, no por omisión) deja el registro común a
+   * todas. La oficina, si llega, da la empresa y debe pertenecer a ella.
+   * Lanza `BadRequestError` si falta la empresa o no existe.
+   */
+  public async placeForCreate(
+    cu: JWTPayload | undefined,
+    ids: { businessId?: number | null; officeId?: number | null },
+    manager: EntityManager,
+    options: { allowCommon?: boolean } = {},
+  ): Promise<{ business: Business | null; office: Office | null } | undefined> {
+    if (!cu?.role?.includes(Role.SUPER)) return undefined;
+
+    const office = ids.officeId
+      ? await manager.getRepository(Office).findOne({
+          where: { id: ids.officeId },
+          relations: { business: true },
+        })
+      : null;
+    if (ids.officeId && !office) {
+      throw new BadRequestError('La oficina no existe');
+    }
+    if (office && ids.businessId && office.business?.id !== ids.businessId) {
+      throw new BadRequestError('La oficina no pertenece a esa empresa');
+    }
+
+    const businessId = office?.business?.id ?? ids.businessId;
+    if (!businessId) {
+      if (options.allowCommon && ids.businessId === null) {
+        return { business: null, office: null };
+      }
+      throw new BadRequestError(
+        options.allowCommon
+          ? 'Elige la empresa o «Todas las empresas»'
+          : 'Indica la empresa',
+      );
+    }
+    const exists = await manager
+      .getRepository(Business)
+      .exists({ where: { id: businessId } });
+    if (!exists) throw new BadRequestError('La empresa no existe');
+
+    return {
+      business: { id: businessId } as Business,
+      office: office ? ({ id: office.id } as Office) : null,
+    };
+  }
+
+  /**
    * Completa el DTO de creación: `createdBy`/`updatedBy` y, según el rol, los
    * niveles de la empresa tomados del token (los que el alcance incluya).
-   * SUPER los indica a mano. Los niveles por debajo del rol (el departamento
+   * SUPER los indica a mano (ver `placeForCreate`). Los niveles por debajo del rol (el departamento
    * de un ADMIN, el equipo de un MANAGER) son opcionales: lo que crea un ADMIN
    * puede ser de toda su oficina. USER, o sin rol de empresa, no puede crear.
    * Devuelve los `*Id` convertidos en relaciones.
@@ -439,17 +498,9 @@ export class ScopedAccessService {
       createDto.updatedBy = { id: cu.sub };
     }
 
-    // SUPER users must provide at least businessId
+    // SUPER no tiene lugar en el token: lo indica a mano. Lo que no lo hereda
+    // de otro registro lo resuelve antes el servicio con `placeForCreate`.
     if (cu.role?.some((r) => r === Role.SUPER)) {
-      // if (
-      //   !createDto.businessId &&
-      //   effectiveScopes.includes(ScopedAccessEnum.BUSINESS)
-      // ) {
-      //   const details = this.showErrorDetails ? ` (User: ${userId}, Roles: ${userRoles})` : '';
-      //   throw new BadRequestError(
-      //     this.buildErrorMessage('SUPER users must provide businessId', details)
-      //   );
-      // }
       return this.transformIdsToRelations(createDto);
     }
 

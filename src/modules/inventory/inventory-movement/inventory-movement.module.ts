@@ -2,6 +2,7 @@ import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { InventoryMovementResolver } from './resolvers/inventory-movement.resolver';
 import { InventoryMovementService } from './services/inventory-movement.service';
+import { InventoryBatchService } from './services/inventory-batch.service';
 import { InventoryMovement } from './entities/inventory-movement.entity';
 import { Inventory } from '../inventory/entities/inventory.entity';
 
@@ -15,7 +16,11 @@ import { User } from '../../users/entities/user.entity';
     forwardRef(() => InventoryModule),
     UsersModule,
   ],
-  providers: [InventoryMovementResolver, InventoryMovementService],
+  providers: [
+    InventoryMovementResolver,
+    InventoryMovementService,
+    InventoryBatchService,
+  ],
   exports: [InventoryMovementResolver, InventoryMovementService],
 })
 export class InventoryMovementModule {}

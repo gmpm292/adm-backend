@@ -63,7 +63,58 @@ type InventoryTransfer {
   incoming: InventoryMovement!
 }
 
+"Una fila de la hoja de inventario: un producto de la empresa"
+type InventorySheetRow {
+  product: Product!
+  "Sus inventarios en la oficina, uno por ubicación (vacío si no tiene)"
+  inventories: [Inventory!]!
+  "Lo que hay del producto en la oficina destino, si se pidió una"
+  destinationStock: Int
+}
+
+"Todos los productos de la empresa con sus existencias en una oficina"
+type InventorySheet {
+  office: Office!
+  "Las demás oficinas de la empresa: adonde se puede enviar"
+  destinations: [Office!]!
+  rows: [InventorySheetRow!]!
+}
+
+"Una línea: un inventario de la oficina o, al cargar, un producto sin inventario allí"
+input InventoryLineInput {
+  inventoryId: Int
+  productId: Int
+  quantity: Int!
+}
+
+input LoadInventoryInput {
+  officeId: Int!
+  "INITIAL_INVENTORY, PURCHASE, RETURN, INVENTORY_ADJUSTMENT u OTHER"
+  reason: String!
+  "Nota para todas las líneas: factura, proveedor..."
+  note: String
+  lines: [InventoryLineInput!]!
+}
+
+input SendInventoryInput {
+  fromOfficeId: Int!
+  "Otra oficina de la misma empresa"
+  toOfficeId: Int!
+  note: String
+  "Cada línea, un inventario de la oficina de origen"
+  lines: [InventoryLineInput!]!
+}
+
+type InventoryBatchResult {
+  lines: Int!
+  units: Int!
+  "Inventarios que se abrieron porque el producto no estaba en la oficina"
+  createdInventories: Int!
+}
+
 extend type Query {
+  "Hoja para cargar o enviar varias líneas a la vez; con toOfficeId, lo que hay allí"
+  inventorySheet(officeId: Int!, toOfficeId: Int): InventorySheet!
   inventoryMovements(options: ListOptions): InventoryMovementsSummary!
   inventoryMovement(id: Int!): InventoryMovement
   movementsByInventory(inventoryId: Int!): [InventoryMovement]!
@@ -76,5 +127,9 @@ extend type Mutation {
   transferInventory(
     transferInventoryInput: TransferInventoryInput!
   ): InventoryTransfer!
+  "Entrada de varias líneas en una oficina, todo o nada"
+  loadInventory(loadInventoryInput: LoadInventoryInput!): InventoryBatchResult!
+  "Envío de varias líneas a otra oficina de la empresa, todo o nada"
+  sendInventory(sendInventoryInput: SendInventoryInput!): InventoryBatchResult!
 }
 

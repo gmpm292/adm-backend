@@ -56,6 +56,11 @@ export class InventoryMovementService extends BaseService<InventoryMovement> {
       );
     }
     const referenceId = input.referenceId?.trim() || undefined;
+    if (input.type === 'OUT' && !referenceId) {
+      throw new BadRequestError(
+        'Una salida necesita una nota: a quién se entrega o para qué',
+      );
+    }
 
     return this.create(
       {

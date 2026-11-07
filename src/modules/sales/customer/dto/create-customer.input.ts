@@ -2,11 +2,11 @@ import {
   IsString,
   IsOptional,
   IsEmail,
-  IsPhoneNumber,
   Length,
   IsNumber,
   Min,
 } from 'class-validator';
+import { IsPhone } from '../../../../core/validations/phone.validator';
 import { CreateSecurityBaseInput } from '../../../../core/dtos/create-security-base.input';
 
 export class CreateCustomerInput extends CreateSecurityBaseInput {
@@ -28,7 +28,7 @@ export class CreateCustomerInput extends CreateSecurityBaseInput {
   @IsOptional()
   email?: string;
 
-  @IsPhoneNumber()
+  @IsPhone()
   @IsOptional()
   phone?: string;
 

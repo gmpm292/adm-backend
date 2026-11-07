@@ -91,10 +91,16 @@ export class RealTimePaymentService {
     let totalPaymentsCreated = 0;
     let totalAmount = 0;
 
+    // El alcance del usuario decide si puede calcular la venta...
     const sale = await this.saleService.findOne(saleId, cu, scopes, manager);
     if (!sale?.isConfirmed) {
       throw new BadRequestError(`La venta #${saleId} no está cobrada`);
     }
+    // ...y lo demás (período, reglas de la empresa o comunes, trabajadores y
+    // asistencia de otras oficinas) es de la empresa de la venta. Con el
+    // alcance del usuario un ADMIN no vería el período ni las reglas comunes
+    // y la venta se quedaría sin comisiones.
+    const saleScopes = [ScopedAccessEnum.GENERAL, ScopedAccessEnum.BUSINESS];
 
     const payrollPeriod =
       period ??
@@ -111,27 +117,35 @@ export class RealTimePaymentService {
       sale,
       payrollPeriod,
       cu,
-      scopes,
+      saleScopes,
       manager,
     );
 
-    // 2. Reglas activas que aplican a la venta
+    // 2. Reglas activas de la empresa de la venta y las comunes (sin empresa).
+    // No dependen de quién calcula: si no, un PRINCIPAL dejaría fuera las
+    // comunes (y al recalcular borraría sus comisiones) y un SUPER aplicaría
+    // las de otras empresas.
+    const saleBusinessId = sale.business?.id;
     const allRules = (
-      await this.paymentRuleService.find(
-        {
-          filters: [
-            {
-              property: 'isActive',
-              operator: ConditionalOperator.EQUAL,
-              value: 'true',
-            },
-          ],
-        },
-        cu,
-        scopes,
-        manager,
-      )
-    ).data as Array<PaymentRule>;
+      (
+        await this.paymentRuleService.find(
+          {
+            filters: [
+              {
+                property: 'isActive',
+                operator: ConditionalOperator.EQUAL,
+                value: 'true',
+              },
+            ],
+          },
+          undefined,
+          undefined,
+          manager,
+        )
+      ).data as Array<PaymentRule>
+    ).filter(
+      (rule) => !rule.business?.id || rule.business.id === saleBusinessId,
+    );
 
     const applicableRules = allRules.filter(
       (rule) =>
@@ -148,7 +162,7 @@ export class RealTimePaymentService {
           sale,
           payrollPeriod,
           cu,
-          scopes,
+          saleScopes,
           manager,
         );
         if (ruleResult.paymentsCreated > 0) {

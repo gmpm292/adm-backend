@@ -6,10 +6,10 @@ import {
   IsPositive,
   IsInt,
   IsEmail,
-  IsPhoneNumber,
   MaxLength,
   Min,
 } from 'class-validator';
+import { IsPhone } from '../../../../core/validations/phone.validator';
 import { WorkerType } from '../enums/worker-type.enum';
 import { CreateSecurityBaseInput } from '../../../../core/dtos/create-security-base.input';
 
@@ -57,7 +57,7 @@ export class CreateWorkerInput extends CreateSecurityBaseInput {
   tempEmail?: string | null;
 
   @IsOptional()
-  @IsPhoneNumber(undefined, {
+  @IsPhone({
     message:
       'El teléfono debe llevar el código del país, por ejemplo +5351234567',
   })
