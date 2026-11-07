@@ -20,6 +20,12 @@ import { ConflictError } from '../../../../core/errors/appErrors/ConflictError.e
 import { SortDirection } from '../../../../core/graphql/remote-operations/enums/sort-direction.enum';
 
 /**
+ * Un período es de toda la empresa (no lleva oficina, departamento ni
+ * equipo): con el alcance por defecto un ADMIN o un MANAGER no lo verían.
+ */
+const PERIOD_SCOPES = [ScopedAccessEnum.BUSINESS];
+
+/**
  * Períodos de nómina de cada empresa: sin solapes, de 31 días como mucho.
  * Sobre ellos se calculan y se pagan los pagos a trabajadores.
  */
@@ -33,6 +39,13 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     protected scopedAccessService: ScopedAccessService,
   ) {
     super(payrollPeriodRepository);
+  }
+
+  /** Alcance recibido o, si no llega, el de empresa (salvo que esté configurado otro). */
+  private scopesFor(cu?: JWTPayload, scopes?: ScopedAccessEnum[]) {
+    return (
+      scopes ?? this.scopedAccessService.scopesOrDefault(cu, PERIOD_SCOPES)
+    );
   }
 
   /**
@@ -64,7 +77,7 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     return super.baseCreate({
       data: payrollPeriod,
       cu,
-      scopes,
+      scopes: this.scopesFor(cu, scopes),
       manager,
     });
   }
@@ -86,7 +99,7 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
         'team',
       ],
       cu,
-      scopes,
+      scopes: this.scopesFor(cu, scopes),
       manager,
     });
   }
@@ -109,7 +122,7 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
         team: true,
       },
       cu,
-      scopes,
+      scopes: this.scopesFor(cu, scopes),
       manager,
     });
   }
@@ -121,6 +134,9 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<PayrollPeriod> {
+    // Los pagos pendientes se cuentan en toda la empresa, no solo los que ve
+    // quien cierra: si no, un ADMIN cerraría con pagos de otras oficinas
+    scopes = this.scopesFor(cu, scopes);
     const period = await super.baseFindOne({ id, cu, scopes, manager });
     if (period.isClosed) {
       throw new BadRequestError('El período ya está cerrado');
@@ -174,6 +190,7 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<PayrollPeriod> {
+    scopes = this.scopesFor(cu, scopes);
     const period = await super.baseFindOne({
       id,
       relationsToLoad: { payments: true, business: true },
@@ -221,6 +238,7 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     manager?: EntityManager,
   ): Promise<PayrollPeriod[]> {
     // Solo se eliminan (borrado lógico) períodos sin pagos ni acumuladores.
+    scopes = this.scopesFor(cu, scopes);
     const periods = await super.baseFindByIds({
       ids,
       relationsToLoad: { payments: true, paymentAccumulators: true },
@@ -255,7 +273,7 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     return super.baseRestoreDeletedMany({
       ids,
       cu,
-      scopes,
+      scopes: this.scopesFor(cu, scopes),
       manager,
     });
   }

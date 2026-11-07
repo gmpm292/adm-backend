@@ -75,13 +75,18 @@ export class PaymentProcessingService {
         period,
       );
 
+      // Si falla alguna regla la venta no cuenta como calculada: así el
+      // Informe del día avisa en vez de mostrar la venta sin comisiones
+      const ruleFailed = (result.details as Array<{ error?: string }>).some(
+        (detail) => detail.error,
+      );
       console.log(
-        `[PaymentProcessing] Sale ${input.saleId} processed successfully. ` +
+        `[PaymentProcessing] Sale ${input.saleId} processed${ruleFailed ? ' with rule errors' : ''}. ` +
           `Created ${result.paymentsCreated} payments, total: ${result.totalAmount}`,
       );
 
       return {
-        success: true,
+        success: !ruleFailed,
         paymentsCreated: result.paymentsCreated,
         totalAmount: result.totalAmount,
         saleId: input.saleId,
