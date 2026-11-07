@@ -52,11 +52,18 @@ export class MaterialCostService extends BaseService<MaterialCost> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<MaterialCost> {
-    const { unitOfMeasureId, currency, ...rest } = createMaterialCostInput;
+    const { unitOfMeasureId, currency, businessId, officeId, ...rest } =
+      createMaterialCostInput;
     const name = rest.name.trim();
+    // La empresa sale del usuario; SUPER la elige en el formulario
+    const place = await this.scopedAccessService.placeForCreate(
+      cu,
+      { businessId, officeId },
+      manager ?? this.materialCostRepository.manager,
+    );
     await this.checkUniqueName(
       name,
-      rest.businessId ?? cu?.businessId,
+      place ? place.business?.id : cu?.businessId,
       undefined,
       true,
       manager,
@@ -71,7 +78,8 @@ export class MaterialCostService extends BaseService<MaterialCost> {
       isActive: rest.isActive ?? true,
       unitOfMeasure: { id: unitOfMeasureId } as UnitOfMeasure,
       currency: { id: curr.id } as Currency,
-    };
+      ...place,
+    } as MaterialCost;
 
     const created = await super.baseCreate({
       data: materialCost,

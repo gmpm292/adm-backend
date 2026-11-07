@@ -15,10 +15,50 @@ import {
 import { Opts } from '../../../../core/graphql/remote-operations/decorators/opts.decorator';
 import { InventoryMovementService } from '../services/inventory-movement.service';
 import { InventoryMovementFiltersValidator } from '../filters-validator/inventory-movement-filters.validator';
+import { InventoryBatchService } from '../services/inventory-batch.service';
+import {
+  LoadInventoryInput,
+  SendInventoryInput,
+} from '../dto/inventory-batch.input';
 
 @Resolver('InventoryMovement')
 export class InventoryMovementResolver {
-  constructor(private readonly movementService: InventoryMovementService) {}
+  constructor(
+    private readonly movementService: InventoryMovementService,
+    private readonly batchService: InventoryBatchService,
+  ) {}
+
+  // Hoja de inventario: quien carga o envía. ADMIN, solo con su oficina
+  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
+  @UseGuards(AccessTokenAuthGuard, RoleGuard)
+  @Query('inventorySheet')
+  async sheet(
+    @CurrentUser() user: JWTPayload,
+    @Args('officeId') officeId: number,
+    @Args('toOfficeId') toOfficeId?: number,
+  ) {
+    return this.batchService.sheet(officeId, toOfficeId ?? undefined, user);
+  }
+
+  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
+  @UseGuards(AccessTokenAuthGuard, RoleGuard)
+  @Mutation('loadInventory')
+  async load(
+    @CurrentUser() user: JWTPayload,
+    @Args('loadInventoryInput') input: LoadInventoryInput,
+  ) {
+    return this.batchService.load(input, user);
+  }
+
+  @Roles(Role.SUPER, Role.PRINCIPAL, Role.ADMIN)
+  @UseGuards(AccessTokenAuthGuard, RoleGuard)
+  @Mutation('sendInventory')
+  async send(
+    @CurrentUser() user: JWTPayload,
+    @Args('sendInventoryInput') input: SendInventoryInput,
+  ) {
+    return this.batchService.send(input, user);
+  }
 
   // Los mismos roles que crean inventarios: quien abre un inventario con
   // existencias puede registrar después sus entradas y salidas.

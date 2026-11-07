@@ -78,6 +78,19 @@ input UpdateProductInput {
   saleRules: SaleRulesInput
 }
 
+"""
+Un producto por cada valor de una característica (Talla 1, 2, 3...), con
+los mismos datos; todos o ninguno.
+"""
+input CreateProductVariantsInput {
+  product: CreateProductInput!
+  "Lo que cambia entre ellos: Talla, Color, Medida..."
+  variantName: String!
+  values: [String!]!
+  "Oficinas donde se abre su inventario vacío"
+  officeIds: [Int!]
+}
+
 extend type Query {
   products(options: ListOptions): ProductsSummary!
   product(id: Int!): Product
@@ -86,6 +99,9 @@ extend type Query {
 
 extend type Mutation {
   createProduct(createProductInput: CreateProductInput!): Product!
+  createProductVariants(
+    createProductVariantsInput: CreateProductVariantsInput!
+  ): [Product!]!
   updateProduct(updateProductInput: UpdateProductInput!): Product!
   removeProducts(ids: [Int!]!): [Product]!
   restoreProducts(ids: [Int!]!): Int

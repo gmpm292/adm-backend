@@ -49,8 +49,8 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
   }
 
   /**
-   * Crea un período abierto. Valida las fechas y que no se solape con otro de
-   * la empresa indicada o, si no llega, de la del usuario.
+   * Crea un período abierto de toda la empresa: la del usuario; SUPER la
+   * elige. Valida las fechas y que no se solape con otro de esa empresa.
    */
   async create(
     createPayrollPeriodInput: CreatePayrollPeriodInput,
@@ -58,18 +58,26 @@ export class PayrollPeriodService extends BaseService<PayrollPeriod> {
     scopes?: ScopedAccessEnum[],
     manager?: EntityManager,
   ): Promise<PayrollPeriod> {
+    const { businessId, ...input } = createPayrollPeriodInput;
+    delete input.officeId; // El período es de toda la empresa, sin oficina
+    const place = await this.scopedAccessService.placeForCreate(
+      cu,
+      { businessId },
+      manager ?? this.payrollPeriodRepository.manager,
+    );
     const payrollPeriod = {
-      ...createPayrollPeriodInput,
-      name: createPayrollPeriodInput.name.trim(),
-      startDate: new Date(createPayrollPeriodInput.startDate),
-      endDate: new Date(createPayrollPeriodInput.endDate),
+      ...input,
+      name: input.name.trim(),
+      startDate: new Date(input.startDate),
+      endDate: new Date(input.endDate),
       isClosed: false,
+      ...(place && { business: place.business }),
     } as PayrollPeriod;
 
     this.validatePeriodIntegrity(payrollPeriod);
     await this.assertNoOverlap(
       payrollPeriod,
-      createPayrollPeriodInput.businessId ?? cu?.businessId,
+      place ? place.business?.id : cu?.businessId,
       undefined,
       manager,
     );
